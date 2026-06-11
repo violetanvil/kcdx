@@ -13,14 +13,15 @@ Two tiers register through one model and one code path:
   `<author>.<plugin>.<bare>` from the declaring plugin's manifest. You write
   the bare name; the engine stamps the prefix. You never type your own prefix.
 
-This page covers the registry's **declare and read side**: `declare`, `get`,
-`list`. **`kcdx.behavior.set` is not callable yet** — recording a value and the
-apply boundary that invokes implementations ship next; until then a behavior's
-value is always its declared `default` and no `implementation` is invoked.
+This page covers the four verbs — `declare`, `set`, `get`, `list` — and the
+**apply-boundary model** that makes `set` work. Runtime (post-load) toggling
+is not built yet: a `set` after load raises a teaching error; it arrives with
+the declare spec's `revert` contract.
 
 | Call | Args | Returns |
 |---|---|---|
 | `kcdx.behavior.declare(name, spec)` | bare name string; spec table (`description`, `default`, `implementation`, optional `revert`) | nothing on success; **raises** a teaching error on a bad spec, a duplicate name, or a post-load call. |
+| `kcdx.behavior.set(name, value)` | behavior name (bare or full); any non-`nil` value | nothing on success (the value is **recorded**; the implementation runs once at the apply boundary); **raises** a teaching error on an unknown name, a `nil` value, or a post-load call. |
 | `kcdx.behavior.get(name)` | behavior name (bare or full) | the behavior's current value — the recorded value once one exists, else the spec's `default`; **raises** a teaching error on an unknown name. |
 | `kcdx.behavior.list([prefix])` | optional stamped-name prefix string | an array of entry tables `{ name, description, default, current, declarer }`. |
 
@@ -41,7 +42,7 @@ kcdx.behavior.declare("hardcore_combat", {
     default        = false,
     implementation = function(value)
         -- reconfigure the game to match `value`; invoked once at the apply
-        -- boundary with the final settled value (once `set` ships)
+        -- boundary with the final settled value
     end,
 })
 ```
@@ -52,7 +53,7 @@ kcdx.behavior.declare("hardcore_combat", {
 | `spec.description` | string, required | One human line; surfaced by `list()`. |
 | `spec.default` | any non-`nil` value, required | What `get()` returns while the behavior was never set. Any Lua type (bool, number, string, table, function) EXCEPT `nil` — `nil` is the engine's unset sentinel, never a value. |
 | `spec.implementation` | function, required | `function(value)` — invoked once at the apply boundary with the final settled value. |
-| `spec.revert` | function, optional | `function(old_value)` — its presence makes the behavior runtime-togglable after load. |
+| `spec.revert` | function, optional | `function(old_value)` — its presence will make the behavior runtime-togglable after load (the post-load toggle contract is not built yet; today a post-load set raises a teaching error regardless). |
 
 **Returns:** nothing. The behavior is registered and immediately resolvable by
 `get`/`list`.
@@ -70,11 +71,80 @@ kcdx.behavior.declare("hardcore_combat", {
   engine-derived), so it is an in-plugin authoring bug to remove;
 - a post-load declare (declares are a load-time act).
 
+## `kcdx.behavior.set(name, value)` — set a behavior's value
+
+Records a value for a declared behavior. Setting is a **load-time act**: call
+it from your `plugin.lua` (or `lua_after`) body. The value is recorded
+immediately (`get` reads it back at once); the behavior's `implementation`
+runs **once, at the apply boundary** (below), with the final recorded value —
+never at the `set` call site.
+
+```lua
+-- your whole plugin can be these two lines:
+kcdx.behavior.set("redmoon.realism.hardcore_combat", true)
+```
+
+| Arg | Type | Meaning |
+|---|---|---|
+| `name` | string | A bare name (resolved **self > engine > other**) or the explicit full `<author>.<plugin>.<bare>` form — setting another plugin's behavior uses its full name. |
+| `value` | any non-`nil` value | The setting. Any Lua type the declarer's `implementation` accepts (bool, number, string, table, function). `nil` is the engine's unset sentinel, never a value — to leave a behavior unset, don't set it. `false` is a valid setting. |
+
+**Returns:** nothing. The value is recorded; `get(name)` now answers it.
+
+**Conflicts — last-wins, one teaching warn.** When two plugins set the same
+behavior to different values, the **later plugin in load order wins** and the
+engine logs one `set_conflict` warn naming both plugins, both values, and the
+winner. A load never breaks on a behavior conflict. A plugin re-setting its
+own value, or a second plugin recording an equal value, records silently.
+
+**Errors (each raises at the set site, naming the cause and the fix):**
+
+- an unknown name — the same teaching error `get` raises (browse
+  `kcdx.behavior.list()`; use the full `<author>.<plugin>.<bare>` form for
+  another plugin's behavior);
+- `set(name, nil)` — nil is the unset sentinel, not a value;
+- a post-load set — after the apply boundary has run (or on a behavior the
+  boundary already applied), a set raises a teaching error: behaviors apply
+  once per session today. Runtime (post-load) toggling is not built yet — it
+  arrives with the declare spec's `revert` contract.
+
+## The apply boundary — record at load, apply once
+
+Behaviors follow a **collect-then-apply** model:
+
+1. **During plugin load, `set` records.** Last-wins across all setters; the
+   implementation is not called yet.
+2. **At the apply boundary — after every plugin has loaded** (after all
+   `plugin.lua` / `lua_after` / C++ post-load entries have run), **before the
+   `input_loaded` lifecycle event** — the engine invokes each set behavior's
+   `implementation` exactly once with the final value, in the declaring
+   plugins' load order. No apply-then-unapply churn during load.
+3. **Never-set behaviors are skipped.** The `default` is what `get` answers,
+   not an applied state — an implementation never runs for a behavior nobody
+   set.
+
+Inside the boundary, the engine keeps draining until everything settles
+(the **worklist**): an implementation may itself `set` other behaviors —
+a not-yet-applied behavior's pending value updates (last-wins continues); a
+behavior whose turn had already passed is picked up by a follow-up pass. Each
+behavior applies **at most once per boundary** — once applied, a further set
+follows the post-load rules above.
+
+**If an implementation raises** at the boundary, the error is logged against
+the **declaring** plugin, that behavior's recorded value is cleared back to
+unset (`get` returns the default — the surface never claims a state the
+implementation did not deliver), and the remaining behaviors still apply.
+
+An implementation may register intent (`kcdx.hook.*`, `kcdx.bytes`,
+`kcdx.statement.*`) like any load-time code: registrations made at the
+boundary are installed before `input_loaded` fires.
+
 ## `kcdx.behavior.get(name)` — read a behavior's current value
 
 Returns the behavior's recorded value once one exists, else the spec's
 `default`. Truthful by construction: the value changes only on a successful
-set, and nothing has set anything yet — today every `get` answers the default.
+set, and a boundary raise clears it back to unset — `get` never reports a
+state the implementation did not (or will not) receive.
 
 ```lua
 local hardcore = kcdx.behavior.get("hardcore_combat")

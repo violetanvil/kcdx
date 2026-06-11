@@ -6,15 +6,17 @@
 
 #include "behavior_registry.h"
 
+#include <algorithm>
 #include <map>
 #include <set>
 
 extern "C" {
-#include "lauxlib.h"  // LUA_NOREF (static_assert below only — no state use)
+#include "lua.h"      // the boundary pass invokes implementation refs
+#include "lauxlib.h"  // LUA_NOREF static_assert + luaL_unref on a raise
 }
 
 #include "address_library.h"  // ResolveAlias — the kcdx.alias substitution
-#include "log.h"              // LOG_WARN_KV, ::kcdx::log::KV
+#include "log.h"              // LOG_*_KV, ::kcdx::log::KV
 
 namespace kcdx::behavior_registry {
 
@@ -41,6 +43,19 @@ std::set<std::string>& WarnedBareCollisions() {
 
 constexpr const char* kEngineRoot = "kcdx.behavior.";
 
+// The recorded set-edges (consumer plugin -> behavior), first-recorded
+// order, deduplicated at insert. Function-local static like Store().
+std::vector<SetEdge>& EdgeStore() {
+    static std::vector<SetEdge> s;
+    return s;
+}
+
+// Flipped exactly once, at the end of RunApplyBoundary.
+bool& BoundaryCompletedFlag() {
+    static bool s = false;
+    return s;
+}
+
 bool RegisterOne(Behavior&& b, std::string& errOut) {
     auto& store = Store();
     auto it = store.find(b.fullName);
@@ -58,6 +73,11 @@ bool RegisterOne(Behavior&& b, std::string& errOut) {
                  "rejected; declare each behavior once.";
         return false;
     }
+    // Declare sequence: ascending registration order IS declaring-plugin
+    // load order (plugins execute sequentially in unified load order; a
+    // plugin's declares are contiguous) — the boundary drain's order.
+    static uint64_t nextSeq = 0;
+    b.declareSeq = ++nextSeq;
     std::string key = b.fullName;  // copy the key BEFORE moving the value
     store.emplace(std::move(key), std::move(b));
     return true;
@@ -126,6 +146,12 @@ bool DeclareEngine(const std::string& bareName,
 }
 
 const Behavior* Lookup(const std::string& fullName) {
+    auto& store = Store();
+    auto it = store.find(fullName);
+    return (it == store.end()) ? nullptr : &it->second;
+}
+
+Behavior* LookupMutable(const std::string& fullName) {
     auto& store = Store();
     auto it = store.find(fullName);
     return (it == store.end()) ? nullptr : &it->second;
@@ -237,6 +263,137 @@ void Enumerate(const std::string& prefix,
 
 size_t Count() {
     return Store().size();
+}
+
+void RecordEdge(const std::string& consumerAuthor,
+                const std::string& consumerPlugin,
+                const std::string& behaviorFullName) {
+    if (consumerPlugin.empty()) return;  // anonymous setter — no consumer
+    auto& edges = EdgeStore();
+    for (const SetEdge& e : edges) {
+        if (e.consumerAuthor == consumerAuthor &&
+            e.consumerPlugin == consumerPlugin &&
+            e.behaviorFullName == behaviorFullName) {
+            return;  // already recorded (a re-set adds no new edge)
+        }
+    }
+    edges.push_back(SetEdge{consumerAuthor, consumerPlugin, behaviorFullName});
+}
+
+const std::vector<SetEdge>& Edges() {
+    return EdgeStore();
+}
+
+bool BoundaryCompleted() {
+    return BoundaryCompletedFlag();
+}
+
+void RunApplyBoundary(lua_State* L) {
+    auto& store = Store();
+    size_t appliedCount = 0;
+    size_t raisedCount  = 0;
+    size_t passCount    = 0;
+
+    // Once-per-boundary invocation guard. `applied` alone cannot carry it:
+    // a raise clears `applied` (the truthfulness rule), and without this
+    // guard two mutually-setting raising implementations could re-pend each
+    // other forever. Once invoked, a behavior is never invoked again this
+    // boundary — the invariant that makes the drain terminate.
+    std::set<const Behavior*> invoked;
+
+    for (;;) {
+        // Snapshot this pass's pending set — set-but-not-applied, not yet
+        // invoked — in declaring-plugin load order (ascending declareSeq).
+        // Late entries pended by implementations land in the NEXT snapshot.
+        std::vector<Behavior*> pass;
+        for (auto& kv : store) {
+            Behavior& b = kv.second;
+            if (b.recordedRef != kNoRef && !b.applied &&
+                invoked.find(&b) == invoked.end()) {
+                pass.push_back(&b);
+            }
+        }
+        if (pass.empty()) break;
+        std::sort(pass.begin(), pass.end(),
+                  [](const Behavior* a, const Behavior* b) {
+                      return a->declareSeq < b->declareSeq;
+                  });
+        ++passCount;
+
+        for (Behavior* b : pass) {
+            // Defensive re-check with NO current trigger: a raise clears only
+            // the raising behavior's OWN record, so nothing in this step can
+            // invalidate a sibling entry mid-pass. Kept because the s5
+            // post-load toggle paths will mutate records around drains.
+            if (b->recordedRef == kNoRef || b->applied) continue;
+
+            invoked.insert(b);
+            // Applied flips BEFORE the invoke: a mid-call set on this
+            // behavior (incl. a self-set from its own implementation)
+            // follows the post-load rules, and a success keeps the recorded
+            // value as exactly the value the implementation received.
+            b->applied = true;
+
+            const int top0 = lua_gettop(L);
+            lua_rawgeti(L, LUA_REGISTRYINDEX, b->implementationRef);
+            lua_rawgeti(L, LUA_REGISTRYINDEX, b->recordedRef);
+            const int status = lua_pcall(L, 1, 0, 0);
+            if (status != 0) {
+                const char* msg = lua_tostring(L, -1);
+                // Boundary-raise disposition (design §5.3): attributed to
+                // the DECLARING plugin; recorded value AND applied flag
+                // clear to unset so get() answers the default (truthful —
+                // the intended state was not applied); the drain CONTINUES.
+                LOG_ERROR_KV("BEHAVIOR", "implementation_raised",
+                    ::kcdx::log::KV("behavior", b->fullName),
+                    ::kcdx::log::KV("declarer", b->DeclarerLabel()),
+                    ::kcdx::log::KV("error", msg ? msg : "<non-string error>"),
+                    ::kcdx::log::KV("disposition",
+                        "recorded value cleared to unset (get() returns the "
+                        "default); remaining behaviors still apply"));
+                lua_settop(L, top0);
+                luaL_unref(L, LUA_REGISTRYINDEX, b->recordedRef);
+                b->recordedRef = kNoRef;
+                b->applied = false;
+                b->setterAuthor.clear();
+                b->setterPlugin.clear();
+                ++raisedCount;
+                continue;
+            }
+            lua_settop(L, top0);
+            ++appliedCount;
+        }
+    }
+
+    // A record re-pended onto a raise-cleared behavior (only another
+    // implementation can produce it) has no remaining boundary slot —
+    // clear it so get() never carries a value no implementation received.
+    for (auto& kv : store) {
+        Behavior& b = kv.second;
+        if (b.recordedRef != kNoRef && !b.applied) {
+            LOG_WARN_KV("BEHAVIOR", "post_raise_set_dropped",
+                ::kcdx::log::KV("behavior", b.fullName),
+                ::kcdx::log::KV("setter",
+                    b.setterAuthor + "." + b.setterPlugin),
+                ::kcdx::log::KV("detail",
+                    "set during the boundary drain on a behavior whose "
+                    "implementation had already raised this boundary; the "
+                    "value is cleared (the implementation is invoked at "
+                    "most once per boundary) — get() returns the default"));
+            luaL_unref(L, LUA_REGISTRYINDEX, b.recordedRef);
+            b.recordedRef = kNoRef;
+            b.setterAuthor.clear();
+            b.setterPlugin.clear();
+        }
+    }
+
+    BoundaryCompletedFlag() = true;
+    // One lifecycle info line (logging.md): the boundary completed.
+    LOG_INFO_KV("BEHAVIOR", "apply_boundary_complete",
+        ::kcdx::log::KV("applied", appliedCount),
+        ::kcdx::log::KV("raised", raisedCount),
+        ::kcdx::log::KV("passes", passCount),
+        ::kcdx::log::KV("declared", store.size()));
 }
 
 }  // namespace kcdx::behavior_registry

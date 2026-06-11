@@ -1,0 +1,41 @@
+# COMP-20 consumer — the cross-plugin behavior fixture's BEHAVIOR-ONLY
+# consumer (the §9 consumer leg + the setter side of every comp-20 row).
+#
+# Loads LATER than the declarer (priority 60 vs 30) and is a TWO-LINE-CLASS
+# consumer: its script touches ONLY kcdx.behavior.set/get (+ the suite's
+# report machinery) — deliberately NO kcdx.declare / kcdx.dll.declare, no
+# hash-checked verb, and NO game-version declaration of any kind in this
+# manifest. The §9 consumer story: a behavior-only consumer needs no version
+# declaration; game-version concerns ride the DECLARER's implementation.
+#
+# Sets (all the declarer's full <author>.<plugin>.<bare> names, recorded at
+# load, applied once at the boundary):
+#   boundary_first  = true             (applies first; the already-applied arm)
+#   hardcore_combat = "hardcore-on"    (the US-1/US-2 final value)
+#   conflict_target = "consumer-wins"  (the LATER setter — last-wins winner)
+#   raise_behavior  = "consumer-set-this" (cleared by the boundary raise)
+#   drain_setter    = true             (arms the mid-drain actor)
+#   drain_target    = 10               (updated to 20 mid-drain)
+#
+# Test mode: boot-only (one row, reports at input_loaded).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_20_behavior_consumer"
+display_name        = "COMP-20 behavior-only consumer (sets, loads LATER)"
+author              = "ts"
+description         = "The cross-plugin behavior fixture's behavior-only consumer: loads after the declarer and sets six of its behaviors at load via full stamped names — no kcdx.declare, no hash-checked verb, no game-version declaration of any kind (the §9 consumer leg). Asserts every load-time set recorded and its own set applied at the boundary."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "comp-20-behavior-only-consumer",
+]
+
+[load_order]
+priority = 60
+
+[entrypoints]
+lua = "plugin.lua"

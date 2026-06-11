@@ -11,6 +11,7 @@
 
 #include "MinHook.h"
 #include "asset_namespace.h"  // NotifyVmReady — freeze the KI-0005 boot-opened set
+#include "behavior_registry.h"  // RunApplyBoundary — the behavior apply boundary
 #include "console.h"
 #include "cvar.h"
 #include "console_commands_scan.h"
@@ -581,6 +582,32 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // wave uses).
                 kcdx::plugins::RunPostGameLoad(
                     kcdx::plugins::GetEngineInterface());
+
+                // BEHAVIOR APPLY BOUNDARY — the probe-observed point
+                // (post-RunPostGameLoad, pre-InputLoaded, game main thread —
+                // implementations run on the thread the callback-threading
+                // law requires, no marshal). Every set behavior's
+                // implementation is invoked ONCE with the final recorded
+                // value via the worklist drain (declaring-plugin load
+                // order; late-pended entries drain in follow-up passes;
+                // never-set behaviors skipped; a raise logs against the
+                // declarer, clears that record to unset, and the drain
+                // continues). Sits AFTER both main-stop surfaces (lua_after
+                // + PostGameLoad) so the boundary sees the final sets, and
+                // BEFORE InputLoaded so plugins are told "ready" only once
+                // behaviors are applied.
+                kcdx::behavior_registry::RunApplyBoundary(L);
+
+                // A behavior implementation registers intent (kcdx.hook /
+                // kcdx.bytes / kcdx.statement.*) which QUEUES into
+                // lua_registry — and a registration queued at THIS point
+                // would otherwise drain only at the per-tick ApplyZone
+                // below, AFTER InputLoaded already fired (the probe-
+                // observed gap). One more idempotent ApplyZone(AfterGame)
+                // — same shape as the two passes above — lands them LIVE
+                // before InputLoaded.
+                kcdx::lua_registry::ApplyZone(
+                    kcdx::load_order::Zone::AfterGame);
 
                 // Lifecycle: input subsystem is alive by the time the first
                 // update tick fires (Lua VM is up). Closest analogue to

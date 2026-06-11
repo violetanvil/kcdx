@@ -15,9 +15,9 @@ link against it. `kcdxBehaviorInterface` is the **planned** mirror name; it is
 tracked parity debt — both docs map a capability even when only one is built —
 discharged when the C++ parity phase ships it and it is verified callable.
 This entry maps the planned shape so both surfaces describe the capability
-while the engine catches up. (On the Lua side, `declare`/`get`/`list` are
-built today; `set` and the apply boundary land next — see
-[`kcdx.behavior`](../lua/behavior.md).)
+while the engine catches up. (On the Lua side, `declare`/`set`/`get`/`list`
+and the apply boundary are built today; the post-load `revert` toggle
+contract lands later — see [`kcdx.behavior`](../lua/behavior.md).)
 
 ## Planned mirror shape (NYI)
 
@@ -61,9 +61,9 @@ an engine-owned **value handle** model:
 ## Today (the built fallback)
 
 Until `kcdxBehaviorInterface` lands, the behavior surface is reached from
-**Lua** ([`kcdx.behavior`](../lua/behavior.md) — `declare`/`get`/`list`
-today). A C++ plugin that needs a behavior before the mirror ships can pair
-with a small `plugin.lua` in the same plugin folder, the standard
-two-language-plugin shape.
+**Lua** ([`kcdx.behavior`](../lua/behavior.md) — `declare`/`set`/`get`/`list`
++ the apply boundary today). A C++ plugin that needs a behavior before the
+mirror ships can pair with a small `plugin.lua` in the same plugin folder,
+the standard two-language-plugin shape.
 
 This is the C++ mirror of [kcdx.behavior.*](../lua/behavior.md).

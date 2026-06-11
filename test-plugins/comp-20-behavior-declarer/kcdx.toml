@@ -1,0 +1,74 @@
+# COMP-20 declarer — the cross-plugin behavior fixture's DECLARING plugin.
+#
+# Declares the behaviors the comp-20 rows exercise (stamp prefix:
+# ts.comp_20_behavior_declarer.) and owns every implementation. The CONSUMER
+# (comp-20-behavior-consumer, priority 60 — loads LATER) sets them at load;
+# the apply boundary (post-RunPostGameLoad, pre-InputLoaded) invokes each
+# implementation once with the final value. This plugin reports the
+# declarer-side rows at input_loaded (the earliest post-boundary point).
+#
+# Declare order IS boundary apply order (declaring-plugin load order; within
+# one plugin, declare order), and the fixtures depend on it:
+#   late_pend       — never set at load; drain_setter's impl sets it
+#                     mid-drain (slot already passed) -> a follow-up
+#                     worklist pass applies it once with 77.
+#   boundary_first  — applies FIRST among the set behaviors; drain_setter's
+#                     impl then pcall-sets it -> the already-applied
+#                     post-load placeholder error.
+#   hardcore_combat — the US-1/US-2 story: consumer sets "hardcore-on"; the
+#                     implementation fires ONCE at the boundary with that
+#                     final value AND calls kcdx.statement.replace_with on
+#                     the engine-known WHGame.dll SaveGame function-entry
+#                     statement (cap-92's proven-safe noop target) — the §9
+#                     declarer leg: a behavior implementation reaching a
+#                     hash-checked verb whose per-version resolution is
+#                     observable via the statement handle.
+#   conflict_target — TWO setters: this plugin sets "declarer-value", the
+#                     later consumer sets "consumer-wins" -> last-wins; the
+#                     engine emits ONE set_conflict warn naming both plugins
+#                     + both values (log-confirmed at launch).
+#   raise_behavior  — its implementation deliberately raises at the
+#                     boundary -> error attributed to THIS plugin (log),
+#                     value cleared to unset (get returns the default), the
+#                     drain CONTINUES (later behaviors still apply).
+#   drain_setter    — its implementation runs mid-drain and (a) sets the
+#                     not-yet-applied drain_target to 20 (pending update),
+#                     (b) sets the never-set late_pend to 77 (late pend),
+#                     (c) pcall-sets the already-applied boundary_first
+#                     (the placeholder error).
+#   drain_target    — set 10 by the consumer, updated to 20 mid-drain by
+#                     drain_setter BEFORE its slot -> applies ONCE with 20.
+#   never_set       — declared, never set -> SKIPPED by the boundary
+#                     (implementation never fires; get answers the default).
+#
+# Test mode: boot-only (launch-to-menu; all rows report at input_loaded; the
+# set_conflict warn + the implementation_raised attribution are
+# log-confirmed by the agent at launch).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_20_behavior_declarer"
+display_name        = "COMP-20 behavior declarer (declares + implements, loads FIRST)"
+author              = "ts"
+description         = "The cross-plugin behavior fixture's declarer: declares eight behaviors whose implementations count fires + capture values; one calls kcdx.statement.replace_with on the engine-known SaveGame function-entry statement (the hash-checked per-version path) from inside the apply boundary; one deliberately raises; one drives the mid-drain set branches. Reports the declarer-side comp-20 rows at input_loaded."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "comp-20-impl-once-final",
+    "comp-20-declarer-statement",
+    "comp-20-conflict-last-wins",
+    "comp-20-boundary-raise",
+    "comp-20-drain-pending-update",
+    "comp-20-drain-already-applied",
+    "comp-20-drain-late-pend",
+    "comp-20-never-set-skipped",
+]
+
+[load_order]
+priority = 30
+
+[entrypoints]
+lua = "plugin.lua"

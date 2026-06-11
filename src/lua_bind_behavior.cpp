@@ -1,4 +1,4 @@
-// kcdx.behavior.* — named behaviors, the read side + declare.
+// kcdx.behavior.* — named behaviors: declare / set / get / list.
 //
 //   kcdx.behavior.declare("hardcore_combat", {
 //       description    = "lock fast-travel and timed saves while in combat",
@@ -6,6 +6,7 @@
 //       implementation = function(value) ... end,
 //       revert         = function(old_value) ... end,  -- optional
 //   })
+//   kcdx.behavior.set("redmoon.realism.hardcore_combat", true)
 //   kcdx.behavior.get("hardcore_combat")          --> recorded value, else default
 //   kcdx.behavior.list("redmoon.realism.")        --> array of entry tables
 //
@@ -14,18 +15,30 @@
 // namespace stamping (the engine derives <author>.<plugin> from the calling
 // plugin's manifest — the author writes only the bare name), and the
 // teaching errors. The registry owns storage, the duplicate rule, the
-// precedence walk, and enumeration.
+// precedence walk, enumeration, the set-edges, and the apply-boundary pass.
 //
-// Error contract: a wrong declare/get/list call RAISES a normal Lua error at
-// the call site (luaL_error) with a teaching text — the calling plugin fails
-// loudly, the load continues (standard plugin error handling). Each raise is
-// also logged under category "BEHAVIOR" so the dev log greps the cause.
+// Set window: a set RECORDS during plugin load (last-wins; one conflict warn
+// when a second different plugin records a different value); the apply
+// boundary invokes each set behavior's implementation once with the final
+// value. A post-load set — after the boundary completed, or on an
+// already-applied behavior during the drain — raises a teaching error THIS
+// step (the placeholder); the revert-gated runtime toggle contract is a
+// later step.
+//
+// Error contract: a wrong declare/set/get/list call RAISES a normal Lua
+// error at the call site (luaL_error) with a teaching text — the calling
+// plugin fails loudly, the load continues (standard plugin error handling).
+// Each raise is also logged under category "BEHAVIOR" so the dev log greps
+// the cause.
 //
 // Declare window: declares are a LOAD-TIME act. The post-load check gates on
 // the init-phase model — the last load-wave phase (AfterGameApply, advanced
-// at the end of the first-update-tick load block) is the closest queryable
-// "the load waves finished" state until the apply boundary lands and owns
-// the window precisely.
+// at the end of the first-update-tick load block). The SET window gates on
+// the registry's boundary state instead (BoundaryCompleted / the per-
+// behavior applied flag) — the boundary runs BEFORE InputLoaded, earlier
+// than the AfterGameApply advance, so the init phase would miss a
+// post-boundary set from an InputLoaded handler. The window-law step
+// refines the declare gate.
 //
 // Values: the spec's default / implementation / revert and the recorded
 // value live in the engine-owned Lua VM as registry refs (luaL_ref into
@@ -36,6 +49,7 @@
 
 #include "lua_bind_behavior.h"
 
+#include <cstdio>   // snprintf — the best-effort value stringifier
 #include <string>
 #include <vector>
 
@@ -298,7 +312,8 @@ const kcdx::behavior_registry::Behavior* ResolveOrRaise(
 
 // kcdx.behavior.get(name) — the current recorded value, else the spec's
 // default. Truthful by construction: the recorded slot is written only by a
-// successful set (a later step), so today every get answers the default.
+// successful set, and a boundary raise clears it back to unset — get never
+// reports a state the implementation did not (or will not) receive.
 int Lua_Get(lua_State* L) {
     if (lua_type(L, 1) != LUA_TSTRING) {
         const char* detail =
@@ -318,6 +333,155 @@ int Lua_Get(lua_State* L) {
                         : b->defaultRef;
     lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
     return 1;
+}
+
+// Best-effort one-line description of the value at `idx` for the
+// set-conflict warn. Type-tagged, never invokes a metamethod (a __tostring
+// would run author code mid-set), strings truncated. Stack effect: 0.
+std::string DescribeValue(lua_State* L, int idx) {
+    switch (lua_type(L, idx)) {
+        case LUA_TBOOLEAN:
+            return lua_toboolean(L, idx) ? "true" : "false";
+        case LUA_TNUMBER: {
+            char buf[40];
+            snprintf(buf, sizeof(buf), "%.14g",
+                     static_cast<double>(lua_tonumber(L, idx)));
+            return buf;
+        }
+        case LUA_TSTRING: {
+            size_t len = 0;
+            const char* s = lua_tolstring(L, idx, &len);
+            std::string out = "\"";
+            out.append(s, len > 48 ? 48 : len);
+            if (len > 48) out += "...";
+            out += "\"";
+            return out;
+        }
+        default:
+            return std::string("<") + lua_typename(L, lua_type(L, idx)) + ">";
+    }
+}
+
+// "author.plugin" or "<anonymous>" for the conflict warn's actor names.
+std::string SetterLabel(const std::string& author, const std::string& plugin) {
+    if (plugin.empty()) return "<anonymous>";
+    return author + "." + plugin;
+}
+
+// kcdx.behavior.set(name, value) — record a value for the apply boundary.
+//
+// Load-window semantics: the value is RECORDED (last-wins); the behavior's
+// implementation runs ONCE at the apply boundary with the final recorded
+// value. nil is the unset sentinel, never a value (§4). Resolution is the
+// shared ResolveOrRaise (the discriminating ordering-error branches are a
+// later step). A post-load set — the boundary completed, or the behavior
+// already applied mid-drain — raises the placeholder teaching error; the
+// revert-gated runtime toggle is a later step.
+int Lua_Set(lua_State* L) {
+    if (lua_type(L, 1) != LUA_TSTRING) {
+        const char* detail =
+            "kcdx.behavior.set(name, value): `name` (arg 1) must be a "
+            "string — a bare name (resolved self > engine > other) or a "
+            "full <author>.<plugin>.<bare> name.";
+        LOG_ERROR_KV(kCat, "set_bad_arg",
+            ::kcdx::log::KV("detail", detail));
+        return luaL_error(L, "%s", detail);
+    }
+    const std::string nameArg = lua_tostring(L, 1);
+
+    // nil (or a missing value) is the §4 teaching error — nil is the
+    // engine's unset sentinel, never a value.
+    const int valueType = lua_type(L, 2);
+    if (valueType == LUA_TNIL || valueType == LUA_TNONE) {
+        const std::string detail =
+            "kcdx.behavior.set('" + nameArg + "', nil): nil is the engine's "
+            "UNSET sentinel, never a value — to leave a behavior unset, "
+            "don't set it (get() then answers the declarer's default). Any "
+            "other Lua value (false included) is a valid setting.";
+        LOG_ERROR_KV(kCat, "set_nil_value",
+            ::kcdx::log::KV("name", nameArg),
+            ::kcdx::log::KV("detail", detail));
+        return luaL_error(L, "%s", detail.c_str());
+    }
+
+    // Resolve (the existing resolution + its existing unresolved error).
+    const kcdx::behavior_registry::Behavior* resolved =
+        ResolveOrRaise(L, "set", nameArg);
+    kcdx::behavior_registry::Behavior* b =
+        kcdx::behavior_registry::LookupMutable(resolved->fullName);
+
+    // The set window: load-time only this step. After the boundary
+    // completed — or on a behavior the boundary already applied (a
+    // mid-drain set from another implementation) — the post-load rules
+    // apply; this step's placeholder is the teaching error below. The
+    // revert-gated runtime toggle replaces it in a later step.
+    if (kcdx::behavior_registry::BoundaryCompleted() || b->applied) {
+        const std::string detail =
+            "kcdx.behavior.set('" + nameArg + "'): this behavior's value is "
+            "settled for the session — sets are recorded during plugin load "
+            "and applied ONCE at the apply boundary (after every plugin has "
+            "loaded), and that boundary has already run for '" +
+            b->fullName + "'. Runtime (post-load) toggling is not built "
+            "yet; it arrives with the declare spec's `revert` contract. Set "
+            "from your plugin's load entry (plugin.lua / lua_after).";
+        LOG_ERROR_KV(kCat, "set_post_load",
+            ::kcdx::log::KV("name", b->fullName),
+            ::kcdx::log::KV("detail", detail));
+        return luaL_error(L, "%s", detail.c_str());
+    }
+
+    std::string callSiteFile;
+    int callSiteLine = 0;
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+
+    // Conflict warn — a SECOND DIFFERENT plugin recording a DIFFERENT
+    // value over a standing record: one teaching warn naming both plugins,
+    // both values, and who won (the later — last-wins). A plugin re-setting
+    // its own record, or a different plugin recording an equal value
+    // (lua_rawequal — value identity, no metamethods), records silently.
+    if (b->recordedRef != kcdx::behavior_registry::kNoRef) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, b->recordedRef);  // old at -1
+        const std::string prevDesc = DescribeValue(L, -1);
+        lua_pushvalue(L, 2);                                // new at -1
+        const bool sameValue = lua_rawequal(L, -1, -2) != 0;
+        lua_pop(L, 2);
+        const bool samePlugin = (b->setterAuthor == owner.author &&
+                                 b->setterPlugin == owner.plugin);
+        if (!samePlugin && !sameValue) {
+            LOG_WARN_KV(kCat, "set_conflict",
+                ::kcdx::log::KV("behavior", b->fullName),
+                ::kcdx::log::KV("earlier_plugin",
+                    SetterLabel(b->setterAuthor, b->setterPlugin)),
+                ::kcdx::log::KV("earlier_value", prevDesc),
+                ::kcdx::log::KV("later_plugin",
+                    SetterLabel(owner.author, owner.plugin)),
+                ::kcdx::log::KV("later_value", DescribeValue(L, 2)),
+                ::kcdx::log::KV("winner",
+                    SetterLabel(owner.author, owner.plugin)),
+                ::kcdx::log::KV("note",
+                    "two plugins set the same behavior to different values; "
+                    "the LATER plugin in load order wins (last-wins) and "
+                    "its value is the one the apply boundary applies"));
+        }
+    }
+
+    // Record: last-wins. Pin the new value, release the old record.
+    lua_pushvalue(L, 2);
+    const int newRef = luaL_ref(L, LUA_REGISTRYINDEX);
+    if (b->recordedRef != kcdx::behavior_registry::kNoRef) {
+        luaL_unref(L, LUA_REGISTRYINDEX, b->recordedRef);
+    }
+    b->recordedRef  = newRef;
+    b->setterAuthor = owner.author;
+    b->setterPlugin = owner.plugin;
+
+    // The engine-tracked set-edge: consumer plugin -> the behavior it set
+    // (in-memory; feeds the ordering errors + persistence of later steps).
+    kcdx::behavior_registry::RecordEdge(
+        owner.author, owner.plugin, b->fullName);
+    return 0;
 }
 
 // kcdx.behavior.list([prefix]) — every registered behavior (both tiers, one
@@ -379,6 +543,8 @@ void bind(lua_State* L) {
     lua_newtable(L);
     lua_pushcfunction(L, Lua_Declare);
     lua_setfield(L, -2, "declare");
+    lua_pushcfunction(L, Lua_Set);
+    lua_setfield(L, -2, "set");
     lua_pushcfunction(L, Lua_Get);
     lua_setfield(L, -2, "get");
     lua_pushcfunction(L, Lua_List);

@@ -1,15 +1,19 @@
--- CAP-100 plugin.lua — kcdx.behavior.* declare/get/list (the named-behavior
--- registry's read side).
+-- CAP-100 plugin.lua — kcdx.behavior.* declare/set/get/list (the
+-- named-behavior registry's single-plugin surface).
 --
--- Declares are a LOAD-TIME act, so every declare (clean + the deliberately-bad
--- fixtures, all pcall-guarded) runs HERE at the top level of plugin.lua — the
--- canonical load window. The assertions run immediately after (declare is
--- synchronous); the rows REPORT at ready, the suite's usual reporting point.
+-- Declares + sets are a LOAD-TIME act, so every declare/set (clean + the
+-- deliberately-bad fixtures, all pcall-guarded) runs HERE at the top level of
+-- plugin.lua — the canonical load window. Read-side assertions run
+-- immediately after (declare/set are synchronous records); those rows REPORT
+-- at ready. The BOUNDARY-dependent rows (did the implementation fire once
+-- with the recorded value; does a post-load set error) report at
+-- "input_loaded" — the apply boundary runs pre-InputLoaded, so input_loaded
+-- is the earliest post-boundary observation point ("ready" fires at the
+-- first ApplyZone pass, BEFORE the boundary).
 --
--- `set` does not exist yet (a later step), so every behavior here is
--- never-set: get must answer the spec's DEFAULT, and a list entry's `current`
--- must equal its `default`. The recorded-value machinery is asserted exactly
--- through that contract.
+-- Behaviors this plugin never sets must still answer the spec's DEFAULT from
+-- get, and a list entry's `current` must equal its `default` — the never-set
+-- contract is asserted alongside the set round-trip.
 --
 -- This plugin's engine-derived stamp prefix: ts.cap_100_behavior.
 -- (author "ts" + name "cap_100_behavior" from the manifest — the plugin never
@@ -24,6 +28,12 @@ local function rec(row, pass, reason)
     results[#results + 1] = { row = row, pass = pass, reason = reason }
 end
 
+-- Boundary-dependent results, reported at input_loaded (post-boundary).
+local late_results = {}
+local function rec_late(row, pass, reason)
+    late_results[#late_results + 1] = { row = row, pass = pass, reason = reason }
+end
+
 local ROWS = {
     "cap-100-declare-list",
     "cap-100-missing-field-errors",
@@ -31,7 +41,21 @@ local ROWS = {
     "cap-100-get-default",
     "cap-100-list-prefix-filter",
     "cap-100-alias-get",
+    "cap-100-set-nil-error",
 }
+local LATE_ROWS = {
+    "cap-100-set-records-and-applies",
+    "cap-100-post-load-set-error",
+}
+
+-- State the boundary-dependent rows read at input_loaded. Declared at file
+-- scope (NOT inside the verbs_ok branch) so the input_loaded closure below
+-- captures these as upvalues, not globals.
+local counted_fires = 0
+local counted_value = nil
+local ok_counted, err_counted
+local ok_set, err_set
+local ok_get_after_set, get_after_set
 
 -- The domain must be a TABLE before any member is read — a non-table
 -- kcdx.behavior would make the member index itself the error. The type check
@@ -40,6 +64,7 @@ local ROWS = {
 local domain_ok = type(kcdx.behavior) == "table"
 local verbs_ok = domain_ok
     and type(kcdx.behavior.declare) == "function"
+    and type(kcdx.behavior.set) == "function"
     and type(kcdx.behavior.get) == "function"
     and type(kcdx.behavior.list) == "function"
 if not verbs_ok then
@@ -49,13 +74,20 @@ if not verbs_ok then
     if domain_ok then
         detail = detail
             .. ", declare=" .. type(kcdx.behavior.declare)
+            .. ", set=" .. type(kcdx.behavior.set)
             .. ", get=" .. type(kcdx.behavior.get)
             .. ", list=" .. type(kcdx.behavior.list)
     end
     for _, row in ipairs(ROWS) do
         rec(row, false,
-            "the kcdx.behavior domain did not register its declare/get/list "
-            .. "verbs (" .. detail
+            "the kcdx.behavior domain did not register its "
+            .. "declare/set/get/list verbs (" .. detail
+            .. ") — the binder is missing; no behavior row can run")
+    end
+    for _, row in ipairs(LATE_ROWS) do
+        rec(row, false,
+            "the kcdx.behavior domain did not register its "
+            .. "declare/set/get/list verbs (" .. detail
             .. ") — the binder is missing; no behavior row can run")
     end
 else
@@ -110,6 +142,29 @@ else
         default        = "second-default",
         implementation = impl,
     })
+
+    -- Set fixture: a counting implementation + a load-time set. The
+    -- implementation must fire EXACTLY ONCE at the apply boundary with the
+    -- final recorded value (asserted at input_loaded — post-boundary).
+    -- (Assigned to the file-scope locals above, read at input_loaded.)
+    ok_counted, err_counted = pcall(kcdx.behavior.declare, "counted", {
+        description    = "cap-100 set fixture (counting implementation)",
+        default        = 1,
+        implementation = function(value)
+            counted_fires = counted_fires + 1
+            counted_value = value
+        end,
+    })
+    ok_set, err_set = pcall(kcdx.behavior.set, "counted", 99)
+    ok_get_after_set, get_after_set =
+        pcall(kcdx.behavior.get, "counted")
+
+    -- set(name, nil) fixture: nil is the unset sentinel — must RAISE, and
+    -- the standing record must be untouched.
+    local ok_setnil, err_setnil =
+        pcall(kcdx.behavior.set, "speed_mult", nil)
+    local ok_get_after_nil, get_after_nil =
+        pcall(kcdx.behavior.get, "speed_mult")
 
     -- =====================================================================
     -- cap-100-declare-list — the clean declares registered and list() shows
@@ -315,6 +370,7 @@ else
             [PREFIX .. "speed_mult"] = false,
             [PREFIX .. "greeting"]   = false,
             [PREFIX .. "dup_target"] = false,
+            [PREFIX .. "counted"]    = false,
         }
         local verdict = nil
         if type(entries) ~= "table" then
@@ -339,21 +395,21 @@ else
                     end
                 end
             end
-            if not verdict and #entries ~= 3 then
+            if not verdict and #entries ~= 4 then
                 verdict = "list('" .. PREFIX .. "') returned " .. #entries
-                    .. " entries (expected exactly 3: speed_mult / greeting "
-                    .. "/ dup_target — the rejected fixtures must not "
-                    .. "register, and no foreign entry may match)"
+                    .. " entries (expected exactly 4: speed_mult / greeting "
+                    .. "/ dup_target / counted — the rejected fixtures must "
+                    .. "not register, and no foreign entry may match)"
             end
         end
         if verdict then
             rec(row, false, verdict)
         else
             rec(row, true, "list('" .. PREFIX .. "') returned exactly this "
-                .. "plugin's 3 registered behaviors (speed_mult / greeting / "
-                .. "dup_target), every name prefix-matched — the filter "
-                .. "scopes to the stamped namespace and rejected declares "
-                .. "left no entry")
+                .. "plugin's 4 registered behaviors (speed_mult / greeting / "
+                .. "dup_target / counted), every name prefix-matched — the "
+                .. "filter scopes to the stamped namespace and rejected "
+                .. "declares left no entry")
         end
     end
 
@@ -402,17 +458,143 @@ else
             end
         end
     end
+
+    -- =====================================================================
+    -- cap-100-set-nil-error — set(name, nil) RAISES the nil-sentinel
+    -- teaching error and the standing record is untouched (get still 42).
+    -- FALSIFIABLE: the nil set succeeds (nil stored as a value / treated as
+    -- an unset call), the error does not teach the unset-sentinel rule, or
+    -- get no longer answers 42 -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-set-nil-error"
+        if ok_setnil then
+            rec(row, false, "set('speed_mult', nil) SUCCEEDED — nil is the "
+                .. "engine's unset sentinel, never a value; the nil set "
+                .. "must raise the teaching error")
+        elseif type(err_setnil) ~= "string"
+            or not string.find(err_setnil, "unset", 1, true) then
+            rec(row, false, "set('speed_mult', nil) raised but the error "
+                .. "does not teach the unset-sentinel rule (got: "
+                .. tostring(err_setnil) .. ")")
+        elseif not ok_get_after_nil or get_after_nil ~= 42 then
+            rec(row, false, "after the rejected nil set, get('speed_mult') "
+                .. "reads " .. tostring(get_after_nil)
+                .. " (expected the untouched default 42) — the rejected "
+                .. "set mutated the record")
+        else
+            rec(row, true, "set('speed_mult', nil) raised the nil-sentinel "
+                .. "teaching error ('to leave a behavior unset, don't set "
+                .. "it') and the record is untouched (get still answers 42)")
+        end
+    end
 end
 
--- Report at ready (the suite's reporting point); the observations above were
--- captured at load.
+-- Report the load-observable rows at ready; the observations above were
+-- captured at load. (When the binder is missing, the LATE_ROWS were folded
+-- into `results` and report here too.)
 kcdx.on("ready", function()
     for _, r in ipairs(results) do
         kcdx.test.report(r.row, r.pass, r.reason)
     end
     kcdx.log.info("CAP100",
-        "kcdx.behavior declare/get/list self-test reported "
-        .. #results .. " rows (declare+stamp+list round-trip, missing-field "
-        .. "teaching errors, duplicate-second-errors/first-stands, "
-        .. "get-answers-default, list prefix filter, alias-handle get)")
+        "kcdx.behavior declare/set/get/list self-test reported "
+        .. #results .. " load-observable rows (declare+stamp+list "
+        .. "round-trip, missing-field teaching errors, "
+        .. "duplicate-second-errors/first-stands, get-answers-default, "
+        .. "list prefix filter, alias-handle get, set-nil teaching error)")
+end)
+
+-- Boundary-dependent rows report at input_loaded — the apply boundary runs
+-- post-RunPostGameLoad / pre-InputLoaded, so this is the earliest
+-- post-boundary observation point ("ready" fires BEFORE the boundary).
+kcdx.on("input_loaded", function()
+    if not verbs_ok then return end  -- already reported as FAILs at ready
+
+    -- =====================================================================
+    -- cap-100-set-records-and-applies — the single-plugin set round-trip:
+    -- the load-time set RECORDED immediately (get answered 99 right after
+    -- the set, pre-boundary), and the boundary invoked the implementation
+    -- EXACTLY ONCE with that final value (counter==1, captured==99), and
+    -- get still answers 99 post-boundary.
+    -- FALSIFIABLE: the set raised, get did not answer the recorded value
+    -- immediately, the implementation fired 0 or 2+ times, it received a
+    -- different value, or the post-boundary get drifted -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-set-records-and-applies"
+        local okNow, vNow = pcall(kcdx.behavior.get, "counted")
+        if not ok_counted then
+            rec_late(row, false, "the 'counted' declare RAISED: "
+                .. tostring(err_counted))
+        elseif not ok_set then
+            rec_late(row, false, "set('counted', 99) at load RAISED: "
+                .. tostring(err_set) .. " — a load-window set on an own "
+                .. "behavior must record")
+        elseif not ok_get_after_set or get_after_set ~= 99 then
+            rec_late(row, false, "get('counted') immediately after the "
+                .. "load-time set read " .. tostring(get_after_set)
+                .. " (expected 99) — the set did not record visibly")
+        elseif counted_fires ~= 1 then
+            rec_late(row, false, "the 'counted' implementation fired "
+                .. counted_fires .. " times (expected EXACTLY ONCE at the "
+                .. "apply boundary)")
+        elseif counted_value ~= 99 then
+            rec_late(row, false, "the 'counted' implementation received "
+                .. tostring(counted_value)
+                .. " (expected the final recorded value 99)")
+        elseif not okNow or vNow ~= 99 then
+            rec_late(row, false, "post-boundary get('counted') reads "
+                .. tostring(vNow) .. " (expected 99 — the applied record)")
+        else
+            rec_late(row, true, "set recorded at load (get answered 99 "
+                .. "immediately), the apply boundary invoked the "
+                .. "implementation exactly once with the final value 99, "
+                .. "and get still answers 99 post-boundary")
+        end
+    end
+
+    -- =====================================================================
+    -- cap-100-post-load-set-error — a set AFTER the boundary (from this
+    -- input_loaded handler) RAISES the post-load placeholder teaching error
+    -- (runtime toggling arrives with the revert contract) and the applied
+    -- record is untouched.
+    -- FALSIFIABLE: the post-load set succeeds (a recorded-but-never-applied
+    -- value — get would lie), the error does not name the apply-boundary
+    -- rule, or the record changed -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-post-load-set-error"
+        local okSet, errSet = pcall(kcdx.behavior.set, "counted", 123)
+        local okGet, v = pcall(kcdx.behavior.get, "counted")
+        if okSet then
+            rec_late(row, false, "a post-load set('counted', 123) "
+                .. "SUCCEEDED — after the apply boundary a set must raise "
+                .. "the teaching error (runtime toggling is not built yet); "
+                .. "a recorded-but-never-applied value would make get() lie")
+        elseif type(errSet) ~= "string"
+            or not string.find(errSet, "apply boundary", 1, true) then
+            rec_late(row, false, "the post-load set raised but the error "
+                .. "does not name the apply-boundary rule (got: "
+                .. tostring(errSet) .. ")")
+        elseif not okGet or v ~= 99 then
+            rec_late(row, false, "after the rejected post-load set, "
+                .. "get('counted') reads " .. tostring(v)
+                .. " (expected the applied 99) — the rejected set mutated "
+                .. "the record")
+        else
+            rec_late(row, true, "the post-load set raised the placeholder "
+                .. "teaching error (names the apply-boundary rule + that "
+                .. "runtime toggling arrives with the revert contract) and "
+                .. "the applied record is untouched (get still 99)")
+        end
+    end
+
+    for _, r in ipairs(late_results) do
+        kcdx.test.report(r.row, r.pass, r.reason)
+    end
+    kcdx.log.info("CAP100",
+        "kcdx.behavior set/boundary self-test reported "
+        .. #late_results .. " post-boundary rows (set-records-and-applies "
+        .. "once-with-final-value, post-load set teaching error)")
 end)

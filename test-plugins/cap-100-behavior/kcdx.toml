@@ -1,20 +1,25 @@
-# CAP-100 — kcdx.behavior.* declare/get/list (the named-behavior registry's
-# read-side surface).
+# CAP-100 — kcdx.behavior.* declare/set/get/list (the named-behavior
+# registry's single-plugin surface: declare + the read side + the set record
+# + the apply boundary).
 #
-# A real Lua plugin that DECLARES behaviors at load (the load-time act), then
-# asserts the read surface: declare registers under the engine-stamped
+# A real Lua plugin that DECLARES + SETS behaviors at load (the load-time
+# acts), then asserts: declare registers under the engine-stamped
 # <author>.<plugin>.<bare> full name (this plugin's prefix:
 # ts.cap_100_behavior.); a spec missing a required field (description /
 # non-nil default / implementation) RAISES a teaching error naming the field;
 # a duplicate same-full-name declare errors on the SECOND declare while the
-# FIRST stands and keeps resolving; get returns the spec's default while a
-# behavior was never set (set is a later step — every get answers the
-# default); list([prefix]) returns the registered behaviors with
-# name/description/default/current/declarer and the prefix filter scopes to
-# this plugin's own entries.
+# FIRST stands and keeps resolving; get returns the recorded value once set,
+# else the spec's default; a load-time set RECORDS immediately and the apply
+# boundary (post-RunPostGameLoad, pre-InputLoaded) invokes the implementation
+# EXACTLY ONCE with the final value; set(name, nil) raises the unset-sentinel
+# teaching error; a post-load set raises the placeholder teaching error
+# (runtime toggling arrives with the revert contract); list([prefix]) returns
+# the registered behaviors with name/description/default/current/declarer and
+# the prefix filter scopes to this plugin's own entries.
 #
-# What it proves (all boot-only, auto-pass; declares + fixture pcalls run at
-# load, rows report at ready):
+# What it proves (all boot-only, auto-pass; declares + sets + fixture pcalls
+# run at load; load-observable rows report at ready, boundary-dependent rows
+# report at input_loaded — the earliest post-boundary point):
 #   1. cap-100-declare-list — two clean declares register; list() carries the
 #      stamped full names with the right description / default / declarer.
 #      FALSIFIABLE: a declare raises, the stamped name is absent from list(),
@@ -44,8 +49,24 @@
 #      full name resolves through get to the same value as the direct
 #      full-name get (alias substitution feeds the behavior resolution).
 #      FALSIFIABLE: the alias path raises or returns a different value -> FAIL.
+#   7. cap-100-set-nil-error — set(name, nil) RAISES the unset-sentinel
+#      teaching error; the standing record is untouched.
+#      FALSIFIABLE: the nil set succeeds, the error doesn't teach the
+#      unset rule, or the record changed -> FAIL.
+#   8. cap-100-set-records-and-applies — the load-time set records
+#      immediately (get answers 99 pre-boundary) and the apply boundary
+#      invokes the implementation EXACTLY ONCE with the final value
+#      (counter==1, captured==99); get still answers 99 post-boundary.
+#      FALSIFIABLE: the set raises, the record isn't visible, the
+#      implementation fires 0 or 2+ times, receives a different value, or
+#      the post-boundary get drifts -> FAIL.
+#   9. cap-100-post-load-set-error — a set from the input_loaded handler
+#      (after the boundary) RAISES the placeholder teaching error naming
+#      the apply-boundary rule; the applied record is untouched.
+#      FALSIFIABLE: the post-load set succeeds (get would lie), the error
+#      doesn't name the rule, or the record changed -> FAIL.
 #
-# Test mode: boot-only (launch-to-menu confirms all six rows; no player
+# Test mode: boot-only (launch-to-menu confirms all nine rows; no player
 # input).
 
 [kcdx]
@@ -53,9 +74,9 @@ test_suite_only = true
 
 [plugin]
 name                = "cap_100_behavior"
-display_name        = "CAP-100 kcdx.behavior declare/get/list"
+display_name        = "CAP-100 kcdx.behavior declare/set/get/list"
 author              = "ts"
-description         = "Pure-Lua self-test of the kcdx.behavior read-side surface: declare stamps + registers, missing-field specs raise teaching errors, a duplicate declare errors on the second while the first stands, get answers the spec's default on a never-set behavior (bare + full-name resolution; unknown names raise), and list's prefix filter scopes to the plugin's own entries."
+description         = "Pure-Lua self-test of the kcdx.behavior single-plugin surface: declare stamps + registers, missing-field specs raise teaching errors, a duplicate declare errors on the second while the first stands, get answers the recorded value once set else the spec's default (bare + full-name resolution; unknown names raise), a load-time set records immediately and the apply boundary invokes the implementation exactly once with the final value, set(name, nil) and a post-load set each raise their teaching error, and list's prefix filter scopes to the plugin's own entries."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
@@ -66,6 +87,9 @@ test_names          = [
     "cap-100-get-default",
     "cap-100-list-prefix-filter",
     "cap-100-alias-get",
+    "cap-100-set-nil-error",
+    "cap-100-set-records-and-applies",
+    "cap-100-post-load-set-error",
 ]
 
 [entrypoints]

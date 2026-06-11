@@ -10,7 +10,9 @@ both plugins and both values; `set(name, nil)` teaching error; the apply
 boundary at the probed point (step 1's finding): worklist drain, at-most-once
 per boundary, never-set skipped, boundary-drain set rules (pending update /
 toggle-rules branch), boundary-raise disposition (value + applied-flag cleared,
-attributed, drain continues). Doc increment: `set` section + the apply-boundary
+attributed, drain continues). Also ships the in-memory set-edges store +
+setter identity (resolved-set recording — s4 extends recording to the
+ordering-failed branches). Doc increment: `set` section + the apply-boundary
 model in `docs/lua/behavior.md`.
 
 **Test bar.** Cap rows: US-1/US-2 end-to-end (declarer plugin + two-line

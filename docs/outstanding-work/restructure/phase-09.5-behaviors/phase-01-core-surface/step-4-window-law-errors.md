@@ -1,7 +1,8 @@
 # P1 step 4 — window law + resolution errors + in-memory edges
 
 **What.** The full teaching-error story for a `set` that cannot resolve, the
-out-of-window wall, and in-memory edge recording (persistence is step 6).
+out-of-window wall, and edge recording on the ordering-failed resolution
+branches (the in-memory store landed in s3; persistence is step 6).
 
 **Scope.** The five discriminating branches per design §6 (prefixed-later with
 first-launch-calibrated wording; loaded-no-such-name with failed-declarer
