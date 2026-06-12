@@ -133,10 +133,51 @@ TD-0010's deferred live proof is the reason this shipped unexercised.
 
 ## Scope after the simplification
 
-A single `src/`-only `/execute` fix (fork 1, in `lua_bind_statement.cpp` — the
-cause-test is comp-20-declarer-statement red→green) + the fixture re-point
-(fork 2, a target-selection sub-decision at the cycle) + a `/tech-debt` entry
-(fork 3). No `/plan` tree, no DB pipeline change, no owed probe.
+A single `src/`-only `/execute` fix (fork 1, in `lua_bind_statement.cpp`) + a
+fixture RE-FRAME (fork 2, corrected below) + two `/tech-debt` entries
+(fork 3 + the live-write blocker). No `/plan` tree, no DB pipeline change, no
+owed probe.
+
+## Fork-2 CORRECTED — re-frame the fixtures, do NOT re-point (user-decided 2026-06-11)
+
+The "re-point to a boot-safe curated target" plan was rejected on two checkable
+facts the earlier framing got wrong:
+
+1. **No curated function is a safe NOP target.** Every one of the 157 curated
+   `address_names_seed.csv` rows is either an author-forwarded shim entry (91
+   forwarded via `src/lua_shim.cpp`) or a production hook target. `lua_getlocal`
+   specifically is exported to plugins as `GetLocal` (`include/kcdx/Interfaces.h:1117`,
+   `src/scripting_interface.cpp:391`, `src/lua_shim.cpp:155`) — NOPing it breaks a
+   stack-introspection plugin exactly as NOPing SaveGame breaks save. The DB is a
+   registry of functions kcdx USES; there is no junk function in it to NOP.
+2. **The live apply has never executed on ANY target** — NO statement tables are
+   deployed (`data/db-export/` carries only `address_names_seed` /
+   `address_versions_seed` / `module_seed`). `refdb::ResolveStatementByName`
+   returns `function_no_statements` for SaveGame AND lua_getlocal alike, and both
+   fixtures already PASS on that degraded arm (cap-92 `plugin.lua:111`; comp-20
+   `plugin.lua:38`). The byte-write was ASSERTED in code, never OBSERVED.
+
+**The fix (fork 1) still belongs** — the carrier would trip the length
+precondition the instant statement data IS deployed; filling `original` is the
+correct latent-correctness fix. But its cause-test is the **resolve→register→
+verdict wiring**, NOT a live `:applied()==true` claim (which no target can
+honestly make today).
+
+**Re-frame both fixtures** (`cap-92-replace-with-registers`,
+`comp-20-declarer-statement`): assert resolution reached + registered as
+`Kind::Statement` + an HONEST verdict (Pending / degraded `function_no_statements`
+/ co-location reject) — never `:applied()==true` against a real game function.
+The other cap-92 rows (kind-mismatch, deferred-op, zero-dispatch) stay as-is
+(structural reject/static-op properties, no NOP-safe-target dependency). Update
+the matrix row text: the falsifiable claim is explicitly "asserts wiring, not a
+live write." Both stay PERMANENT regression plugins — this is NOT an exempt;
+resolve/register/verdict is real exercised coverage (bucket-1, safe-seam-reachable).
+
+**The live byte-write proof is a real future coverage item** — blocked on a
+purpose-built curated test-stub function (one the engine never calls and never
+forwards, with statement data deployed for it — net-new curation, AP18-gated,
+user-approved). Filed as its own tech-debt entry naming that blocker; NOT folded
+into this cycle and NOT dropped.
 
 ## What this report does NOT do
 
