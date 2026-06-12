@@ -9,7 +9,7 @@ current version V). No backend, no FE — pure data-core, tested by the data-cor
 
 | Step | Status | Commit |
 |---|---|---|
-| [1.1 — Close-intervals already-done skip + reconciliation classification](step-1-close-skip-reconciliation.md) | DONE | (landed) — close-intervals emits no edit-spec when the target is already closed to its last_verified (the D41 fact-2 symmetric skip); the no-op confirm gap closed. test_reverify_resolver 11/11 ACCEPT, mutation-confirmed falsifiable. |
+| [1.1 — Close-intervals already-done skip + reconciliation classification](step-1-close-skip-reconciliation.md) | DONE | 07fcf70 — close-intervals emits no edit-spec when the target is already closed to its last_verified (the D41 fact-2 symmetric skip); the no-op confirm gap closed. test_reverify_resolver 11/11 ACCEPT, mutation-confirmed falsifiable. |
 | [1.2 — The lifecycle-completeness detection query](step-2-lifecycle-detection-query.md) | NOT STARTED | — |
 
 ## Phase verification gate
