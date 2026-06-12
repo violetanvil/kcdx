@@ -17,5 +17,5 @@ README's summary. Shared spec + coverage map: [plan-spec.md](plan-spec.md).
 | Step | Status | Commit |
 |---|---|---|
 | [Phase 1 — Data-core: reconciliation skip + lifecycle detection](phase-01-data-core/README.md) | DONE | e7f7e88 — 1.1 07fcf70 (close-intervals already-done skip, D41 fact 2) + 1.2 e7f7e88 (lifecycle-completeness detection query, D41 fact 1). Both data-core steps green; full data-core 183 passed. |
-| [Phase 2 — Backend: expose detection + classification](phase-02-backend/README.md) | DONE | (landed) — 2.1 d319f14 (read-only GET /needs-action exposes the detection query) + 2.2 (landed) (the /save/reverify-batch preview classifies actionable vs already_acted). Both backend steps green; full backend suite 79 passed. |
+| [Phase 2 — Backend: expose detection + classification](phase-02-backend/README.md) | DONE | c816184 — 2.1 d319f14 (read-only GET /needs-action exposes the detection query) + 2.2 c816184 (the /save/reverify-batch preview classifies actionable vs already_acted). Both backend steps green; full backend suite 79 passed. |
 | [Phase 3 — Frontend: the s09 view + the s08 D41 fixes](phase-03-frontend/README.md) | NOT STARTED | — |
