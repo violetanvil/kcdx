@@ -4,8 +4,10 @@
 #include <array>
 #include <fstream>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "toml.hpp"
 
@@ -652,8 +654,9 @@ std::vector<RecognizedConflict> RecheckBehaviorEdgesAtLaunch() {
                 c.declarerPlugin + "' — the set will fail again this launch. "
                 "Move '" + c.consumerAuthor + "." + c.consumerPlugin +
                 "' below '" + c.declarerAuthor + "." + c.declarerPlugin +
-                "' in load_order.toml (or use kcdx.behavior's auto-order method "
-                "once it lands)"));
+                "' in load_order.toml (or run the behavior auto-order method, "
+                "which computes and writes the corrected order for the next "
+                "launch)"));
     }
 
     if (!conflicts.empty()) {
@@ -779,6 +782,465 @@ bool PriorLaunchEdgeForBare(const std::string& consumerAuthor,
 // TU; production populates the cache via RecheckBehaviorEdgesAtLaunch's boot read.
 void SetPriorLaunchEdgesForTest(const std::vector<BehaviorEdge>& edges) {
     PriorLaunchEdges() = edges;
+}
+
+// ============================================================================
+// The auto-order method — passive, callable order correction (design §6/§11/§12,
+// Phase 9.5 s7). The pure core (ComputeAutoOrder) + the pure upsert
+// (SerializeAutoOrderUpsert) take every input as a parameter (no global state,
+// no file I/O), so the s7 self-test drives them from literals (headless-testable
+// / design §14). The file-touching wrappers (UpsertPriorityRows, ApplyAutoOrder)
+// reuse the load_order.toml read/write/write-if-changed/fail-loud shape from
+// src/mod_absorb/order_persist.cpp (the existing TOML write precedent) — they do
+// NOT invent a parallel writer.
+// ============================================================================
+
+AutoOrderResult ComputeAutoOrder(
+    const std::vector<BehaviorEdge>& edges,
+    const std::vector<std::string>& currentOrder,
+    const std::function<bool(const std::string&, const std::string&)>&
+        isKnownPlugin,
+    const std::function<int(const std::string&)>& currentPriorityOf) {
+    AutoOrderResult result;
+
+    // Index each plugin by its current position so the topo sort can break ties
+    // by current order (the stable / minimal-displacement property: among nodes
+    // with no remaining constraint, the earliest-in-currentOrder is emitted
+    // first, so an unconstrained plugin never jumps an unconstrained sibling).
+    std::unordered_map<std::string, size_t> indexOf;
+    indexOf.reserve(currentOrder.size());
+    for (size_t i = 0; i < currentOrder.size(); ++i) {
+        indexOf.emplace(currentOrder[i], i);
+    }
+
+    // Build the constraint graph: a directed edge declarer -> consumer means the
+    // declarer must be emitted BEFORE the consumer. Derive the declarer plugin
+    // from each behavior's <author>.<plugin> prefix and PRUNE exactly as
+    // RecheckBehaviorEdges does — an edge whose consumer or declarer is absent
+    // from the discovered set, or whose behavior is a catalog name (no plugin
+    // declarer), cannot constrain an order. Both endpoints must also be present
+    // in currentOrder (an edge naming a plugin not in the order to be sorted is
+    // not a constraint over that order).
+    std::unordered_map<std::string, std::vector<std::string>> successors;  // declarer -> [consumers]
+    std::unordered_map<std::string, int> inDegree;
+    for (const std::string& name : currentOrder) inDegree[name] = 0;
+
+    // Dedup identical (declarer, consumer) constraints so a repeated edge does
+    // not inflate the in-degree (which would falsely look like a cycle).
+    std::unordered_set<std::string> seenConstraint;
+    for (const BehaviorEdge& e : edges) {
+        std::string declAuthor, declPlugin;
+        if (!DeclarerFromBehaviorName(e.behaviorFullName, declAuthor, declPlugin)) {
+            continue;  // catalog name / malformed — no plugin declarer to order.
+        }
+        if (!isKnownPlugin(e.consumerAuthor, e.consumerPlugin)) continue;
+        if (!isKnownPlugin(declAuthor, declPlugin)) continue;
+
+        const std::string& consumer = e.consumerPlugin;  // the load-order key.
+        const std::string& declarer = declPlugin;
+        if (consumer == declarer) continue;  // self-edge — never a constraint.
+        if (!indexOf.count(consumer) || !indexOf.count(declarer)) continue;
+
+        const std::string key = declarer + "\x1f" + consumer;
+        if (!seenConstraint.insert(key).second) continue;  // already counted.
+
+        successors[declarer].push_back(consumer);
+        inDegree[consumer] += 1;
+    }
+
+    // Stable Kahn's algorithm: repeatedly emit the AVAILABLE node (in-degree 0)
+    // that is EARLIEST in currentOrder. A min over the current-order index keeps
+    // unconstrained nodes in their current relative position (minimal
+    // displacement) while still pulling a declarer ahead of its consumer.
+    std::vector<std::string> corrected;
+    corrected.reserve(currentOrder.size());
+    std::unordered_set<std::string> emitted;
+    while (corrected.size() < currentOrder.size()) {
+        // Find the earliest-in-current-order node with in-degree 0, not yet
+        // emitted. (currentOrder is the canonical iteration order, so this scan
+        // is itself stable — first match wins.)
+        const std::string* pick = nullptr;
+        for (const std::string& name : currentOrder) {
+            if (emitted.count(name)) continue;
+            if (inDegree[name] != 0) continue;
+            pick = &name;
+            break;
+        }
+        if (!pick) {
+            // No available node but nodes remain → a CYCLE. The unresolved
+            // members (still in-degree > 0, or only reachable through one) are
+            // the cycle (and its tail). Report them; produce no order.
+            result.verdict = AutoOrderVerdict::Cycle;
+            for (const std::string& name : currentOrder) {
+                if (!emitted.count(name)) result.cycleMembers.push_back(name);
+            }
+            return result;
+        }
+        const std::string chosen = *pick;  // copy — currentOrder outlives, but be safe.
+        corrected.push_back(chosen);
+        emitted.insert(chosen);
+        auto it = successors.find(chosen);
+        if (it != successors.end()) {
+            for (const std::string& succ : it->second) {
+                inDegree[succ] -= 1;
+            }
+        }
+    }
+
+    // corrected[] now satisfies every constraint. If it equals currentOrder, the
+    // order was already correct — no change.
+    if (corrected == currentOrder) {
+        result.verdict = AutoOrderVerdict::NoChange;
+        return result;
+    }
+
+    // Translate the corrected SEQUENCE into priority rows with MINIMAL
+    // displacement: keep each plugin's CURRENT priority wherever doing so already
+    // preserves the corrected order under RunsBefore's (priority, name) tiebreak,
+    // and bump ONLY a plugin that would otherwise sort out of place. A row is
+    // emitted ONLY for a plugin whose priority actually changed — an unmoved row
+    // keeps its current priority and gets no row.
+    //
+    // Walk corrected[] in order, tracking a `floor`: the priority the next plugin
+    // must NOT sort before. For plugin P at corrected[i], with prev = corrected
+    // [i-1]:
+    //   - If P's current priority > floor, P already sorts strictly after prev on
+    //     priority — keep it; advance floor to P's current priority.
+    //   - If P's current priority == floor AND P's name sorts after prev's name,
+    //     P sorts after prev on the name tiebreak — keep it; floor unchanged.
+    //   - Otherwise P would sort at/before prev — BUMP P to floor + 1 (the
+    //     smallest value that orders it strictly after, preserving sparse room)
+    //     and record the move; advance floor to the bumped value.
+    // The first plugin keeps its current priority (nothing precedes it). The
+    // bump is clamped to 100; if floor reaches 100, ties past that still break on
+    // name in corrected order (the sort is total via the name key).
+    result.verdict = AutoOrderVerdict::Reordered;
+    result.correctedOrder = corrected;
+    int floor = INT_MIN;            // priority the current plugin must beat (or tie+name).
+    std::string prevName;          // the previously-emitted plugin's name.
+    bool havePrev = false;
+    for (const std::string& name : corrected) {
+        const int cur = currentPriorityOf(name);
+        int assigned = cur;
+        if (!havePrev) {
+            assigned = cur;                       // first plugin — nothing precedes it.
+        } else if (cur > floor) {
+            assigned = cur;                       // already strictly after on priority.
+        } else if (cur == floor && prevName < name) {
+            assigned = cur;                       // ties prev, but name orders it after.
+        } else {
+            assigned = (floor < 100) ? floor + 1 : 100;  // bump to order after prev.
+        }
+        if (assigned != cur) {
+            AutoOrderMove mv;
+            mv.pluginName  = name;
+            mv.newPriority = assigned;
+            mv.oldPriority = cur;
+            result.moved.push_back(std::move(mv));
+        }
+        floor    = assigned;
+        prevName = name;
+        havePrev = true;
+    }
+
+    // If the corrected SEQUENCE differs from currentOrder yet no priority row
+    // changed (every needed move was already expressible at the same priority,
+    // resolved by the name tiebreak), there is nothing to write — treat as
+    // NoChange so the apply does not churn the file. (The corrected order still
+    // holds via the name tiebreak.)
+    if (result.moved.empty()) {
+        result.verdict = AutoOrderVerdict::NoChange;
+    }
+    return result;
+}
+
+std::string SerializeAutoOrderUpsert(const std::string& existingText,
+                                     const std::vector<AutoOrderMove>& moves) {
+    // Map name -> new priority for O(1) lookup while scanning rows.
+    std::unordered_map<std::string, int> wantPriority;
+    for (const AutoOrderMove& mv : moves) wantPriority[mv.pluginName] = mv.newPriority;
+
+    // Scan the existing body line by line, tracking the current [[plugin]] row's
+    // name. When we leave a row whose name is a move target, ensure its priority
+    // line carries the new value (rewrite an existing one, or insert one). Names
+    // we successfully upsert in place are removed from `wantPriority`; whatever
+    // remains is appended as a fresh row at the end.
+    //
+    // The line scan mirrors order_persist::ExistingRowNames' bare-scan posture
+    // (NOT a toml++ round-trip — that would drop the file's comments + the
+    // per-row human-name comments). We only touch the `priority` field of a
+    // named row; every other byte is preserved verbatim.
+    std::istringstream in(existingText);
+    std::string line;
+    std::vector<std::string> lines;
+    while (std::getline(in, line)) lines.push_back(line);
+
+    auto trim = [](const std::string& s) -> std::string {
+        size_t b = 0, e = s.size();
+        while (b < e && (s[b] == ' ' || s[b] == '\t' || s[b] == '\r')) ++b;
+        while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t' || s[e - 1] == '\r')) --e;
+        return s.substr(b, e - b);
+    };
+    // Extract the double-quoted value after `name =`. Returns "" if not a name line.
+    auto nameOfLine = [&](const std::string& raw) -> std::string {
+        const std::string t = trim(raw);
+        if (t.empty() || t[0] == '#') return "";
+        if (t.rfind("name", 0) != 0) return "";
+        size_t eq = t.find('=', 4);
+        if (eq == std::string::npos) return "";
+        if (!trim(t.substr(4, eq - 4)).empty()) return "";  // "named"/"namespace"
+        size_t q1 = t.find('"', eq + 1);
+        if (q1 == std::string::npos) return "";
+        size_t q2 = t.find('"', q1 + 1);
+        if (q2 == std::string::npos) return "";
+        return t.substr(q1 + 1, q2 - q1 - 1);
+    };
+    auto isTableHeader = [&](const std::string& raw) -> bool {
+        const std::string t = trim(raw);
+        return !t.empty() && t[0] == '[';
+    };
+    auto isPriorityLine = [&](const std::string& raw) -> bool {
+        const std::string t = trim(raw);
+        if (t.empty() || t[0] == '#') return false;
+        if (t.rfind("priority", 0) != 0) return false;
+        size_t eq = t.find('=', 8);
+        if (eq == std::string::npos) return false;
+        return trim(t.substr(8, eq - 8)).empty();
+    };
+
+    // First pass: find each move-target row's line span [rowStart, rowEnd) and
+    // whether it already has a priority line. We rewrite in a copy.
+    std::vector<std::string> out;
+    out.reserve(lines.size() + moves.size() * 2);
+
+    size_t i = 0;
+    while (i < lines.size()) {
+        const std::string& cur = lines[i];
+        const std::string rowName = nameOfLine(cur);
+        auto want = (rowName.empty()) ? wantPriority.end()
+                                      : wantPriority.find(rowName);
+        if (want == wantPriority.end()) {
+            out.push_back(cur);
+            ++i;
+            continue;
+        }
+
+        // This is a move-target row's name line. Emit the name line, then walk
+        // the rest of the row (until the next table header / EOF), rewriting an
+        // existing priority line or inserting one before the row ends.
+        out.push_back(cur);
+        const int newPrio = want->second;
+        wantPriority.erase(want);  // consumed in place.
+        ++i;
+
+        bool wrotePriority = false;
+        // Collect the row's body lines (up to the next table header), so we can
+        // insert a priority line at the row's end if it had none.
+        std::vector<std::string> body;
+        while (i < lines.size() && !isTableHeader(lines[i])) {
+            if (isPriorityLine(lines[i])) {
+                body.push_back("priority  = " + std::to_string(newPrio) +
+                               "   # set by kcdx auto-order");
+                wrotePriority = true;
+            } else {
+                body.push_back(lines[i]);
+            }
+            ++i;
+        }
+        if (!wrotePriority) {
+            // Insert a priority line at the END of the row body (after the last
+            // non-blank body line, before any trailing blank that separates rows).
+            size_t insertAt = body.size();
+            while (insertAt > 0 && trim(body[insertAt - 1]).empty()) --insertAt;
+            body.insert(body.begin() + insertAt,
+                        "priority  = " + std::to_string(newPrio) +
+                        "   # set by kcdx auto-order");
+        }
+        for (const std::string& bl : body) out.push_back(bl);
+    }
+
+    // Reassemble, preserving the original trailing-newline shape (join with '\n',
+    // and add a final newline iff the input had one — or if the input was empty
+    // and we are about to append a fresh row).
+    std::string result;
+    for (size_t k = 0; k < out.size(); ++k) {
+        result += out[k];
+        result += '\n';
+    }
+    // If the original had NO trailing newline, the loop added one extra; that is
+    // harmless (a TOML body is newline-tolerant) and matches order_persist's
+    // append posture (which also normalizes to a trailing newline before
+    // appending). Now append a fresh [[plugin]] row for any move target that had
+    // no existing row.
+    if (!wantPriority.empty()) {
+        // Deterministic append order: follow the `moves` input order.
+        if (!result.empty() && result.back() != '\n') result += '\n';
+        for (const AutoOrderMove& mv : moves) {
+            auto it = wantPriority.find(mv.pluginName);
+            if (it == wantPriority.end()) continue;
+            result += "\n[[plugin]]\n";
+            result += "name      = \"";
+            result += mv.pluginName;
+            result += "\"\n";
+            result += "priority  = " + std::to_string(mv.newPriority) +
+                      "   # set by kcdx auto-order\n";
+            wantPriority.erase(it);
+        }
+    }
+    return result;
+}
+
+bool UpsertPriorityRows(const fs::path& loadOrderPath,
+                        const std::vector<AutoOrderMove>& moves) {
+    if (moves.empty()) return true;  // nothing to upsert.
+
+    std::string existing;
+    bool existed = false;
+    if (!ReadEdgeFileText(loadOrderPath, existing, existed)) {
+        // Present but unreadable — fail LOUD, do NOT blind-overwrite (the same
+        // posture order_persist::WriteLoadOrderToml takes: never clobber a file
+        // we could not read, the user's hand-edits would be lost).
+        LOG_ERROR_KV(kEdgeCat, "auto_order_write_read_fail",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(loadOrderPath)),
+            kcdx::log::KV("consequence",
+                "load_order.toml exists but could not be read — the auto-order "
+                "priority rows were NOT written; the corrected order was not "
+                "persisted (the user's order is unchanged)"));
+        return false;
+    }
+
+    const std::string merged = SerializeAutoOrderUpsert(existing, moves);
+    if (merged == existing) {
+        LOG_DEBUG_KV(kEdgeCat, "auto_order_write_skip",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(loadOrderPath)),
+            kcdx::log::KV("reason",
+                "unchanged — the corrected priority rows already match disk"));
+        return true;
+    }
+
+    if (!WriteEdgeFileText(loadOrderPath, merged)) {
+        LOG_ERROR_KV(kEdgeCat, "auto_order_write_fail",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(loadOrderPath)),
+            kcdx::log::KV("rows", (uint64_t)moves.size()),
+            kcdx::log::KV("consequence",
+                "could not write load_order.toml — the auto-order corrected "
+                "priorities were NOT persisted; the bad order remains and the "
+                "next launch's set will fail again at its call site"));
+        return false;
+    }
+
+    LOG_INFO_KV(kEdgeCat, "auto_order_write",
+        kcdx::log::KV("file", kcdx::paths::ToUtf8(loadOrderPath)),
+        kcdx::log::KV("rows", (uint64_t)moves.size()));
+    return true;
+}
+
+AutoOrderResult ApplyAutoOrder() {
+    AutoOrderResult result;
+
+    // 1. Read the SAME persisted edge store the launch re-check consumes.
+    const fs::path edgePath = BehaviorEdgesPath();
+    std::string text;
+    bool existed = false;
+    if (!ReadEdgeFileText(edgePath, text, existed)) {
+        LOG_WARN_KV(kEdgeCat, "auto_order_edges_read_fail",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(edgePath)),
+            kcdx::log::KV("consequence",
+                "behavior_edges.toml exists but could not be read — auto-order "
+                "has no constraints to satisfy; nothing reordered"));
+        result.verdict = AutoOrderVerdict::NoChange;
+        return result;
+    }
+    if (!existed) {
+        LOG_INFO_KV(kEdgeCat, "auto_order_no_edges",
+            kcdx::log::KV("reason",
+                "no persisted behavior_edges.toml — no ordering constraints to "
+                "satisfy (nothing to reorder)"));
+        result.verdict = AutoOrderVerdict::NoChange;
+        return result;
+    }
+    const std::vector<BehaviorEdge> edges = ParseBehaviorEdgesToml(text, nullptr);
+
+    // 2. Build the current order from the live resolved state: every discovered
+    //    plugin, sorted by the canonical RunsBefore key. (Pak-mod "mods.<modid>"
+    //    rows carry no behaviors, so they are never edge endpoints; restricting
+    //    to plugin manifests keeps the constraint domain to behavior-declaring
+    //    plugins.)
+    std::vector<std::string> currentOrder;
+    currentOrder.reserve(kcdx::plugins::g_manifests.size());
+    for (const auto& m : kcdx::plugins::g_manifests) {
+        if (!m.name.empty()) currentOrder.push_back(m.name);
+    }
+    std::sort(currentOrder.begin(), currentOrder.end(),
+              [](const std::string& a, const std::string& b) {
+                  return RunsBefore(a, b);
+              });
+
+    auto isKnownPlugin = [](const std::string& author,
+                            const std::string& plugin) -> bool {
+        for (const auto& m : kcdx::plugins::g_manifests) {
+            if (m.author == author && m.name == plugin) return true;
+        }
+        return false;
+    };
+    auto currentPriorityOf = [](const std::string& plugin) -> int {
+        return Of(plugin).priority;
+    };
+
+    // 3. Compute (pure).
+    result = ComputeAutoOrder(edges, currentOrder, isKnownPlugin, currentPriorityOf);
+
+    // 4. Act on the verdict.
+    if (result.verdict == AutoOrderVerdict::Cycle) {
+        // A cycle is REPORTED, never silently broken. Name the members; write
+        // nothing (the user-owned order is untouched). This is a teaching report.
+        std::string members;
+        for (size_t i = 0; i < result.cycleMembers.size(); ++i) {
+            if (i) members += " <-> ";
+            members += result.cycleMembers[i];
+        }
+        LOG_WARN_KV(kEdgeCat, "auto_order_cycle",
+            kcdx::log::KV("members", members),
+            kcdx::log::KV("detail",
+                "the recorded behavior dependencies form a CYCLE (each of these "
+                "plugins must load both before and after another in the set) — "
+                "no single order satisfies them all. The load order was left "
+                "UNCHANGED (never silently broken). Resolve the circular "
+                "dependency between these plugins, then re-run auto-order"));
+        return result;
+    }
+    if (result.verdict == AutoOrderVerdict::NoChange) {
+        LOG_INFO_KV(kEdgeCat, "auto_order_no_change",
+            kcdx::log::KV("reason",
+                "the current load order already satisfies every recorded "
+                "behavior dependency — nothing to reorder"));
+        return result;
+    }
+
+    // verdict == Reordered: apply through the load_order.toml write-back.
+    const fs::path loadOrderPath =
+        kcdx::paths::EngineDataDirPath() / L"load_order.toml";
+    const bool wrote = UpsertPriorityRows(loadOrderPath, result.moved);
+    if (!wrote) {
+        // The write failed (logged ERROR inside). The computed order stands in
+        // the result for the caller, but it did NOT persist. Surface via the
+        // verdict's report; the caller decides (the live button shows an error).
+        LOG_WARN_KV(kEdgeCat, "auto_order_apply_not_persisted",
+            kcdx::log::KV("moved", (uint64_t)result.moved.size()),
+            kcdx::log::KV("consequence",
+                "the corrected order was computed but could NOT be written to "
+                "load_order.toml (see the prior ERROR) — it will not take effect "
+                "next launch"));
+        return result;
+    }
+    LOG_INFO_KV(kEdgeCat, "auto_order_applied",
+        kcdx::log::KV("moved", (uint64_t)result.moved.size()),
+        kcdx::log::KV("detail",
+            "computed a corrected load order satisfying the recorded behavior "
+            "dependencies and wrote the priority rows to load_order.toml — the "
+            "corrected order takes effect at the NEXT launch (this session's "
+            "order was already consumed at boot)"));
+    return result;
 }
 
 }  // namespace kcdx::load_order

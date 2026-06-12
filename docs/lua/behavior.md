@@ -169,11 +169,16 @@ the Lua `lua_before` set — arrive with their own surfaces; from a normal
 When the engine recognizes a wrong order (a consumer set above its declarer),
 the fix is a **callable auto-order method** that computes a corrected load
 order satisfying the recorded dependencies (consumer below declarer) and writes
-it back — no engine ever silently reorders your list. It is invoked on demand
-(a future launcher button is the intended caller); the persisted edges (above)
-surface the conflict up front at the next launch. (The auto-order method itself
-lands in a later step; the persisted edges + the launch-time recognition are
-live now.)
+it back to `load_order.toml` — no engine ever silently reorders your list. It is
+invoked on demand (a future launcher button is the intended caller); the
+persisted edges (above) surface the conflict up front at the next launch. It
+moves only the rows that must move (an unrelated plugin keeps its position), and
+if the dependencies form a **cycle** (two plugins each needing to load after the
+other) it **reports** the cycle and leaves your order unchanged rather than
+guessing. The correction takes effect at the **next launch** (the load order is
+consumed at boot — a mid-session apply only matters next time you start). The
+full model is in [load-order.md](../load-order.md) ("Auto-order — the engine can
+FIX a bad order, on demand").
 
 ## The apply boundary — record at load, apply once
 

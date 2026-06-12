@@ -341,4 +341,128 @@ bool PriorLaunchEdgeForBare(const std::string& consumerAuthor,
 // the cache via RecheckBehaviorEdgesAtLaunch's boot read.
 void SetPriorLaunchEdgesForTest(const std::vector<BehaviorEdge>& edges);
 
+// ============================================================================
+// The auto-order method — passive, callable order correction (design §6/§11/§12,
+// Phase 9.5 s7). PASSIVE: it NEVER fires on its own — no boot-sequence call site,
+// no console command, no UI. The ONLY callers are the engine-internal seam (a
+// future pre-launch launcher button) + the s7 self-test (which drives the pure
+// core from synthetic literals per headless-testable). The rejected "active
+// auto-reorder" — the engine silently mutating the user-owned order — is design
+// §12's rejected option and is NOT built; the method runs only when CALLED.
+//
+// What it does: reads the SAME persisted behavior edges the launch re-check
+// consumes (consumer must sort AFTER its declarer), computes a corrected order
+// that satisfies every surviving constraint with MINIMAL DISPLACEMENT of
+// unrelated rows (a stable topological sort — an unconstrained plugin keeps its
+// current relative position), DETECTS a cycle (a constraint set with no valid
+// order) and REPORTS it (never silently breaks it into an arbitrary order), and
+// APPLIES the corrected order by writing load_order.toml priority rows that
+// load_order::Read consumes at the NEXT launch (the current session's order is
+// already consumed at boot — an apply takes effect next launch).
+// ============================================================================
+
+// The verdict of an auto-order computation.
+enum class AutoOrderVerdict : uint8_t {
+    NoChange = 0,  // the current order already satisfies every edge — nothing to do.
+    Reordered = 1, // a corrected order was computed (and, for ApplyAutoOrder, applied).
+    Cycle = 2,     // a constraint cycle was detected — REPORTED, no order produced.
+};
+
+// One plugin's position in a corrected order: its name + the new priority the
+// apply step writes for it. Only plugins whose priority CHANGED appear in
+// AutoOrderResult::moved (minimal displacement — an unmoved plugin gets no row).
+struct AutoOrderMove {
+    std::string pluginName;   // the [plugin].name (the load-order key + row name).
+    int         newPriority;  // 0..100, the corrected position within its zone.
+    int         oldPriority;  // the priority before the move (for the report).
+};
+
+// The result of ComputeAutoOrder — inspectable by the caller (the self-test
+// reads it; the apply wrapper acts on it).
+struct AutoOrderResult {
+    AutoOrderVerdict verdict = AutoOrderVerdict::NoChange;
+    // verdict == Reordered: the corrected full order (every plugin name, in the
+    // satisfying sequence) + the subset that actually moved (a priority change).
+    std::vector<std::string> correctedOrder;  // every input plugin, corrected.
+    std::vector<AutoOrderMove> moved;         // only the rows whose priority changed.
+    // verdict == Cycle: the plugins forming the constraint cycle (>= 2 members),
+    // named in the report. correctedOrder/moved are empty (no order is produced).
+    std::vector<std::string> cycleMembers;
+};
+
+// ---- Pure computation core (no file I/O, no global state) — the self-test
+// drives it from literal edges + a literal current order, mirroring how the s6
+// RecheckBehaviorEdges core is factored pure (design §14 / headless-testable). ----
+
+// Compute a corrected order from `edges` over `currentOrder` (the plugin names
+// in their CURRENT resolved sequence — typically the load_order::RunsBefore
+// order). `isKnownPlugin(author, plugin)` answers "is this an installed plugin?"
+// — an edge whose consumer OR declarer is absent (or whose behavior is a catalog
+// name with no plugin declarer) is PRUNED (it cannot constrain), reusing the
+// SAME prune rule as RecheckBehaviorEdges. `currentPriorityOf(plugin)` returns a
+// plugin's current priority (0..100) so a moved plugin's new priority is derived
+// and an unmoved plugin's row is omitted.
+//
+// Constraint: for each surviving edge consumer->declarer, the declarer must sort
+// BEFORE the consumer in the corrected order (the consumer SETS a behavior the
+// declarer DECLARES, so the declarer must run first). The corrected order is a
+// STABLE topological sort of the constraint graph: among nodes with no remaining
+// constraint between them, the one earliest in `currentOrder` is emitted first,
+// so an unconstrained plugin never moves relative to another unconstrained one
+// (minimal displacement). A CYCLE (no valid order) yields verdict=Cycle with the
+// unresolved members; nothing is reordered.
+//
+// PURE: no file I/O, no global-state read — every input is a parameter, so the
+// self-test exercises every branch from literals.
+AutoOrderResult ComputeAutoOrder(
+    const std::vector<BehaviorEdge>& edges,
+    const std::vector<std::string>& currentOrder,
+    const std::function<bool(const std::string& author,
+                             const std::string& plugin)>& isKnownPlugin,
+    const std::function<int(const std::string& plugin)>& currentPriorityOf);
+
+// ---- The file-touching apply wrapper (the thin shell over the pure core). ----
+
+// Compute the corrected order from the persisted edges + the live resolved order
+// and APPLY it by writing load_order.toml priority rows for the moved plugins.
+// Reads the prior behavior_edges.toml (the SAME store RecheckBehaviorEdgesAtLaunch
+// reads), builds the current order from the live g_manifests via RunsBefore,
+// computes via ComputeAutoOrder, and on verdict=Reordered upserts a `priority`
+// row per moved plugin through the load_order.toml writer (UpsertPriorityRows
+// below — write-if-changed + fail-loud, reusing order_persist's I/O shape). On
+// verdict=Cycle it logs a WARN naming the cycle members and writes NOTHING (the
+// user-owned order is left untouched). On verdict=NoChange it writes nothing.
+// Returns the result so the caller (the future button / the self-test's live
+// leg) can report what happened. The apply takes effect at the NEXT launch.
+//
+// PASSIVE: this is invoked only when CALLED (the engine-internal seam). There is
+// no boot-sequence call site; the boot path only WARNS about a stale edge
+// (RecheckBehaviorEdgesAtLaunch) — fixing it is this method, triggered by the
+// user/UI, never automatically.
+AutoOrderResult ApplyAutoOrder();
+
+// Write/UPDATE a `priority` value for each named plugin in `moves` into the
+// load_order.toml at `loadOrderPath` — an UPSERT (unlike order_persist's
+// add-only MergeLoadOrderToml, which never rewrites an existing row): a plugin
+// with an existing [[plugin]] row has its `priority` field rewritten in place;
+// a plugin with no row gets a fresh [[plugin]] row appended. Every OTHER row
+// (and every other field — zone, enabled, comments) is preserved verbatim.
+// Write-if-changed (an unchanged file is not rewritten) + fail-loud on an I/O
+// error, the SAME posture as order_persist::WriteLoadOrderToml. Returns true on
+// success (written or unchanged), false on a read/write failure (logged ERROR).
+// Exposed for the self-test (the pure upsert is driven from a literal file body
+// via SerializeAutoOrderUpsert below).
+bool UpsertPriorityRows(const std::filesystem::path& loadOrderPath,
+                        const std::vector<AutoOrderMove>& moves);
+
+// Pure: apply the priority upserts to load_order.toml body `existingText`,
+// returning the new body. A row whose `name` matches a move has its `priority`
+// line rewritten (or a `priority` line inserted if the row had none); a moved
+// plugin with no row gets a `[[plugin]]` row appended (name + priority). Every
+// other byte is preserved verbatim. Factored pure so the self-test drives the
+// upsert from a literal body with NO file I/O (mirrors order_persist's pure
+// MergeLoadOrderToml).
+std::string SerializeAutoOrderUpsert(const std::string& existingText,
+                                     const std::vector<AutoOrderMove>& moves);
+
 }  // namespace kcdx::load_order

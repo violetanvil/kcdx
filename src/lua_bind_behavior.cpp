@@ -555,13 +555,15 @@ int RaiseSetResolution(lua_State* L, const std::string& nameArg,
                     "you (a prior launch confirmed this dependency) — move '" +
                     caller.author + "." + caller.plugin + "' below '" + owner +
                     "' (in load_order.toml) so its declares run before your "
-                    "set, or use kcdx.behavior's auto-order once it lands.";
+                    "set, or run the behavior auto-order method (it writes the "
+                    "corrected order for the next launch).";
             } else {
                 detail = "kcdx.behavior.set('" + full + "'): '" + owner +
                     "' loads after you — move '" + caller.author + "." +
                     caller.plugin + "' below it (in load_order.toml) so its "
-                    "declares run before your set, or use kcdx.behavior's "
-                    "auto-order once it lands.";
+                    "declares run before your set, or run the behavior "
+                    "auto-order method (it writes the corrected order for the "
+                    "next launch).";
             }
         } else {
             // Owner loaded earlier (or same-keyed), enabled, did not fail,

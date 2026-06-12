@@ -5,25 +5,38 @@
 #include <vector>
 
 #include "load_order.h"
+#include "mod_absorb/order_persist.h"  // ExistingRowNames — read the upsert body back
 #include "plugin_loader.h"   // g_manifests — the discovered-plugin set for prune
 #include "test.h"
 
 // cap-101 self-test — behavior dependency edge persistence + launch re-check +
-// prune. Each assertion is FALSIFIABLE and names the broken state it catches (a
-// non-falsifiable PASS proves nothing — AP15). The serializer/parser/prune
-// assertions are PURE (literal in, value out) — no global state. The
+// prune (Phase 9.5 s6) AND the passive callable auto-order method (s7). Each
+// assertion is FALSIFIABLE and names the broken state it catches (a
+// non-falsifiable PASS proves nothing — AP15). The serializer/parser/prune/
+// auto-order assertions are PURE (literal in, value out) — no global state. The
 // reorder-recognition assertion drives the GLOBAL load_order state in isolation
 // (synthetic g_manifests + Resolve) and RESTORES it verbatim before returning,
 // so the live boot state is untouched (the cap-54/55 pattern). The prior-edge
 // confirm assertions seed the prior-launch cache via the test seam and read it
 // back; they restore the cache to empty.
 //
+// The s7 auto-order assertions (7-10) drive the PURE core (ComputeAutoOrder +
+// SerializeAutoOrderUpsert) from literal edges + a literal current order — no
+// file I/O, no global state — exactly the headless-testable seam design §14
+// names. Each reads the ACTUAL computed order / verdict / upsert body (never a
+// tautology).
+//
 // What this CANNOT cover in one boot run — surfaced as TWO-LAUNCH matrix rows
 // (see test-plugins/README.md cap-101): the live on-disk write at session end
 // (launch N) → the up-front recognized-conflict WARN at the next launch
 // (launch N+1), and the second-launch error UPGRADE (a persisted edge from a
 // prior launch sharpens a reorder/bare error). A single boot cannot span two
-// launches; the cross-launch rows are marked for the phase's launch pass.
+// launches; the cross-launch rows are marked for the phase's launch pass. The
+// s7 auto-order LIVE file-apply (ApplyAutoOrder writing the live
+// load_order.toml) is NOT exercised here — the pure core + the pure upsert ARE
+// (assertions 7-10), so the file-touching wrapper is the thin shell; its live
+// two-launch confirmation (write@N → corrected order honored@N+1) is a
+// TWO-LAUNCH matrix row, not faked into a one-run PASS.
 
 namespace kcdx::load_order {
 
@@ -63,7 +76,7 @@ void RunEdgePersistSelfTestOnce() {
     if (s_reported) return;
     s_reported = true;
 
-    char reason[1400];
+    char reason[1800];
 
     // ========================================================================
     // Assertion 1 (UNIT, pure): serialize → parse round-trip. A two-edge set
@@ -364,6 +377,246 @@ void RunEdgePersistSelfTestOnce() {
         }
     }
 
+    // ========================================================================
+    // Assertion 7 (s7 auto-order, UNIT pure): CORRECTED ORDER + MINIMAL
+    // DISPLACEMENT. A synthetic mis-ordered set — consumer "cons" loads BEFORE
+    // its declarer "decl" (edge cons->decl.behavior) and an UNRELATED plugin
+    // "free" sits between them — ComputeAutoOrder yields a corrected order that
+    // puts "decl" BEFORE "cons" (the consumer-after-declarer constraint), AND
+    // preserves "free"'s position relative to the others as much as the
+    // constraint allows (it is in no edge, so it never jumps a sibling it did
+    // not need to). Reads the ACTUAL computed correctedOrder.
+    // [broken: the consumer still precedes the declarer -> constraint unmet ->
+    //  FAIL; the unconstrained "free" was reshuffled past a sibling it did not
+    //  need to move past -> FAIL]
+    // ========================================================================
+    {
+        // current order: cons, free, decl  (cons BEFORE decl — the violation).
+        const std::vector<std::string> current = {"cons", "free", "decl"};
+        const std::vector<BehaviorEdge> edges = {
+            Edge("acme", "cons", "acme.decl.some_behavior"),  // cons sets decl's behavior.
+        };
+        auto isKnown = [](const std::string& a, const std::string& p) -> bool {
+            return a == "acme" && (p == "cons" || p == "decl" || p == "free");
+        };
+        // current priorities: all 50 (so the corrected order must come from the
+        // topo sort, not a pre-existing priority spread).
+        auto prioOf = [](const std::string&) -> int { return 50; };
+
+        const AutoOrderResult r =
+            ComputeAutoOrder(edges, current, isKnown, prioOf);
+
+        // Find positions in the corrected order.
+        auto posOf = [&](const std::string& n) -> int {
+            for (size_t i = 0; i < r.correctedOrder.size(); ++i)
+                if (r.correctedOrder[i] == n) return (int)i;
+            return -1;
+        };
+        const int pCons = posOf("cons"), pDecl = posOf("decl"), pFree = posOf("free");
+        const bool constraintMet = (r.verdict == AutoOrderVerdict::Reordered) &&
+                                   pDecl >= 0 && pCons >= 0 && pDecl < pCons;
+        // Minimal displacement: "free" (unconstrained) keeps its current
+        // relative order with whichever neighbors did not have to move. The
+        // stable topo sort emits decl (pulled ahead), then the earliest
+        // remaining in current order. current = [cons, free, decl]; decl emits
+        // first (it is the only in-degree-0 node initially? no — free is also
+        // in-degree 0). The stable rule emits the EARLIEST in current order
+        // among in-degree-0: cons has in-degree 1 (blocked), free=0, decl=0;
+        // free precedes decl in current order -> free emits, then decl, then
+        // cons. Expected corrected: free, decl, cons.
+        const bool minimalDisp =
+            r.correctedOrder == std::vector<std::string>{"free", "decl", "cons"};
+        if (!constraintMet || !minimalDisp) {
+            std::string got;
+            for (size_t k = 0; k < r.correctedOrder.size(); ++k) {
+                if (k) got += ",";
+                got += r.correctedOrder[k];
+            }
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: auto-order corrected order / minimal displacement — "
+                "verdict=%d corrected=[%s] (positions cons=%d decl=%d free=%d). "
+                "Expected verdict=Reordered(1) with the declarer BEFORE the "
+                "consumer (decl<cons) and the stable topo order [free, decl, "
+                "cons] (free is unconstrained -> emits first as the earliest "
+                "in-degree-0 node in current order; the consumer-after-declarer "
+                "constraint pulls decl ahead of cons). constraintMet=%d "
+                "minimalDisp=%d.",
+                (int)r.verdict, got.c_str(),
+                pCons, pDecl, pFree, constraintMet ? 1 : 0, minimalDisp ? 1 : 0);
+            Fail(reason);
+            return;
+        }
+    }
+
+    // ========================================================================
+    // Assertion 8 (s7 auto-order, UNIT pure): CYCLE reported, NOT applied. A
+    // cyclic edge set — A sets B's behavior AND B sets A's behavior (A->B and
+    // B->A) — has no valid order. ComputeAutoOrder returns verdict=Cycle, names
+    // both members, and produces NO corrected order / NO moves (the order is
+    // left for the caller to leave unchanged — never silently broken).
+    // [broken: a cycle silently yields a (necessarily wrong) reordered output
+    //  -> verdict != Cycle / correctedOrder non-empty -> FAIL; the cycle is not
+    //  detected -> FAIL; the members are not named -> FAIL]
+    // ========================================================================
+    {
+        const std::vector<std::string> current = {"plug_a", "plug_b"};
+        const std::vector<BehaviorEdge> edges = {
+            Edge("acme", "plug_a", "acme.plug_b.beh_b"),  // a sets b's behavior -> b before a.
+            Edge("acme", "plug_b", "acme.plug_a.beh_a"),  // b sets a's behavior -> a before b.
+        };
+        auto isKnown = [](const std::string& a, const std::string& p) -> bool {
+            return a == "acme" && (p == "plug_a" || p == "plug_b");
+        };
+        auto prioOf = [](const std::string&) -> int { return 50; };
+
+        const AutoOrderResult r =
+            ComputeAutoOrder(edges, current, isKnown, prioOf);
+
+        // Members named (both, in some order); no order produced.
+        bool hasA = false, hasB = false;
+        for (const std::string& m : r.cycleMembers) {
+            if (m == "plug_a") hasA = true;
+            if (m == "plug_b") hasB = true;
+        }
+        const bool ok = (r.verdict == AutoOrderVerdict::Cycle) &&
+                        r.correctedOrder.empty() && r.moved.empty() &&
+                        hasA && hasB;
+        if (!ok) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: auto-order cycle — verdict=%d corrected.size=%zu "
+                "moved.size=%zu cycleMembers.size=%zu (hasA=%d hasB=%d). A "
+                "cyclic edge set (plug_a<->plug_b, each sets the other's "
+                "behavior) has NO valid order: expected verdict=Cycle(2), an "
+                "EMPTY corrected order + EMPTY moves (nothing reordered — never "
+                "silently broken), and BOTH plug_a + plug_b named as members.",
+                (int)r.verdict, r.correctedOrder.size(), r.moved.size(),
+                r.cycleMembers.size(), hasA ? 1 : 0, hasB ? 1 : 0);
+            Fail(reason);
+            return;
+        }
+    }
+
+    // ========================================================================
+    // Assertion 9 (s7 auto-order, UNIT pure): an already-correct order yields
+    // NoChange (no churn) — declarer ALREADY before consumer -> nothing to do;
+    // and a pruned-only edge set (consumer absent) likewise yields NoChange (no
+    // surviving constraint). Reads the ACTUAL verdict + empty moves.
+    // [broken: an in-order set is "reordered" (a needless write) -> FAIL; a
+    //  pruned edge produces a move -> FAIL]
+    // ========================================================================
+    {
+        // Right order already: decl BEFORE cons.
+        const std::vector<std::string> current = {"decl", "cons"};
+        auto isKnown = [](const std::string& a, const std::string& p) -> bool {
+            return a == "acme" && (p == "cons" || p == "decl");
+        };
+        auto prioOf = [](const std::string&) -> int { return 50; };
+
+        const std::vector<BehaviorEdge> inOrder = {
+            Edge("acme", "cons", "acme.decl.some_behavior"),
+        };
+        const AutoOrderResult rOk =
+            ComputeAutoOrder(inOrder, current, isKnown, prioOf);
+
+        // A pruned edge set (consumer "ghost" absent) — no surviving constraint.
+        const std::vector<BehaviorEdge> pruned = {
+            Edge("acme", "ghost", "acme.decl.some_behavior"),
+        };
+        const AutoOrderResult rPruned =
+            ComputeAutoOrder(pruned, current, isKnown, prioOf);
+
+        const bool ok =
+            rOk.verdict == AutoOrderVerdict::NoChange && rOk.moved.empty() &&
+            rPruned.verdict == AutoOrderVerdict::NoChange && rPruned.moved.empty();
+        if (!ok) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: auto-order no-change — in-order set: verdict=%d "
+                "moved=%zu (expected NoChange(0) + 0 moves — declarer already "
+                "before consumer, nothing to do); pruned-only set (absent "
+                "consumer 'ghost'): verdict=%d moved=%zu (expected NoChange(0) + "
+                "0 moves — the only edge prunes, no surviving constraint). An "
+                "already-correct or fully-pruned order must NOT churn the file.",
+                (int)rOk.verdict, rOk.moved.size(),
+                (int)rPruned.verdict, rPruned.moved.size());
+            Fail(reason);
+            return;
+        }
+    }
+
+    // ========================================================================
+    // Assertion 10 (s7 auto-order write-back, UNIT pure): the priority UPSERT
+    // expresses the corrected order as load_order.toml rows. SerializeAutoOrderUpsert
+    // (a) REWRITES the `priority` field of an EXISTING [[plugin]] row in place
+    // (preserving its other fields + comments), and (b) APPENDS a fresh
+    // [[plugin]] row for a moved plugin that had NO row — reusing the TOML write
+    // mechanics, NOT a parallel writer. Reads the ACTUAL written body back via
+    // ExistingRowNames + a priority-line check.
+    // [broken: the existing row's priority is not updated (still old) -> FAIL;
+    //  a no-row plugin gets no appended row -> FAIL; another row is mangled ->
+    //  FAIL]
+    // ========================================================================
+    {
+        // An existing body with one [[plugin]] row (has-row case) carrying a
+        // priority + a comment, plus an unrelated row that must survive verbatim.
+        const std::string existing =
+            "# kcdx load order\n"
+            "\n"
+            "[[plugin]]\n"
+            "name      = \"acme.has_row\"\n"
+            "zone      = \"after_game\"   # author note kept\n"
+            "priority  = 50\n"
+            "enabled   = true\n"
+            "\n"
+            "[[plugin]]\n"
+            "name      = \"other.untouched\"\n"
+            "priority  = 20\n";
+
+        std::vector<AutoOrderMove> moves;
+        { AutoOrderMove m; m.pluginName = "acme.has_row"; m.newPriority = 90; m.oldPriority = 50; moves.push_back(m); }
+        { AutoOrderMove m; m.pluginName = "acme.no_row";  m.newPriority = 10; m.oldPriority = 50; moves.push_back(m); }
+
+        const std::string body = SerializeAutoOrderUpsert(existing, moves);
+
+        // (a) the EXISTING row's priority was rewritten to 90 (the old "50" line
+        //     for has_row is gone; a "priority  = 90" line is present).
+        const bool hasRowUpdated =
+            body.find("priority  = 90") != std::string::npos &&
+            body.find("priority  = 50") == std::string::npos;  // old value gone.
+        // (b) the no-row plugin was appended as a fresh row with its priority.
+        const std::vector<std::string> names =
+            kcdx::mod_absorb::order_persist::ExistingRowNames(body);
+        bool hasNoRowAppended = false, hasRowPresent = false, untouchedPresent = false;
+        for (const std::string& n : names) {
+            if (n == "acme.no_row")     hasNoRowAppended = true;
+            if (n == "acme.has_row")    hasRowPresent    = true;
+            if (n == "other.untouched") untouchedPresent = true;
+        }
+        // the no_row's appended priority value (10) is present; the untouched
+        // row's own priority (20) survives verbatim.
+        const bool noRowPrio   = body.find("priority  = 10") != std::string::npos;
+        const bool untouchedOk = body.find("priority  = 20") != std::string::npos &&
+                                 body.find("author note kept") != std::string::npos;
+
+        const bool ok = hasRowUpdated && hasNoRowAppended && hasRowPresent &&
+                        untouchedPresent && noRowPrio && untouchedOk;
+        if (!ok) {
+            std::snprintf(reason, sizeof(reason),
+                "FAIL: auto-order priority upsert — has_row prio rewritten to 90 "
+                "(old 50 gone)=%d; no_row appended as a row=%d; has_row still "
+                "present=%d; other.untouched survives=%d; no_row prio=10 written="
+                "%d; untouched prio=20 + comment survive verbatim=%d. The upsert "
+                "must REWRITE an existing row's priority in place AND append a "
+                "fresh row for a no-row plugin, preserving every other row + "
+                "field + comment (reuse the TOML write mechanics, not a parallel "
+                "writer).\nBODY:\n%s",
+                hasRowUpdated ? 1 : 0, hasNoRowAppended ? 1 : 0,
+                hasRowPresent ? 1 : 0, untouchedPresent ? 1 : 0,
+                noRowPrio ? 1 : 0, untouchedOk ? 1 : 0, body.c_str());
+            Fail(reason);
+            return;
+        }
+    }
+
     std::snprintf(reason, sizeof(reason),
         "behavior_edges.toml serialize<->parse round-trips (consumer split on "
         "the first dot, behavior preserved); a whole-file parse error is "
@@ -376,8 +629,15 @@ void RunEdgePersistSelfTestOnce() {
         "is RECOGNIZED as a reorder conflict (and an in-order edge is not — no "
         "false positive); and the prior-launch cache backs the second-launch "
         "upgrade (an exact confirm + a bare->full resolution, no false confirm). "
-        "TWO-LAUNCH rows (live write@N -> up-front warn@N+1, second-launch error "
-        "upgrade) are the launch-pass matrix rows.");
+        "AUTO-ORDER (s7): ComputeAutoOrder corrects a mis-ordered set (declarer "
+        "before consumer) with minimal displacement (an unconstrained row keeps "
+        "its position), REPORTS a cycle (verdict=Cycle, members named, NO order "
+        "produced — never silently broken), yields NoChange on an already-correct "
+        "or fully-pruned set, and SerializeAutoOrderUpsert rewrites an existing "
+        "row's priority in place + appends a fresh row for a no-row plugin "
+        "(reusing the TOML write mechanics). TWO-LAUNCH rows (live edge "
+        "write@N -> up-front warn@N+1, second-launch error upgrade, auto-order "
+        "apply@N -> corrected order honored@N+1) are the launch-pass matrix rows.");
     kcdx::test::ReportResult(kRow, true, reason);
     kcdx::test::EmitSummaryIfChanged("cap-101 behavior-edge-persist");
 }

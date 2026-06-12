@@ -215,9 +215,33 @@ launch on. The store is rebuilt from each launch's observed sets and
 self-invalidates (a dropped or uninstalled edge is pruned). It is the
 load-order-side persistence of the named-behavior ordering story; the
 author-facing surface is documented in [`lua/behavior.md`](lua/behavior.md)
-("The ordering errors" / "Fixing a bad order"). The future auto-order method
-(which reads these edges to compute a corrected order and writes it back through
-this unit) lands in a later step.
+("The ordering errors" / "Fixing a bad order").
+
+## Auto-order — the engine can FIX a bad order, on demand
+
+When a behavior consumer is ordered **before** the declarer it depends on, the
+recorded edges (above) carry everything needed to repair it: kcdx can compute a
+corrected order that puts each consumer **after** its declarer and write it back
+to `load_order.toml`. This is a **callable correction**, not an automatic one —
+the engine never silently reorders your list. You invoke it (a future pre-launch
+launcher button is the intended trigger), and it does three things:
+
+- **Computes a corrected order** that satisfies every recorded dependency
+  (consumer below declarer), moving **only** the rows that must move — an
+  unrelated plugin keeps its position.
+- **Reports a cycle instead of guessing.** If two plugins depend on each other
+  in a circle (A must load both before and after B), no single order can satisfy
+  them — kcdx names the plugins in the cycle and leaves your order **unchanged**
+  rather than picking an arbitrary (and necessarily wrong) one. You resolve the
+  circular dependency between those plugins, then re-run it.
+- **Applies the correction by writing `load_order.toml` priority rows** — it
+  adjusts each moved plugin's `priority` so the order sorts correctly.
+
+**It takes effect at the NEXT launch, not immediately.** The load order is
+consumed at boot — by the time you could trigger this, the running session's
+order is already in use — so the corrected order applies the next time you start
+the game. (This is also why it is a *pre-launch* surface: the launcher, not an
+in-game console command.)
 
 ## Capability gating
 
