@@ -366,6 +366,16 @@ def resolve_reverify_batch(out_dir, rows, *, action, verified_by, today=None):
                         f"address_version id={target['id']}) has no "
                         f"last_verified_at_version to retract valid_through to -- the "
                         f"covering interval was never verified")
+                # SKIP (D41 fact 2): the symmetric mirror of verify-all's already-covered
+                # skip. When the target's interval is ALREADY closed to its
+                # last_verified_at_version (valid_through == lvv_id, both non-NULL), the
+                # close is already done -- retracting valid_through to the value it
+                # already holds is a NO-OP edit with an empty field-delta (the silent
+                # no-op confirm the live Phase-6 acceptance hit). valid_through and
+                # last_verified_at_version are both game_versions.id FKs in the same
+                # id-space, so == compares the resolved version. Produce NO edit-spec.
+                if target["valid_through"] is not None and target["valid_through"] == lvv_id:
+                    continue
                 valid_from_tag = gv_tags.get(target["valid_from"])
                 close_edits = {"valid_through_version": lvv_tag}
                 specs.append({

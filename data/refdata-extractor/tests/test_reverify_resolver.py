@@ -197,6 +197,16 @@ def _inject_state(out_dir):
         e_close = _add_entity("kcdx_test_close")
         id_close = _add_av(e_close, gvt_id, None, mid_id, "Old", "2025-01-01", ek_prod)
 
+        # (E) An ALREADY-CLOSED-TO-LAST-VERIFIED row: valid_from=GVT, valid_through=MID,
+        #     last_verified=MID (valid_through == last_verified, both non-NULL). A failed
+        #     sweep at MID (a version the [GVT..MID] interval contains): the close target
+        #     is already closed to its last_verified -> retracting valid_through to MID is
+        #     a NO-OP -> the resolver produces NO edit-spec (the D41 fact-2 skip; the
+        #     symmetric mirror of verify-all's already-covered skip).
+        e_closed_done = _add_entity("kcdx_test_close_already_done")
+        id_closed_done = _add_av(
+            e_closed_done, gvt_id, mid_id, mid_id, "Old", "2025-01-01", ek_prod)
+
         con.commit()
         return {
             "gvt_id": gvt_id, "mid_id": mid_id, "later_id": later_id,
@@ -205,6 +215,7 @@ def _inject_state(out_dir):
             "e_open": e_open, "id_open": id_open,
             "e_skip": e_skip, "id_skip": id_skip,
             "e_close": e_close, "id_close": id_close,
+            "e_closed_done": e_closed_done, "id_closed_done": id_closed_done,
         }
     finally:
         con.close()
@@ -343,6 +354,22 @@ def _run_cases(out_dir, ids):
         and close["valid_from_version"] == GVT,
         f"close spec={close!r} (expected valid_through_version={MID_TAG} on the "
         f"valid_from={GVT} interval-containing row)"))
+
+    # (4b -- D41 fact 2) the ALREADY-CLOSED-TO-LAST-VERIFIED skip: a failed row whose
+    #     covering interval is already closed to its last_verified_at_version
+    #     (valid_through == last_verified, both non-NULL) is already-done -> NO edit-spec
+    #     (the silent no-op confirm the live Phase-6 acceptance hit). Swept at MID, the
+    #     [GVT..MID] interval contains it. The symmetric mirror of verify-all's skip.
+    #     FALSIFIABLE: removing the resolver's skip guard makes this emit a no-op
+    #     valid_through_version=MID edit, so the [] assertion goes RED.
+    done_rows = [_report_row(ids["e_closed_done"], MID_TAG, "failed", 5, None)]
+    done_specs = rr.resolve_reverify_batch(out_dir, done_rows, action="close-intervals",
+                                           verified_by=SIGNER, today=TODAY)
+    results.append((
+        "close-intervals-already-closed-to-last-verified-skipped",
+        _spec_for(done_specs, ids["e_closed_done"]) is None and done_specs == [],
+        f"already-closed-to-last-verified row produced {done_specs!r}, expected [] "
+        f"(skipped -- valid_through already == last_verified, nothing to close)"))
 
     # (4-falsifiable) a close-target's interval MUST contain the version. The interval-
     #     containment helper, asked for a version BEFORE the only row's valid_from,
