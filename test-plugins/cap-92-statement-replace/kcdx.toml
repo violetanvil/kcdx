@@ -21,15 +21,18 @@
 #   function_entry  -> statement idx 0, kind "assign", byte_range_len 3
 #   first_return    -> statement idx 13, kind "return"
 #
-# SAFETY — the rows do NOT destructively rewrite a live game function. A
-# replace_with that ACTUALLY neutralized SaveGame's bytes would break saving;
-# choosing a curated function that is boot-safe to statically neutralize is a
-# surfaced DECISION for the maintainer, not the test's to make. So the rows pin
-# the apply path's RESOLVE + KIND-CHECK + REGISTER-AS-Kind::Statement +
-# honest-applied/deferred verdict — the full wiring up to (and including) the
-# write decision — using kind-MATCHED and kind-MISMATCHED ops, plus the
-# zero-dispatch-by-construction property. A row flips to a live byte-readback
-# assert when the boot-safe live-write target is chosen.
+# SAFETY — the rows do NOT destructively rewrite a live game function, and they
+# do NOT assert a live byte write (KI-0017 re-frame). No curated function is a
+# safe NOP target (every curated row is a function kcdx uses or forwards to
+# plugins), and no statement tables are deployed, so a live :applied()==true
+# against a real game function is unprovable AND would be a foot-gun. The rows
+# pin the apply path's RESOLVE + KIND-CHECK + REGISTER-AS-Kind::Statement +
+# honest verdict (Pending / degraded function_no_statements / co-location
+# reject) — the full WIRING up to the write decision; :applied()==true against a
+# real game function is a FAIL arm. The live byte-write proof is future coverage
+# blocked on a purpose-built curated test-stub function (one kcdx never calls and
+# never forwards, with statement data deployed) — net-new curation, AP18-gated;
+# tracked as tech-debt, not this fixture's to make.
 #
 # FALSIFIABLE per row (a row that can never go red proves nothing):
 #   - cap-92-replace-with-registers : replace_with(SaveGame, function_entry,

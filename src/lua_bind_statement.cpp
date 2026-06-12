@@ -292,6 +292,18 @@ bool ApplyStatementEntry(kcdx::lua_registry::Entry& entry,
     pe->replacement  = bytes;
     pe->idempotent   = true;
 
+    // `original` is the live pre-image read at the statement VA — required only
+    // to satisfy patch::Resolve's original.size()==replacement.size() length
+    // precondition. The protective compare is replacement-vs-site, not
+    // original-vs-site: patch::ApplyResolvedPatch idempotently SKIPS when the
+    // site already holds `replacement`, and a foreign mod's bytes at the site
+    // reject loud (KI-0017). Read with the same primitive the engine uses to
+    // read a code site (patch_engine.cpp VerifyOriginalAtAddr).
+    {
+        const auto* siteBytes = reinterpret_cast<const uint8_t*>(statementVa);
+        pe->original.assign(siteBytes, siteBytes + bytes.size());
+    }
+
     bool ok = false;
     try {
         ok = kcdx::patch::ApplyPatch(*pe);

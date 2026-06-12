@@ -17,12 +17,14 @@
 #                     post-load placeholder error.
 #   hardcore_combat — the US-1/US-2 story: consumer sets "hardcore-on"; the
 #                     implementation fires ONCE at the boundary with that
-#                     final value AND calls kcdx.statement.replace_with on
-#                     the engine-known WHGame.dll SaveGame function-entry
-#                     statement (cap-92's proven-safe noop target) — the §9
-#                     declarer leg: a behavior implementation reaching a
-#                     hash-checked verb whose per-version resolution is
-#                     observable via the statement handle.
+#                     final value AND calls kcdx.statement.replace_with as a
+#                     resolve/register target (NO live byte write asserted —
+#                     KI-0017 re-frame) — the §9 declarer leg: a behavior
+#                     implementation reaching a hash-checked verb whose
+#                     resolve→register→verdict WIRING is observable via the
+#                     statement handle. :applied()==true against a real game
+#                     function is a FAIL arm; the honest verdict is Pending /
+#                     degraded function_no_statements / co-location reject.
 #   conflict_target — TWO setters: this plugin sets "declarer-value", the
 #                     later consumer sets "consumer-wins" -> last-wins; the
 #                     engine emits ONE set_conflict warn naming both plugins
@@ -52,7 +54,7 @@ test_suite_only = true
 name                = "comp_20_behavior_declarer"
 display_name        = "COMP-20 behavior declarer (declares + implements, loads FIRST)"
 author              = "ts"
-description         = "The cross-plugin behavior fixture's declarer: declares eight behaviors whose implementations count fires + capture values; one calls kcdx.statement.replace_with on the engine-known SaveGame function-entry statement (the hash-checked per-version path) from inside the apply boundary; one deliberately raises; one drives the mid-drain set branches. Reports the declarer-side comp-20 rows at input_loaded."
+description         = "The cross-plugin behavior fixture's declarer: declares eight behaviors whose implementations count fires + capture values; one calls kcdx.statement.replace_with as a resolve/register target from inside the apply boundary (the §9 declarer leg — wiring only, NO live byte write asserted per KI-0017); one deliberately raises; one drives the mid-drain set branches. Reports the declarer-side comp-20 rows at input_loaded."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"

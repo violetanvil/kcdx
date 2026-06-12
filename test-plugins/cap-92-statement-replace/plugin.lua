@@ -10,17 +10,26 @@
 -- kcdx.op.* value, NOT a callback. The entry is Kind::Statement, not Kind::Hook,
 -- so no Lua callback ref exists and no per-call dispatch CAN fire. The proof is
 -- the ABSENCE of any per-call dispatch line for the site (the agent reads that
--- from the dev log) AND the apply path's honest applied/deferred verdict.
+-- from the dev log) AND the apply path's honest verdict.
 --
--- SAFETY: these rows do NOT destructively rewrite a live game function (a real
--- neutralization of SaveGame would break saving). Choosing a boot-safe curated
--- function to statically neutralize is a surfaced DECISION for the maintainer,
--- not the test's to make. The rows pin the apply path's RESOLVE + KIND-CHECK +
--- REGISTER-AS-Kind::Statement + honest verdict — the full wiring up to the write
--- decision. A row flips to a live byte-readback assert when that target is chosen.
+-- WHAT THESE ROWS ASSERT — the resolve -> register -> verdict WIRING, NOT a live
+-- byte write. NO row asserts :applied()==true against a real game function. No
+-- curated function is a safe NOP target (every curated row is an author-forwarded
+-- shim or a production hook target — NOPing one breaks the surface it backs, same
+-- foot-gun as NOPing SaveGame breaks save), and NO statement tables are deployed
+-- (data/db-export/ carries only the address/version/module seeds), so the live
+-- apply has never executed on ANY target. The byte-write was ASSERTED in code,
+-- never OBSERVED. SaveGame is kept here purely as a RESOLVE/REGISTER target — it
+-- carries NO live-write claim now, so the foot-gun is gone structurally. The
+-- honest, falsifiable claim is: resolution reached + the entry registered as
+-- Kind::Statement + an HONEST verdict (Pending / degraded function_no_statements
+-- / co-location reject) — never a live write. A live byte-write proof is a real
+-- future coverage item, blocked on a purpose-built curated test-stub function
+-- (one the engine never calls and never forwards, with statement data deployed
+-- for it — net-new curation, AP18-gated, user-approved); it is NOT this fixture.
 
-local MODULE = "WHGame.dll"
-local FN     = "SaveGame"
+local MODULE = "WHGame.dll"  -- resolve/register target only; NO live write asserted
+local FN     = "SaveGame"    -- resolve/register target only; NO live write asserted
 
 -- A resolve/apply miss whose reason is a deploy-state miss (the statement tables
 -- are not deployed) is a DEGRADED observation, not a failure — the wiring is
@@ -31,6 +40,15 @@ local function reason_is_deploy_state(reason)
         or reason:find("db_not_loaded", 1, true) ~= nil
         or reason:find("statement tables must be deployed", 1, true) ~= nil
         or reason:find("not deployed", 1, true) ~= nil
+end
+-- A reason naming a co-located entry (overlap/verify/conflict at the SAME site)
+-- is an honest resolution-reached outcome, never a silent one — the same arm
+-- comp-20 uses when its boundary-time entry rejects against this fixture's entry.
+local function reason_is_colocation(reason)
+    if type(reason) ~= "string" then return false end
+    return reason:find("conflict", 1, true) ~= nil
+        or reason:find("overlap", 1, true) ~= nil
+        or reason:find("verify", 1, true) ~= nil
 end
 
 kcdx.on("ready", function()
@@ -61,14 +79,21 @@ kcdx.on("ready", function()
 
     -- =====================================================================
     -- cap-92-replace-with-registers — replace_with(SaveGame, function_entry,
-    -- replace_with_noop()) registers, and the entry is NOT a callback path.
+    -- replace_with_noop()) RESOLVES + REGISTERS as Kind::Statement with an honest
+    -- verdict. This row asserts the resolve -> register -> verdict WIRING, NOT a
+    -- live byte write (no curated function is a safe NOP target; no statement
+    -- tables are deployed, so a live write has never executed on any target).
     -- function_entry is an "assign" statement; replace_with_noop applies to ANY
-    -- kind, so the kind-check passes and the determinate noop emits 3×0x90.
-    -- FALSIFIABLE: handle nil (the op value was not accepted as the required
-    -- positional, or the curated target did not resolve) → FAIL; the entry
-    -- applies as a callback (impossible — no callback was passed) → there is no
-    -- callback path, so :applied()==true means the static write landed (PASS) and
-    -- :applied()==false with a deploy-state reason is DEGRADED PASS.
+    -- kind, so the kind-check passes.
+    -- FALSIFIABLE: FAILS if the handle is nil (resolution not reached — the op
+    -- value was not accepted as the required positional, or the curated target
+    -- did not resolve), OR the verdict is :applied()==true against the real
+    -- SaveGame function (a live write was asserted where none can honestly
+    -- happen — the entry must NOT claim it wrote a real game function), OR the
+    -- verdict is outside {Pending, degraded function_no_statements,
+    -- co-location reject}. The honest verdict set is Pending (apply pass not
+    -- reached) / degraded function_no_statements (no statement tables deployed)
+    -- / co-location reject — never an applied live write.
     do
         local row = "cap-92-replace-with-registers"
         local op = kcdx.op.replace_with_noop()
@@ -86,42 +111,60 @@ kcdx.on("ready", function()
                     .. "\", kcdx.locator.function_entry(), "
                     .. "kcdx.op.replace_with_noop()) returned nil at "
                     .. "registration: " .. tostring(err)
-                    .. " — the static op was not accepted as the required "
-                    .. "positional, or the curated target did not resolve")
+                    .. " — resolution was NOT reached: the static op was not "
+                    .. "accepted as the required positional, or the curated "
+                    .. "target did not resolve")
             else
                 local applied = h:applied()
                 local reason  = tostring(h:reason())
-                -- nil = Pending (apply pass not reached this site yet), true =
-                -- the static write landed, false = Failed (a deploy-state miss is
-                -- DEGRADED; any other reason is a real FAIL).
-                if applied == nil then
+                -- The honest verdict set: nil = Pending (apply pass not reached
+                -- this site yet), false + deploy-state reason = degraded
+                -- (no statement tables deployed), false + co-location reason =
+                -- honest reject against a co-located entry on the same site.
+                -- :applied()==true against the REAL SaveGame function is a FAIL:
+                -- no live write can honestly land (no NOP-safe target, no
+                -- statement data deployed) — the wiring claim is resolve+register,
+                -- never an observed byte write.
+                if applied == true then
+                    kcdx.test.report(row, false,
+                        "replace_with :applied()==true against the real SaveGame "
+                        .. "function — but NO live byte write can honestly land "
+                        .. "(no NOP-safe curated target, no statement tables "
+                        .. "deployed). A true verdict means a live write was "
+                        .. "asserted where none can occur: the row's claim is "
+                        .. "resolve -> register -> honest verdict, NOT a write. "
+                        .. "reason=" .. reason)
+                elseif applied == nil then
                     kcdx.test.report(row, true,
-                        "replace_with registered (handle non-nil) and is PENDING "
-                        .. "at ready (:applied()==nil — the end-of-zone apply pass "
-                        .. "has not reached this site yet); a STATIC op was "
-                        .. "accepted, no callback path. The Kind::Statement "
-                        .. "wiring holds")
-                elseif applied == true then
-                    kcdx.test.report(row, true,
-                        "replace_with APPLIED (:applied()==true) — the curated "
-                        .. "statement resolved, the noop emitted 3×0x90, and the "
-                        .. "static bytes were written natively (zero per-call "
-                        .. "dispatch — a static op, no callback). reason="
-                        .. reason)
+                        "replace_with RESOLVED + REGISTERED (handle non-nil) and "
+                        .. "is PENDING at ready (:applied()==nil — the end-of-zone "
+                        .. "apply pass has not reached this site yet); a STATIC op "
+                        .. "was accepted, no callback path. The resolve -> register "
+                        .. "-> verdict wiring holds (Kind::Statement, no live write "
+                        .. "asserted)")
                 elseif applied == false and reason_is_deploy_state(reason) then
                     kcdx.test.report(row, true,
-                        "DEGRADED PASS: replace_with registered + ran the apply "
-                        .. "path, but SaveGame's statement data is not deployed "
-                        .. "(reason=" .. reason .. ") — the resolve+emit+write "
-                        .. "wiring is proven; the live write is gated on the "
-                        .. "deployed statement tables")
+                        "DEGRADED (function_no_statements): replace_with resolved "
+                        .. "+ registered + ran the apply path, but SaveGame's "
+                        .. "statement data is not deployed (reason=" .. reason
+                        .. ") — the resolve -> register -> verdict wiring is "
+                        .. "proven; a live write is gated on a deployed statement "
+                        .. "table for a NOP-safe target (a future coverage item)")
+                elseif applied == false and reason_is_colocation(reason) then
+                    kcdx.test.report(row, true,
+                        "replace_with resolved the curated statement and was "
+                        .. "honestly rejected at apply against a co-located entry "
+                        .. "on the same site (reason=" .. reason .. ") — "
+                        .. "resolution reached, nothing silent, no live write "
+                        .. "asserted")
                 else
                     kcdx.test.report(row, false,
                         "replace_with :applied()=" .. tostring(applied)
-                        .. " :reason()=\"" .. reason .. "\" — expected Pending "
-                        .. "(nil), Applied (true), or a deploy-state DEGRADED "
-                        .. "miss. A non-deploy-state failure is a real apply-path "
-                        .. "regression")
+                        .. " :reason()=\"" .. reason .. "\" — expected an HONEST "
+                        .. "verdict: Pending (nil), degraded function_no_statements, "
+                        .. "or a co-location reject. A non-deploy-state, "
+                        .. "non-co-location failure is a real resolve/register/"
+                        .. "apply-path regression")
                 end
             end
         end

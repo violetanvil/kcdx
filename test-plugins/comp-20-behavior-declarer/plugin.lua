@@ -7,8 +7,16 @@
 -- boundary runs post-RunPostGameLoad / pre-InputLoaded, so input_loaded is
 -- the earliest post-boundary observation point.
 
-local MODULE = "WHGame.dll"
-local FN     = "SaveGame"  -- cap-92's proven-safe curated statement target
+local MODULE = "WHGame.dll"  -- resolve/register target only; NO live write asserted
+local FN     = "SaveGame"    -- resolve/register target only; NO live write asserted
+-- The §9 declarer leg asserts the resolve -> register -> verdict WIRING from
+-- inside the apply boundary, NOT a live byte write. NO curated function is a safe
+-- NOP target (each is an author-forwarded shim or a production hook target), and
+-- NO statement tables are deployed, so the live apply has never executed on any
+-- target. SaveGame is kept purely as a resolve/register target — it carries no
+-- live-write claim. A live byte-write proof is a future coverage item, blocked on
+-- a purpose-built curated test-stub function (engine never calls/forwards it, with
+-- statement data deployed — net-new curation, AP18-gated, user-approved).
 
 -- Per-behavior observation state, written by the implementations at the
 -- boundary, read by the rows at input_loaded.
@@ -31,7 +39,7 @@ local obs = {
 -- A resolve/apply miss whose reason is a deploy-state miss (the statement
 -- tables are not deployed) is a DEGRADED observation, not a failure — the
 -- same arm cap-92 uses. A reason naming the cap-92 co-located entry
--- (overlap/verify/conflict at the SAME proven-safe site) is likewise an
+-- (overlap/verify/conflict at the SAME site) is likewise an
 -- honest resolution-reached outcome, never a silent one.
 local function reason_is_deploy_state(reason)
     if type(reason) ~= "string" then return false end
@@ -74,7 +82,8 @@ kcdx.behavior.declare("boundary_first", {
 -- 3. hardcore_combat — the US-1/US-2 + §9 declarer-leg behavior: the
 -- implementation reaches the hash-checked kcdx.statement.replace_with on a
 -- REAL engine-known target (the same module/function/locator/op as cap-92's
--- proven-safe row — no new curated target).
+-- resolve/register row — no new curated target, NO live write asserted; the
+-- leg proves the resolve -> register -> verdict wiring from inside the boundary).
 kcdx.behavior.declare("hardcore_combat", {
     description    = "comp-20 US-1/US-2 fixture (statement-backed)",
     default        = false,
@@ -196,12 +205,19 @@ kcdx.on("input_loaded", function()
 
     -- comp-20-declarer-statement — the §9 declarer leg: the boundary-run
     -- implementation reached kcdx.statement.replace_with on the engine-known
-    -- SaveGame function-entry statement (cap-92's proven-safe target); the
-    -- hash-checked per-version resolution is observed via the handle.
-    -- FALSIFIABLE: the statement call was never attempted, the registration
-    -- returned nil, the handle is still PENDING at input_loaded (the
-    -- boundary's own ApplyZone drain did not land it pre-InputLoaded), or a
-    -- non-deploy-state, non-co-location failure reason -> FAIL.
+    -- SaveGame function-entry statement (a resolve/register target — NO live
+    -- byte write is asserted: no curated function is a safe NOP target, and no
+    -- statement tables are deployed, so the live apply has never executed on any
+    -- target). This row asserts the resolve -> register -> verdict WIRING from
+    -- INSIDE the apply boundary, NOT a live write: the call fired, the entry
+    -- registered as Kind::Statement, and the handle carries an HONEST verdict.
+    -- FALSIFIABLE: FAILS if the statement call was never attempted, the
+    -- registration returned nil (resolution not reached), the handle is still
+    -- PENDING at input_loaded (the boundary's own ApplyZone drain did not land
+    -- it pre-InputLoaded), the verdict is :applied()==true against the real
+    -- SaveGame function (a live write asserted where none can honestly land), OR
+    -- the verdict is outside {degraded function_no_statements, co-location
+    -- reject}.
     do
         local row = "comp-20-declarer-statement"
         local o = obs.hardcore_combat
@@ -212,41 +228,47 @@ kcdx.on("input_loaded", function()
             report(row, false, "kcdx.statement.replace_with(\"" .. MODULE
                 .. "\", \"" .. FN .. "\", function_entry, "
                 .. "replace_with_noop) from the boundary-run implementation "
-                .. "returned nil: " .. tostring(o.stmt_err))
+                .. "returned nil (resolution not reached): " .. tostring(o.stmt_err))
         else
             local applied = o.stmt_handle:applied()
             local reason  = tostring(o.stmt_handle:reason())
-            if applied == nil then
+            if applied == true then
+                report(row, false, "the boundary-run replace_with reads "
+                    .. ":applied()==true against the real " .. FN
+                    .. " function — but NO live byte write can honestly land "
+                    .. "(no NOP-safe curated target, no statement tables "
+                    .. "deployed). A true verdict asserts a live write where "
+                    .. "none can occur: this leg proves the resolve -> register "
+                    .. "-> verdict WIRING from inside the boundary, NOT a byte "
+                    .. "write. reason=" .. reason)
+            elseif applied == nil then
                 report(row, false, "the statement entry registered at the "
                     .. "boundary is still PENDING at input_loaded — the "
                     .. "boundary must trigger its own ApplyZone drain so "
-                    .. "boundary-queued registrations land pre-InputLoaded")
-            elseif applied == true then
-                report(row, true, "the boundary-run implementation's "
-                    .. "replace_with resolved the curated " .. FN
-                    .. " statement and APPLIED (hash-checked per-version "
-                    .. "resolution reached from inside the apply boundary; "
-                    .. "the entry landed pre-InputLoaded via the boundary's "
-                    .. "ApplyZone drain)")
+                    .. "boundary-queued registrations reach a verdict "
+                    .. "pre-InputLoaded")
             elseif applied == false and reason_is_deploy_state(reason) then
-                report(row, true, "DEGRADED PASS: the replace_with from the "
-                    .. "boundary registered + ran the apply path, but "
-                    .. FN .. "'s statement data is not deployed (reason="
-                    .. reason .. ") — the registration/resolution wiring "
-                    .. "from inside the boundary is proven; the live write "
-                    .. "is gated on the deployed statement tables")
+                report(row, true, "DEGRADED (function_no_statements): the "
+                    .. "replace_with from the boundary resolved + registered + "
+                    .. "ran the apply path, but " .. FN .. "'s statement data "
+                    .. "is not deployed (reason=" .. reason .. ") — the "
+                    .. "resolve -> register -> verdict wiring from INSIDE the "
+                    .. "boundary is proven; a live write is gated on a deployed "
+                    .. "statement table for a NOP-safe target (a future "
+                    .. "coverage item)")
             elseif applied == false and reason_is_colocation(reason) then
                 report(row, true, "the replace_with from the boundary "
                     .. "resolved the curated statement and was honestly "
                     .. "rejected at apply against cap-92's co-located entry "
-                    .. "on the same proven-safe site (reason=" .. reason
-                    .. ") — resolution reached, nothing silent")
+                    .. "on the same site (reason=" .. reason
+                    .. ") — resolution reached, nothing silent, no live write "
+                    .. "asserted")
             else
                 report(row, false, "the statement entry's apply verdict is "
                     .. ":applied()=" .. tostring(applied) .. " reason=\""
-                    .. reason .. "\" — neither applied, a deploy-state "
-                    .. "miss, nor the co-located-entry arm; a real "
-                    .. "apply-path regression")
+                    .. reason .. "\" — neither a deploy-state "
+                    .. "(function_no_statements) miss nor the co-located-entry "
+                    .. "arm; a real resolve/register/apply-path regression")
             end
         end
     end
