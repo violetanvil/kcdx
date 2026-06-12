@@ -53,6 +53,21 @@
 #      teaching error; the standing record is untouched.
 #      FALSIFIABLE: the nil set succeeds, the error doesn't teach the
 #      unset rule, or the record changed -> FAIL.
+#   7a. cap-100-set-typo-error — §6 branch b (loaded, no such bare): a set
+#      on the own full name with a non-existent bare RAISES "declares no
+#      behavior" pointing at list("<owner>.").
+#      FALSIFIABLE: the typo set succeeds, or the error lacks the wording /
+#      the list() pointer -> FAIL.
+#   7b. cap-100-set-bare-no-declarer — §6 branch d: a set on a bare name no
+#      plugin declares RAISES "no plugin loaded so far declares <bare>"
+#      pointing at the full <author>.<plugin>.<bare> form.
+#      FALSIFIABLE: the bare set succeeds, or the error lacks the wording /
+#      the full-name pointer -> FAIL.
+#   7c. cap-100-set-owner-absent — §6 branch c (absent): a set on a full
+#      name whose <author>.<plugin> is not installed RAISES "belongs to
+#      <owner>, which is not installed" with NO reorder suggestion.
+#      FALSIFIABLE: the absent set succeeds, the error lacks "not
+#      installed", or it suggests a reorder -> FAIL.
 #   8. cap-100-set-records-and-applies — the load-time set records
 #      immediately (get answers 99 pre-boundary) and the apply boundary
 #      invokes the implementation EXACTLY ONCE with the final value
@@ -88,6 +103,9 @@ test_names          = [
     "cap-100-list-prefix-filter",
     "cap-100-alias-get",
     "cap-100-set-nil-error",
+    "cap-100-set-typo-error",
+    "cap-100-set-bare-no-declarer",
+    "cap-100-set-owner-absent",
     "cap-100-set-records-and-applies",
     "cap-100-post-load-set-error",
 ]

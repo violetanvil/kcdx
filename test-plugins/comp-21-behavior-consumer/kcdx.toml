@@ -1,0 +1,35 @@
+# COMP-21 consumer — sets the FAILED declarer's behavior, asserts the
+# §6 branch-b failed-declarer teaching error.
+#
+# Loads LATER (priority 40) than comp-21-behavior-failed-declarer (priority
+# 20), so by the time this plugin's set runs the failed declarer's script has
+# already errored and the loader has recorded its failure. Setting the failed
+# declarer's full behavior name therefore RAISES the failed-declarer error
+# ("'<owner>' failed to load — fix or remove it"), the OUTCOME-first branch —
+# NOT the reorder error (the owner is not later) and NOT the typo error (the
+# owner declared nothing because it errored, not because of a name miss).
+#
+# One row, reports at input_loaded.
+#
+# Test mode: boot-only.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_21_behavior_consumer"
+display_name        = "COMP-21 consumer (sets the failed declarer's behavior)"
+author              = "ts"
+description         = "Loads after the deliberately-failing declarer and sets its full behavior name — asserts the §6 branch-b failed-declarer teaching error (the resolver consults the declarer's load outcome first, distinguishing a failed load from a typo or a reorder)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = [
+    "comp-21-set-failed-declarer",
+]
+
+[load_order]
+priority = 40
+
+[entrypoints]
+lua = "plugin.lua"

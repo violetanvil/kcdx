@@ -20,10 +20,16 @@
 // Set window: a set RECORDS during plugin load (last-wins; one conflict warn
 // when a second different plugin records a different value); the apply
 // boundary invokes each set behavior's implementation once with the final
-// value. A post-load set — after the boundary completed, or on an
-// already-applied behavior during the drain — raises a teaching error THIS
-// step (the placeholder); the revert-gated runtime toggle contract is a
-// later step.
+// value. A set that cannot resolve raises the DISCRIMINATING §6 error
+// (reorder / failed-load / disabled / engine-rejected / absent / typo /
+// bare-name), recording the consumer→declarer edge on the way out so the
+// failed set still feeds ordering. A PLUGIN-tier set from an EARLY stop
+// (before the main Lua wave) is OUT-OF-WINDOW (the window-law wall — built
+// for the C++ early-stop caller in P2 + the deferred lua_before in P11; the
+// Lua binder is itself a main-stop caller, so it never trips it). A post-load
+// set — after the boundary completed, or on an already-applied behavior
+// during the drain — raises a teaching error THIS step (the placeholder); the
+// revert-gated runtime toggle contract is a later step.
 //
 // Error contract: a wrong declare/set/get/list call RAISES a normal Lua
 // error at the call site (luaL_error) with a teaching text — the calling
@@ -59,9 +65,13 @@ extern "C" {
 
 #include "behavior_registry.h"
 #include "init_phase.h"        // init::Current — the declare-window check
+#include "load_order.h"        // IsPluginEnabled / RunsBefore — branch a/c discrimination
 #include "log.h"               // LOG_ERROR_KV, ::kcdx::log::KV
 #include "lua_bind_helpers.h"  // FindUnknownKey
+#include "lua_plugin_loader.h" // DidScriptFail — branch b failed-declarer discrimination
 #include "lua_registry.h"      // OwningPluginForCurrentCall
+#include "plugin_loader.h"     // g_manifests — the discovered plugin set (branch c absent/disabled)
+#include "zone_gate.h"         // RejectReason — branch c engine-rejected
 
 namespace kcdx::lua_bind_behavior {
 
@@ -368,15 +378,217 @@ std::string SetterLabel(const std::string& author, const std::string& plugin) {
     return author + "." + plugin;
 }
 
+// Split a name on '.' (an empty segment stays empty — the caller treats a
+// dotted-edge form as not-prefixed). Used only to recognise the explicit
+// 3-segment <author>.<plugin>.<bare> form for the discriminating set
+// resolution errors; the registry owns real resolution.
+std::vector<std::string> SplitName(const std::string& name) {
+    std::vector<std::string> segs;
+    std::string cur;
+    for (char c : name) {
+        if (c == '.') { segs.push_back(cur); cur.clear(); }
+        else          { cur.push_back(c); }
+    }
+    segs.push_back(cur);
+    return segs;
+}
+
+// True iff `<author>.<plugin>` names a plugin in the discovered set
+// (g_manifests carries EVERY discovered plugin — enabled, disabled, or
+// engine-rejected — so this is the "is it installed at all" question; the
+// load_order/zone_gate state below answers disabled/rejected). Fills
+// `pluginNameOut` with the matched [plugin].name (the load_order / script
+// key) on a hit.
+bool FindOwningPlugin(const std::string& author, const std::string& plugin,
+                      std::string& pluginNameOut) {
+    for (const auto& m : kcdx::plugins::g_manifests) {
+        if (m.author == author && m.name == plugin) {
+            pluginNameOut = m.name;
+            return true;
+        }
+    }
+    return false;
+}
+
+// True iff the registry carries ANY behavior stamped under the
+// `<author>.<plugin>.` prefix (the declarer registered at least one
+// behavior). Distinguishes "loaded, declares a typo'd-away name" (some
+// behaviors present) from "declared nothing under this prefix yet"
+// (later-in-order, or a failed/clean-but-empty declarer).
+bool DeclarerHasAnyBehavior(const std::string& author,
+                            const std::string& plugin) {
+    std::vector<const kcdx::behavior_registry::Behavior*> rows;
+    kcdx::behavior_registry::Enumerate(author + "." + plugin + ".", rows);
+    return !rows.empty();
+}
+
+// Build + log + raise the DISCRIMINATING resolution error for a `set` whose
+// name did not resolve to a registered behavior (design §6). `nameArg` is
+// the author's argument; `caller` is the consumer (for the reorder wording
+// + the failed-set edge). Records the consumer->declarer edge on the
+// prefixed ordering-failed branches (a/b/c) before raising — a failed set
+// still feeds s6 persistence + s7 auto-order (a bare name (d) / catalog miss
+// has no declarer to point at, records nothing; anonymous setters record
+// nothing, as the resolved path). NEVER returns (luaL_error longjmps).
+int RaiseSetResolution(lua_State* L, const std::string& nameArg,
+                       const kcdx::lua_registry::OwningPlugin& caller) {
+    const std::vector<std::string> segs = SplitName(nameArg);
+    const bool prefixed =
+        segs.size() == 3 && !segs[0].empty() && !segs[1].empty() &&
+        !segs[2].empty();
+
+    std::string detail;
+    const char* branch = nullptr;
+    // The full stamped name the consumer→declarer edge records on a failed
+    // prefixed set (the design: a failed set still records "this consumer
+    // wanted this declarer", feeding ordering). A bare-name failure has no
+    // declarer to point at, so it records no edge.
+    std::string edgeFullName;
+
+    // A 3-segment kcdx.behavior.<bare> name is the engine CATALOG tier, not a
+    // plugin — it has no owning plugin to discriminate against. Resolution
+    // already missed (the catalog does not carry this name; the catalog pack
+    // ships in a later phase), so teach the catalog-miss directly rather than
+    // reading "kcdx.behavior is not installed" off the reserved root.
+    const bool catalogForm =
+        prefixed && segs[0] == "kcdx" && segs[1] == "behavior";
+
+    if (catalogForm) {
+        const std::string& bare = segs[2];
+        branch = "catalog_miss";
+        detail = "kcdx.behavior.set('" + nameArg + "'): the engine catalog "
+            "declares no behavior 'kcdx.behavior." + bare + "' — browse the "
+            "catalog with kcdx.behavior.list(\"kcdx.behavior.\") (it is empty "
+            "until the catalog pack ships; a plugin behavior is set by its "
+            "full <author>.<plugin>.<bare> name).";
+        // No edge: a catalog name has no declarer plugin to order against.
+    } else if (prefixed) {
+        const std::string& author = segs[0];
+        const std::string& plugin = segs[1];
+        const std::string& bare   = segs[2];
+        const std::string owner   = author + "." + plugin;
+        const std::string full    = nameArg;  // already the 3-seg full name
+        edgeFullName = full;
+
+        std::string ownerPluginName;
+        const bool installed = FindOwningPlugin(author, plugin, ownerPluginName);
+
+        if (!installed) {
+            // Branch c — absent.
+            branch = "owner_absent";
+            detail = "kcdx.behavior.set('" + full + "'): '" + bare +
+                "' belongs to '" + owner + "', which is not installed. "
+                "Install that plugin (or check the <author>.<plugin> prefix "
+                "for a typo); your set cannot resolve until its declarer "
+                "loads.";
+        } else if (!kcdx::load_order::IsPluginEnabled(ownerPluginName)) {
+            // Branch c — disabled or engine-rejected (the engine knows
+            // which: a non-empty zone_gate reject reason = engine-rejected,
+            // else the user disabled it in load_order.toml).
+            const std::string& reject =
+                kcdx::zone_gate::RejectReason(owner);
+            if (!reject.empty()) {
+                branch = "owner_rejected";
+                detail = "kcdx.behavior.set('" + full + "'): '" + bare +
+                    "' belongs to '" + owner + "', which was rejected by the "
+                    "engine (" + reject + "). Fix the cause of the rejection; "
+                    "your set cannot resolve until its declarer loads.";
+            } else {
+                branch = "owner_disabled";
+                detail = "kcdx.behavior.set('" + full + "'): '" + bare +
+                    "' belongs to '" + owner + "', which is installed but "
+                    "disabled (load_order.toml). Enable that plugin; your "
+                    "set cannot resolve until its declarer loads.";
+            }
+        } else if (DeclarerHasAnyBehavior(author, plugin)) {
+            // Branch b — loaded, declares behaviors, but NOT this bare name:
+            // a typo, or a behavior the declarer's new version removed. No
+            // reorder suggestion — none fixes a name that does not exist.
+            branch = "no_such_bare";
+            detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                "' is loaded but declares no behavior '" + bare +
+                "' — check the name against kcdx.behavior.list(\"" + owner +
+                ".\") (a typo, or a behavior the declarer's new version "
+                "removed).";
+        } else if (kcdx::lua_plugin_loader::DidScriptFail(ownerPluginName)) {
+            // Branch b — failed declarer: the owner's script ERRORED before
+            // its declares ran, so it registered nothing. Consult the load
+            // OUTCOME first (design §6) — no reorder fixes a load failure.
+            branch = "owner_failed";
+            detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                "' failed to load — fix or remove it; your set cannot "
+                "resolve until it loads (its script errored before its "
+                "declares ran, so it registered no behaviors).";
+        } else if (kcdx::load_order::RunsBefore(caller.plugin, ownerPluginName)) {
+            // Branch a — the owning plugin loads LATER than you. The exact
+            // reorder names both plugins + the direction. First-launch
+            // wording is calibrated to what the engine KNOWS at this point:
+            // the prefix's plugin loads later, not (yet) that it declares
+            // this specific name — a persisted edge confirms the declaration
+            // from the second launch (step 6).
+            branch = "owner_later";
+            detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                "' loads after you — move '" + caller.author + "." +
+                caller.plugin + "' below it (in load_order.toml) so its "
+                "declares run before your set, or use kcdx.behavior's "
+                "auto-order once it lands.";
+        } else {
+            // Owner loaded earlier (or same-keyed), enabled, did not fail,
+            // and declared nothing under its prefix: the named behavior does
+            // not exist on a clean-but-empty declarer. Same surface as the
+            // typo branch — no reorder fixes a name with no declarer.
+            branch = "no_such_bare";
+            detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                "' is loaded but declares no behavior '" + bare +
+                "' — check the name against kcdx.behavior.list(\"" + owner +
+                ".\") (a typo, or the declarer declares no behaviors).";
+        }
+    } else {
+        // Branch d — a bare name (or any non-3-segment form) with no
+        // declarer found: there is no <author>.<plugin> prefix to
+        // discriminate with. A persisted edge from a prior launch upgrades
+        // this to the discriminating form (step 6).
+        branch = "bare_no_declarer";
+        detail = "kcdx.behavior.set('" + nameArg + "'): no plugin loaded so "
+            "far declares '" + nameArg + "'. If it belongs to another "
+            "plugin, use its full <author>.<plugin>.<bare> name; browse "
+            "kcdx.behavior.list() to see what is declared.";
+    }
+
+    // Edge recording on the prefixed ordering-failed branches (a/b/c): a
+    // failed set still records "this consumer wanted this declarer" (feeds s6
+    // persistence + s7 auto-order). The prefixed branches carry the explicit
+    // full name; the bare branch has no declarer to point at (no edge).
+    // Anonymous setters (empty plugin) record nothing — RecordEdge skips
+    // them, as the resolved path does.
+    if (!edgeFullName.empty()) {
+        kcdx::behavior_registry::RecordEdge(
+            caller.author, caller.plugin, edgeFullName);
+    }
+
+    LOG_ERROR_KV(kCat, "set_unresolved",
+        ::kcdx::log::KV("branch",  branch),
+        ::kcdx::log::KV("name",    nameArg),
+        ::kcdx::log::KV("author",  caller.author),
+        ::kcdx::log::KV("plugin",  caller.plugin),
+        ::kcdx::log::KV("detail",  detail));
+    luaL_error(L, "%s", detail.c_str());
+    return 0;  // unreachable (luaL_error longjmps)
+}
+
 // kcdx.behavior.set(name, value) — record a value for the apply boundary.
 //
 // Load-window semantics: the value is RECORDED (last-wins); the behavior's
 // implementation runs ONCE at the apply boundary with the final recorded
-// value. nil is the unset sentinel, never a value (§4). Resolution is the
-// shared ResolveOrRaise (the discriminating ordering-error branches are a
-// later step). A post-load set — the boundary completed, or the behavior
-// already applied mid-drain — raises the placeholder teaching error; the
-// revert-gated runtime toggle is a later step.
+// value. nil is the unset sentinel, never a value (§4). Resolution: the
+// shared ResolveForCaller, and on a miss the DISCRIMINATING §6 set-error
+// (RaiseSetResolution) — a prefixed name keys off the owning plugin's load
+// outcome + order, a bare name points at the full-name form; the failed set
+// records the consumer→declarer edge. The window-law wall rejects a
+// plugin-tier set from an early stop (catalog-tier passes from any stop). A
+// post-load set — the boundary completed, or the behavior already applied
+// mid-drain — raises the placeholder teaching error; the revert-gated runtime
+// toggle is a later step.
 int Lua_Set(lua_State* L) {
     if (lua_type(L, 1) != LUA_TSTRING) {
         const char* detail =
@@ -404,11 +616,63 @@ int Lua_Set(lua_State* L) {
         return luaL_error(L, "%s", detail.c_str());
     }
 
-    // Resolve (the existing resolution + its existing unresolved error).
+    // Resolve the caller identity first — both the discriminating
+    // resolution error (the reorder branch names the consumer) and the
+    // conflict warn / edge below need it.
+    std::string callSiteFile;
+    int callSiteLine = 0;
+    kcdx::lua_registry::OwningPlugin owner =
+        kcdx::lua_registry::OwningPluginForCurrentCall(
+            L, callSiteFile, callSiteLine);
+
+    // Resolve. On a miss, the DISCRIMINATING set-resolution error (design
+    // §6's five branches) — NOT the generic get-style "no declarer" text:
+    // a prefixed name keys off the owning plugin's load OUTCOME + order
+    // (reorder / failed-load / disabled / engine-rejected / absent / typo);
+    // a bare name with no declarer points at the full-name form. The failed
+    // set also records the consumer→declarer edge (ordering feedback).
     const kcdx::behavior_registry::Behavior* resolved =
-        ResolveOrRaise(L, "set", nameArg);
+        kcdx::behavior_registry::ResolveForCaller(
+            owner.author, owner.plugin, nameArg);
+    if (!resolved) {
+        return RaiseSetResolution(L, nameArg, owner);  // never returns
+    }
     kcdx::behavior_registry::Behavior* b =
         kcdx::behavior_registry::LookupMutable(resolved->fullName);
+
+    // The window law (design §6). A PLUGIN-tier behavior resolves only at
+    // the MAIN stop — its declares come into existence when the declaring
+    // plugin's main entry runs (the game-thread first-tick Lua wave, phase
+    // >= EngineSubsystemsInit). A `set` from an EARLIER stop (a C++
+    // kcdxPlugin_Load on the worker, phase < EngineSubsystemsInit; a future
+    // lua_before slot) against a plugin-tier behavior is OUT-OF-WINDOW — a
+    // loud teaching error, the timeline's own out-of-window law. CATALOG-tier
+    // (kcdx.behavior.*) names are settable from ANY stop (the engine pack
+    // declares them before any plugin runs), so this gate is plugin-tier
+    // only. NOTE: the Lua binder is itself a MAIN-stop caller (this code runs
+    // in the first-tick wave), so it never trips this gate today; the gate's
+    // live trippers are the C++ early-stop caller (kcdxBehaviorInterface in
+    // P2) and the deferred Lua early-stop (lua_before, P11 P5 / TD-0013). The
+    // wall is built here so the law is enforced the moment an early-stop
+    // caller exists; the post-boundary (too-LATE) case is the separate gate
+    // below.
+    if (resolved->tier == kcdx::behavior_registry::Tier::Plugin &&
+        static_cast<int>(kcdx::init::Current()) <
+            static_cast<int>(kcdx::init::InitPhase::EngineSubsystemsInit)) {
+        const std::string detail =
+            "kcdx.behavior.set('" + nameArg + "'): plugin behaviors resolve "
+            "at the main stop — set '" + b->fullName + "' from your main "
+            "entry (plugin.lua / lua_after / kcdxPlugin_PostGameLoad), not "
+            "from an early stop (a C++ kcdxPlugin_Load). The declarer's "
+            "behaviors do not exist yet at the early stop; engine catalog "
+            "names (kcdx.behavior.*) are the only behaviors settable that "
+            "early.";
+        LOG_ERROR_KV(kCat, "set_out_of_window",
+            ::kcdx::log::KV("name",   b->fullName),
+            ::kcdx::log::KV("phase",  kcdx::init::Name(kcdx::init::Current())),
+            ::kcdx::log::KV("detail", detail));
+        return luaL_error(L, "%s", detail.c_str());
+    }
 
     // The set window: load-time only this step. After the boundary
     // completed — or on a behavior the boundary already applied (a
@@ -430,11 +694,7 @@ int Lua_Set(lua_State* L) {
         return luaL_error(L, "%s", detail.c_str());
     }
 
-    std::string callSiteFile;
-    int callSiteLine = 0;
-    kcdx::lua_registry::OwningPlugin owner =
-        kcdx::lua_registry::OwningPluginForCurrentCall(
-            L, callSiteFile, callSiteLine);
+    // (caller identity `owner` was resolved above, before resolution.)
 
     // Conflict warn — a SECOND DIFFERENT plugin recording a DIFFERENT
     // value over a standing record: one teaching warn naming both plugins,

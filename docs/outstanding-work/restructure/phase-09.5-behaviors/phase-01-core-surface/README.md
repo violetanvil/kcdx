@@ -10,8 +10,8 @@ edges, and the auto-order method. Design: [`../behavior-design.md`](../behavior-
 |---|---|---|
 | [1 — startup-ordering probe + static-evidence reads](step-1-startup-probe.md) | DONE | 736481d |
 | [2 — behavior_registry + declare/get/list](step-2-registry-declare.md) | DONE | 7080dd0 |
-| [3 — set + the apply boundary (worklist drain)](step-3-set-boundary.md) | DONE | (landed) |
-| [4 — window law + resolution errors + in-memory edges](step-4-window-law-errors.md) | NOT STARTED | — |
+| [3 — set + the apply boundary (worklist drain)](step-3-set-boundary.md) | DONE | 08e2f2a |
+| [4 — window law + resolution errors + in-memory edges](step-4-window-law-errors.md) | DONE | (landed) |
 | [5 — revert / post-load toggle contract](step-5-toggle-revert.md) | NOT STARTED | — |
 | [6 — edge persistence + launch-time recognition](step-6-edge-persistence.md) | NOT STARTED | — |
 | [7 — the auto-order method](step-7-auto-order.md) | NOT STARTED | — |

@@ -42,6 +42,9 @@ local ROWS = {
     "cap-100-list-prefix-filter",
     "cap-100-alias-get",
     "cap-100-set-nil-error",
+    "cap-100-set-typo-error",
+    "cap-100-set-bare-no-declarer",
+    "cap-100-set-owner-absent",
 }
 local LATE_ROWS = {
     "cap-100-set-records-and-applies",
@@ -165,6 +168,24 @@ else
         pcall(kcdx.behavior.set, "speed_mult", nil)
     local ok_get_after_nil, get_after_nil =
         pcall(kcdx.behavior.get, "speed_mult")
+
+    -- §6 discriminating set-resolution branches (single-plugin half).
+    -- Each pcall-captures the raise; the rows assert the branch wording.
+    --   b (typo): set the OWN full name with a non-existent bare — the
+    --     declarer (this plugin) is loaded + declares others -> the
+    --     "declares no behavior" error pointing at list("<owner>.").
+    local ok_typo, err_typo =
+        pcall(kcdx.behavior.set, PREFIX .. "no_such_behavior_xyz", 1)
+    --   d (bare, no declarer): set a bare name no plugin declares -> the
+    --     "no plugin loaded so far declares <bare>; use the full name"
+    --     error (no <author>.<plugin> prefix to discriminate with).
+    local ok_bare, err_bare =
+        pcall(kcdx.behavior.set, "cap100_undeclared_bare_name", true)
+    --   c (owner absent): set a 3-segment full name whose
+    --     <author>.<plugin> is NOT an installed plugin -> the "belongs to
+    --     <owner>, which is not installed" error.
+    local ok_absent, err_absent =
+        pcall(kcdx.behavior.set, "noauthor.noplugin.some_behavior", 1)
 
     -- =====================================================================
     -- cap-100-declare-list — the clean declares registered and list() shows
@@ -486,6 +507,104 @@ else
             rec(row, true, "set('speed_mult', nil) raised the nil-sentinel "
                 .. "teaching error ('to leave a behavior unset, don't set "
                 .. "it') and the record is untouched (get still answers 42)")
+        end
+    end
+
+    -- =====================================================================
+    -- cap-100-set-typo-error — §6 branch b (loaded, no such bare): a set on
+    -- the OWN full name with a non-existent bare RAISES the "declares no
+    -- behavior" error pointing at list("<owner>."). This plugin IS the
+    -- declarer, loaded, with other behaviors registered — so it is the
+    -- loaded-no-such-name case, not absent/disabled/reorder.
+    -- FALSIFIABLE: the typo set succeeds, the error lacks "declares no
+    -- behavior", or it lacks the list() pointer -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-set-typo-error"
+        if ok_typo then
+            rec(row, false, "set('" .. PREFIX .. "no_such_behavior_xyz') "
+                .. "SUCCEEDED — a prefixed name whose loaded declarer has no "
+                .. "such bare behavior must RAISE the discriminating error")
+        elseif type(err_typo) ~= "string"
+            or not string.find(err_typo, "declares no behavior", 1, true) then
+            rec(row, false, "the typo set raised but the error does not say "
+                .. "'declares no behavior' (the loaded-no-such-name branch); "
+                .. "got: " .. tostring(err_typo))
+        elseif not string.find(err_typo, "kcdx.behavior.list", 1, true) then
+            rec(row, false, "the typo error does not point at "
+                .. "kcdx.behavior.list(\"<owner>.\") — discovery must stay "
+                .. "name-based (got: " .. tostring(err_typo) .. ")")
+        else
+            rec(row, true, "a set on the own full name with a non-existent "
+                .. "bare raised the loaded-no-such-name teaching error "
+                .. "('declares no behavior') pointing at "
+                .. "kcdx.behavior.list(\"<owner>.\") — the typo branch, "
+                .. "name-based discovery, no hex burden")
+        end
+    end
+
+    -- =====================================================================
+    -- cap-100-set-bare-no-declarer — §6 branch d (bare, no declarer): a set
+    -- on a bare name no plugin declares RAISES the "no plugin loaded so far
+    -- declares <bare>" error pointing at the full <author>.<plugin>.<bare>
+    -- form (a bare name carries no prefix to discriminate with).
+    -- FALSIFIABLE: the bare set succeeds, the error lacks the no-declarer
+    -- wording, or it lacks the full-name pointer -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-set-bare-no-declarer"
+        if ok_bare then
+            rec(row, false, "set('cap100_undeclared_bare_name') SUCCEEDED — "
+                .. "a bare name no plugin declares must RAISE the no-declarer "
+                .. "error")
+        elseif type(err_bare) ~= "string"
+            or not string.find(err_bare, "no plugin loaded", 1, true) then
+            rec(row, false, "the bare-name set raised but the error does not "
+                .. "say 'no plugin loaded so far declares' (the bare-name "
+                .. "branch); got: " .. tostring(err_bare))
+        elseif not string.find(err_bare,
+            "<author>.<plugin>.<bare>", 1, true) then
+            rec(row, false, "the bare-name error does not point at the full "
+                .. "<author>.<plugin>.<bare> form (got: "
+                .. tostring(err_bare) .. ")")
+        else
+            rec(row, true, "a set on an undeclared bare name raised the "
+                .. "no-declarer teaching error ('no plugin loaded so far "
+                .. "declares ...') pointing at the full "
+                .. "<author>.<plugin>.<bare> form — the bare-name branch")
+        end
+    end
+
+    -- =====================================================================
+    -- cap-100-set-owner-absent — §6 branch c (owner absent): a set on a
+    -- 3-segment full name whose <author>.<plugin> is NOT an installed plugin
+    -- RAISES the "belongs to <owner>, which is not installed" error (no
+    -- reorder suggestion — none fixes an uninstalled declarer).
+    -- FALSIFIABLE: the absent set succeeds, the error lacks "not installed",
+    -- or it suggests a reorder (wrong fix for an absent owner) -> FAIL.
+    -- =====================================================================
+    do
+        local row = "cap-100-set-owner-absent"
+        if ok_absent then
+            rec(row, false, "set('noauthor.noplugin.some_behavior') "
+                .. "SUCCEEDED — a prefixed name whose owner is not installed "
+                .. "must RAISE the absent-owner error")
+        elseif type(err_absent) ~= "string"
+            or not string.find(err_absent, "not installed", 1, true) then
+            rec(row, false, "the absent-owner set raised but the error does "
+                .. "not say 'not installed' (got: " .. tostring(err_absent)
+                .. ")")
+        elseif string.find(err_absent, "move", 1, true)
+            or string.find(err_absent, "below it", 1, true) then
+            rec(row, false, "the absent-owner error suggests a REORDER "
+                .. "('move'/'below it') — no reorder fixes an uninstalled "
+                .. "declarer; the fix is to install it (got: "
+                .. tostring(err_absent) .. ")")
+        else
+            rec(row, true, "a set on a full name whose <author>.<plugin> is "
+                .. "not installed raised the absent-owner teaching error "
+                .. "('belongs to <owner>, which is not installed') with NO "
+                .. "reorder suggestion — branch c, the right fix named")
         end
     end
 end

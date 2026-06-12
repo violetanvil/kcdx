@@ -150,6 +150,18 @@ void Resolve();
 // entries land at default position in the after_game zone.
 const Effective& Of(const std::string& pluginName);
 
+// True iff plugin `a` sorts BEFORE plugin `b` in the resolved load order
+// — the canonical plugin sort key (zone asc, priority asc, orderIndex
+// asc, name asc), the SAME key the entrypoint run-order uses
+// (lua_plugin_loader::EntrypointRunsBefore, minus the Source/entry
+// tiebreak that does not apply to whole plugins). Each name is looked up
+// via Of(); an unknown name takes the default Effective row. Used by the
+// behavior resolver to tell "the owning declarer loads LATER than you"
+// (the reorder error) from "loads earlier" (a typo / failed-load error)
+// — design §6's window-law branch discrimination. A strict order: equal
+// keys fall through to the name compare, so RunsBefore(x, x) is false.
+bool RunsBefore(const std::string& a, const std::string& b);
+
 // True if the named plugin is enabled per the resolved load order.
 // Returns the AND of the two underlying inputs on Effective:
 // `userEnabled && engineAccepted`. Either input flipping to false

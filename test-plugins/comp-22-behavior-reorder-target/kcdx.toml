@@ -1,0 +1,34 @@
+# COMP-22 reorder target — the LATER-loading declarer for the §6 branch-a
+# reorder fixture.
+#
+# Loads LAST (priority 90) and declares `reorder_target`. The comp-20 declarer
+# (priority 30) sets this plugin's full name AT LOAD — before this plugin has
+# run — so that set hits the §6 branch-a reorder error ("'<owner>' loads after
+# you — move ... below it"). This plugin exists ONLY to be the later-loading
+# owner of a real declared behavior, so the reorder error names a real
+# installed+enabled later plugin (not the absent-owner branch) that DOES
+# declare the name (not the typo branch). The assertion row lives on the
+# comp-20 declarer (comp-20-set-reorder-error).
+#
+# It reports NO test row (it has nothing to assert — it just declares the
+# target) and declares no test_names.
+#
+# Test mode: boot-only.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_22_behavior_reorder_target"
+display_name        = "COMP-22 reorder target (declares reorder_target, loads LAST)"
+author              = "ts"
+description         = "The later-loading declarer for the §6 branch-a reorder fixture: declares reorder_target at priority 90. The comp-20 declarer (priority 30) sets this plugin's full name at load — before this plugin runs — so that set hits the reorder teaching error. Exists only to be a real later-loading owner of a declared behavior; reports no row."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+
+[load_order]
+priority = 90
+
+[entrypoints]
+lua = "plugin.lua"

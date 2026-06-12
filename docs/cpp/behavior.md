@@ -57,6 +57,18 @@ an engine-owned **value handle** model:
   post-load on the game main thread only; an off-thread post-load query gets a
   teaching error naming the two sanctioned patterns (capture the value in your
   implementation at apply, or copy it out on the main thread).
+- **The window law — a plugin-tier `Set` from `kcdxPlugin_Load` is
+  out-of-window.** `kcdxPlugin_Load` is an EARLY stop (the worker wave, before
+  any plugin's main entry runs), so the declarer's plugin-tier behaviors do not
+  exist yet. A `Set` on a plugin-tier `<author>.<plugin>.<bare>` name from
+  `kcdxPlugin_Load` fails loud with the same teaching error the Lua surface
+  raises ("plugin behaviors resolve at the main stop; set from your main
+  entry") — set plugin behaviors from `kcdxPlugin_PostGameLoad` (the C++ main
+  stop), the mirror of Lua's `lua_after`. Engine-catalog `kcdx.behavior.*`
+  names are settable from any stop. The Lua surface's discriminating resolution
+  errors (reorder / failed-load / disabled / rejected / absent / typo /
+  bare-name) mirror identically once this interface ships — the wall is
+  language-symmetric (it is keyed on the early-vs-main stop, not the language).
 
 ## Today (the built fallback)
 

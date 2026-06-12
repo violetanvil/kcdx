@@ -178,6 +178,18 @@ kcdx.behavior.declare("never_set", {
 -- two setters (the later consumer's different value wins + warns).
 kcdx.behavior.set("conflict_target", "declarer-value")
 
+-- §6 branch-a reorder fixture: this declarer (priority 30) loads BEFORE the
+-- reorder-target plugin (comp-22-behavior-reorder-target, priority 90); it
+-- tries to set that plugin's `reorder_target` at load. That declarer has NOT
+-- run yet (and it is installed + enabled + loads LATER), so the set hits the
+-- reorder error naming the exact fix. The target lives on its OWN plugin (not
+-- the §9 consumer, which must stay declare-free) so the error names a real
+-- later-loading owner, not the absent-owner branch. pcall-captured; the row
+-- asserts the wording.
+local LATER = "ts.comp_22_behavior_reorder_target."
+local ok_reorder, err_reorder =
+    pcall(kcdx.behavior.set, LATER .. "reorder_target", "too-early")
+
 -- ===========================================================================
 -- Rows — report at input_loaded (post-boundary).
 -- ===========================================================================
@@ -471,9 +483,47 @@ kcdx.on("input_loaded", function()
         end
     end
 
+    -- comp-20-set-reorder-error — §6 branch a (reorder): this EARLIER
+    -- declarer's load-time set on the LATER `reorder_target` (declared by
+    -- comp-22-behavior-reorder-target, priority 90 > this plugin's 30, so it
+    -- had not declared it yet) RAISED the reorder teaching error naming the
+    -- EXACT fix (the owner loads after you — move yours below it).
+    -- FALSIFIABLE: the early set SUCCEEDED (resolved a not-yet-declared
+    -- name), the error lacks the reorder DIRECTION ("loads after"/"below"),
+    -- or it names the wrong owner -> FAIL. This is NOT the absent-owner
+    -- branch (the target plugin IS installed) nor the typo branch (it
+    -- declares the name, just later) — the discriminator is load order.
+    do
+        local row = "comp-20-set-reorder-error"
+        if ok_reorder then
+            report(row, false, "the early set on the LATER plugin's "
+                .. "reorder_target SUCCEEDED — a set on a prefixed name whose "
+                .. "declarer loads later must RAISE the reorder error, not "
+                .. "resolve a name that does not exist yet")
+        elseif type(err_reorder) ~= "string"
+            or not (string.find(err_reorder, "loads after", 1, true)
+                or string.find(err_reorder, "below", 1, true)) then
+            report(row, false, "the early set raised but the error does not "
+                .. "name the reorder DIRECTION ('loads after you' / 'move ... "
+                .. "below it') — the reorder branch must teach the exact fix "
+                .. "(got: " .. tostring(err_reorder) .. ")")
+        elseif not string.find(err_reorder,
+            "comp_22_behavior_reorder_target", 1, true) then
+            report(row, false, "the reorder error does not name the later "
+                .. "owning plugin (comp_22_behavior_reorder_target) — it must "
+                .. "name both plugins (got: " .. tostring(err_reorder) .. ")")
+        else
+            report(row, true, "the earlier declarer's load-time set on the "
+                .. "LATER plugin's reorder_target raised the reorder teaching "
+                .. "error naming the exact fix (the owner 'loads after you — "
+                .. "move ... below it') — §6 branch a, discriminated by load "
+                .. "order from absent/typo")
+        end
+    end
+
     kcdx.log.info("COMP20",
-        "behavior cross-plugin declarer reported 8 rows (impl-once-final, "
+        "behavior cross-plugin declarer reported 9 rows (impl-once-final, "
         .. "declarer-statement §9 leg, conflict-last-wins, boundary-raise + "
         .. "drain-continues, pending-update, already-applied error, "
-        .. "late-pend second pass, never-set skipped)")
+        .. "late-pend second pass, never-set skipped, set-reorder-error)")
 end)

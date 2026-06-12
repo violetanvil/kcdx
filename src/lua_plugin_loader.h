@@ -23,6 +23,8 @@
 // attribute to the right plugin's load-order row.
 
 extern "C" {
+#include <string>
+
 #include "lua.h"
 }
 
@@ -65,5 +67,16 @@ void RunAll(lua_State* L);
 // before InputLoaded. Safe to call once per session (internal latch
 // independent of RunAll's).
 void RunAfterEntrypoints(lua_State* L);
+
+// True iff plugin `pluginName` ([plugin].name) had ANY entrypoint file
+// fail or fault this session — a compile error, a runtime error, or a hard
+// SEH fault in its plugin.lua / lua_after. Recorded by the load loops as
+// each file's outcome lands. Read by the behavior resolver to discriminate
+// "the declarer loaded but its script ERRORED before its declares ran"
+// (design §6's failed-declarer branch) from a clean-but-missing declare (a
+// typo). A plugin with no lua entrypoints, or one every file ran clean for,
+// returns false. The record only covers Lua script outcome — a C++ load
+// fault is the plugin loader's own LoadedPlugin::loaded flag, not this.
+bool DidScriptFail(const std::string& pluginName);
 
 }  // namespace kcdx::lua_plugin_loader

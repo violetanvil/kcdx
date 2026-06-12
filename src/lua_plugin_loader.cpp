@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -156,6 +157,18 @@ void LoadOneFileGuarded(void* userdata) {
 std::atomic<bool> g_ranOnce{false};
 std::atomic<bool> g_ranAfterOnce{false};
 
+// Plugins ([plugin].name) whose Lua script outcome was a FAIL or FAULT
+// this session — written as each entrypoint file's FileResult lands.
+// Read by the behavior resolver (DidScriptFail) to discriminate a
+// failed-declarer from a clean-but-missing declare (design §6 branch b).
+// Main-thread only (every writer is a load loop on the game main thread;
+// the reader is the main-stop behavior set path) — no lock, consistent
+// with the registry's main-thread threading invariant.
+std::set<std::string>& ScriptFailedSet() {
+    static std::set<std::string> s;
+    return s;
+}
+
 // THE single entrypoint run-order: (load_order priority asc, name asc).
 //
 // Both Lua slots — the before/default slot (RunAll, plugin.lua) and the
@@ -167,13 +180,25 @@ std::atomic<bool> g_ranAfterOnce{false};
 // (RunAll is the before/default slot; lua_after is after_game). Ties broken
 // by name for determinism.
 //
-// Dependency (topo) order is NOT a factor here, and that is correct: topo
-// order constrains DLL Preload/Load (which consume g_plugins directly,
-// earlier, on the worker thread); plugin.lua / lua_after only QUEUE kcdx.*
-// intent that is applied later at lua_registry::ApplyZone in load-order — no
-// entrypoint's body depends on ANOTHER plugin's entrypoint having run first.
+// Dependency (topo) order is NOT a factor in this SORT, and that is still
+// correct — but the "no entrypoint body depends on another's having run"
+// claim is no longer universally true: a kcdx.behavior CONSUMER's plugin.lua
+// DOES depend on the DECLARER's plugin.lua having run first (the declarer
+// registers the behavior the consumer sets — the first cross-entrypoint
+// dependency on this surface). The model that handles it is NOT auto-topo
+// sorting (the pure-priority sort below STAYS): a consumer setting a
+// not-yet-declared prefixed name gets a discriminating teaching error naming
+// the exact reorder, the dependency is recorded as a persisted consumer→
+// declarer edge that surfaces the bad order up front on the next launch, and
+// a callable auto-order method computes a corrected order on demand
+// (behavior_registry / lua_bind_behavior, design §6). topo order still
+// constrains DLL Preload/Load (which consume g_plugins directly, earlier, on
+// the worker thread); plugin.lua / lua_after otherwise only QUEUE kcdx.*
+// intent applied later at lua_registry::ApplyZone in load-order.
 // load_order::priority is itself dependency-agnostic (load_order.cpp Resolve:
-// author hint + user override only), so a pure-priority sort is safe.
+// author hint + user override only), so this pure-priority sort is safe —
+// the behavior dependency is served by errors + edges + auto-order, not by
+// reordering this sort.
 //
 // Returns true if `a` must run before `b`. Strict-weak-ordering for std::sort.
 bool EntrypointRunsBefore(const kcdx::plugins::LoadedPlugin* a,
@@ -399,6 +424,10 @@ void RunAll(lua_State* L) {
                 ++filesRun;
             } else {
                 ++filesFailed;
+                // Record the script-failure so a later consumer's set on
+                // this declarer's behavior gets the failed-declarer error
+                // (not a typo error) — design §6 branch b.
+                ScriptFailedSet().insert(m.name);
                 if (r == FileResult::Faulted) {
                     break;  // don't run this plugin's later files after a fault
                 }
@@ -486,6 +515,9 @@ void RunAfterEntrypoints(lua_State* L) {
                 ++filesRun;
             } else {
                 ++filesFailed;
+                // A lua_after declare that errors is the same failed-declarer
+                // signal — record it for the §6 branch-b discrimination.
+                ScriptFailedSet().insert(m.name);
                 if (r == FileResult::Faulted) {
                     break;  // don't run this plugin's later files after a fault
                 }
@@ -498,6 +530,12 @@ void RunAfterEntrypoints(lua_State* L) {
                    "failed, across %zu plugin(s) with lua_after entrypoints",
                    filesRun, filesFailed, pluginsWithAfter);
     }
+}
+
+bool DidScriptFail(const std::string& pluginName) {
+    if (pluginName.empty()) return false;
+    const auto& s = ScriptFailedSet();
+    return s.find(pluginName) != s.end();
 }
 
 }  // namespace kcdx::lua_plugin_loader

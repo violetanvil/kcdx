@@ -43,6 +43,14 @@
 #   never_set       — declared, never set -> SKIPPED by the boundary
 #                     (implementation never fires; get answers the default).
 #
+# Also (§6 branch a — reorder): this declarer (priority 30, loads FIRST) sets
+# comp-22-behavior-reorder-target's `reorder_target` at load — COMP-22
+# (priority 90) has not declared it yet — so the set RAISES the reorder
+# teaching error naming the exact fix (comp-20-set-reorder-error). The
+# discriminator is load order: COMP-22 IS installed (not the absent branch)
+# and DOES declare the name (just later — not the typo branch). The target is
+# on COMP-22's own plugin so the §9 consumer stays declare-free.
+#
 # Test mode: boot-only (launch-to-menu; all rows report at input_loaded; the
 # set_conflict warn + the implementation_raised attribution are
 # log-confirmed by the agent at launch).
@@ -67,6 +75,7 @@ test_names          = [
     "comp-20-drain-already-applied",
     "comp-20-drain-late-pend",
     "comp-20-never-set-skipped",
+    "comp-20-set-reorder-error",
 ]
 
 [load_order]

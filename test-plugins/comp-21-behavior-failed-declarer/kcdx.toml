@@ -1,0 +1,36 @@
+# COMP-21 failed declarer — the §6 branch-b FAILED-DECLARER half.
+#
+# This plugin's plugin.lua deliberately ERRORS at the top, BEFORE it declares
+# any behavior — the canonical "declarer's script failed to load" case. The
+# engine isolates the error (the load continues); the plugin registers NO
+# behaviors. A consumer (comp-21-behavior-consumer, priority 40 — loads LATER
+# than this plugin's 20) then sets this plugin's full behavior name and gets
+# the FAILED-DECLARER teaching error ("'<owner>' failed to load — fix or
+# remove it"), NOT the reorder error and NOT the typo error: the engine
+# consults the declarer's load OUTCOME first (design §6 branch b).
+#
+# This plugin reports NO row itself (its script never reaches a report call —
+# that is the point). The consumer owns the assertion row
+# (comp-21-set-failed-declarer). Its presence in test_names with an empty
+# expectation would mislead the aggregator, so it declares none.
+#
+# Test mode: boot-only (the deliberate error is logged + isolated at load; the
+# consumer's row reports at input_loaded).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "comp_21_behavior_failed_declarer"
+display_name        = "COMP-21 failed declarer (plugin.lua errors before declaring)"
+author              = "ts"
+description         = "A behavior declarer whose plugin.lua deliberately errors before any kcdx.behavior.declare runs — the §6 branch-b failed-declarer fixture. Registers no behaviors; the engine isolates the error and the load continues. The consumer sets its full name and asserts the failed-load teaching error."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+
+[load_order]
+priority = 20
+
+[entrypoints]
+lua = "plugin.lua"

@@ -333,6 +333,20 @@ const Effective& Of(const std::string& pluginName) {
     return it->second;
 }
 
+bool RunsBefore(const std::string& a, const std::string& b) {
+    // The canonical plugin sort key: (zone asc, priority asc, orderIndex
+    // asc, name asc) — the same key EntrypointRunsBefore applies (minus the
+    // Source/entry tiebreak, which is per-entry, not per-plugin). An unknown
+    // name takes the default Effective row via Of(). Name is the final,
+    // total tiebreak, so this is a strict order: RunsBefore(x, x) == false.
+    const Effective& ea = Of(a);
+    const Effective& eb = Of(b);
+    if (ea.zone != eb.zone) return ea.zone < eb.zone;
+    if (ea.priority != eb.priority) return ea.priority < eb.priority;
+    if (ea.orderIndex != eb.orderIndex) return ea.orderIndex < eb.orderIndex;
+    return a < b;
+}
+
 bool IsPluginEnabled(const std::string& pluginName) {
     // Anonymous entries (pure-patch kcdx.toml with no [plugin] table)
     // have no row in load_order.toml and no way to toggle. Treat as

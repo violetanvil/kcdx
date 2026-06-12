@@ -99,14 +99,60 @@ own value, or a second plugin recording an equal value, records silently.
 
 **Errors (each raises at the set site, naming the cause and the fix):**
 
-- an unknown name — the same teaching error `get` raises (browse
-  `kcdx.behavior.list()`; use the full `<author>.<plugin>.<bare>` form for
-  another plugin's behavior);
+- an unknown name — a **discriminating** teaching error (see "Resolution
+  errors" below) that tells you the exact fix — reorder, install, enable, or a
+  name typo — never a bare "not found";
 - `set(name, nil)` — nil is the unset sentinel, not a value;
 - a post-load set — after the apply boundary has run (or on a behavior the
   boundary already applied), a set raises a teaching error: behaviors apply
   once per session today. Runtime (post-load) toggling is not built yet — it
   arrives with the declare spec's `revert` contract.
+
+## Resolution errors — when a `set` can't find the behavior
+
+A `set` on a name that does not resolve to a declared behavior does NOT fail
+with a generic "not found" — it tells you the **exact** fix. The engine knows
+the load order, which plugins are installed/enabled, and which declared what,
+so it names the right correction. The branches:
+
+| What you did | What the engine knows | The error |
+|---|---|---|
+| Set a prefixed `<author>.<plugin>.<bare>` whose owning plugin **loads later than you** | the owner is installed + enabled, but its declares run after your set | "`<owner>` loads after you — move `<you>` below it" (the exact reorder; or use the auto-order method below). |
+| Set a prefixed name whose owning plugin **is loaded but declares no such bare name** | the owner ran, registered behaviors, but not this one | "`<owner>` is loaded but declares no behavior `<bare>` — check the name against `kcdx.behavior.list("<owner>.")`" (a typo, or a name a newer version removed). No reorder — none fixes a wrong name. |
+| Set a prefixed name whose owning plugin **failed to load** | the owner's script errored before its declares ran | "`<owner>` failed to load — fix or remove it; your set cannot resolve until it loads." No reorder. |
+| Set a prefixed name whose owning plugin is **not installed / disabled / engine-rejected** | the engine sees the install + enabled state + any reject reason | "`<bare>` belongs to `<owner>`, which is not installed" / "is installed but disabled (`load_order.toml`)" / "was rejected by the engine (`<reason>`)". No reorder. |
+| Set a **bare** name no plugin declares | a bare name carries no `<author>.<plugin>` prefix to discriminate with | "no plugin loaded so far declares `<bare>`; if it belongs to another plugin, use its full `<author>.<plugin>.<bare>` name." |
+
+The error is a normal Lua error in your script (the call site fails loudly; the
+load continues). Each failed set is also **recorded as a dependency edge** — so
+the engine learns "you wanted `<owner>`'s behavior" even when the set failed,
+which feeds the launch-time recognition + the auto-order method (both land in a
+later step).
+
+### The window law — plugin behaviors resolve at the main stop
+
+A **plugin-tier** behavior (`<author>.<plugin>.<bare>`) comes into existence
+when the declaring plugin's **main entry** runs (your `plugin.lua` /
+`lua_after` / a C++ `kcdxPlugin_PostGameLoad`). A `set` on a plugin-tier
+behavior from an **earlier stop** (a C++ `kcdxPlugin_Load`, or a future
+`lua_before` slot) is **out-of-window** — it fails loud: "plugin behaviors
+resolve at the main stop; set from your main entry." The declarer's behaviors
+do not exist yet at the early stop, so the engine teaches the fix rather than
+silently missing. **Engine-catalog names (`kcdx.behavior.*`) are settable from
+any stop** — the engine declares them before any plugin runs, so they are
+always available. (The early-stop callers — the C++ `kcdxPlugin_Load` set and
+the Lua `lua_before` set — arrive with their own surfaces; from a normal
+`plugin.lua`, every set is already at the main stop.)
+
+### Fixing a bad order — the auto-order method
+
+When the engine recognizes a wrong order (a consumer set above its declarer),
+the fix is a **callable auto-order method** that computes a corrected load
+order satisfying the recorded dependencies (consumer below declarer) and writes
+it back — no engine ever silently reorders your list. It is invoked on demand
+(a future launcher button is the intended caller); the persisted edges surface
+the conflict up front at the next launch. (The persistence + the method land in
+a later step.)
 
 ## The apply boundary — record at load, apply once
 
