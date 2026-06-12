@@ -132,9 +132,17 @@ def _inject_state(user_db):
         id_open = _add_av(e_open, gvt_id, None, gvt_id, "Old", "2025-01-01", ek_old)
         e_close = _add_entity("kcdx_test_close")
         id_close = _add_av(e_close, gvt_id, None, mid_id, "Old", "2025-01-01", ek_old)
+        # ALREADY-CLOSED-TO-LAST-VERIFIED (D41 close-intervals already-acted): valid_from=GVT,
+        # valid_through=MID, last_verified=MID -- valid_through == last_verified, both
+        # non-NULL. The resolver's close-intervals path SKIPS it (the close is already done),
+        # so it produces NO spec -> the endpoint must classify it `already_acted`.
+        e_closed_done = _add_entity("kcdx_test_closed_done")
+        id_closed_done = _add_av(e_closed_done, gvt_id, mid_id, mid_id, "Old",
+                                 "2025-01-01", ek_old)
         con.commit()
         return {"e_gap": e_gap, "id_gap": id_gap, "e_open": e_open, "id_open": id_open,
-                "e_close": e_close, "id_close": id_close}
+                "e_close": e_close, "id_close": id_close,
+                "e_closed_done": e_closed_done, "id_closed_done": id_closed_done}
     finally:
         con.close()
 
@@ -282,6 +290,59 @@ def test_reverify_batch_close_intervals_previews_and_writes_nothing(checkout,
 
 
 # ============================================================================
+# Report-vs-DB reconciliation (D41 fact 2): an already-acted row is classified
+# `already_acted` / no-action EXPLICITLY (not silently omitted), the open row stays
+# actionable, the preview WRITES NOTHING. The FE reads this classification, never
+# re-derives it (D41).
+# ============================================================================
+def test_reverify_batch_close_intervals_classifies_already_acted(checkout, client_at):
+    root, ids = checkout
+    client = client_at(root)
+    db_before = _db_hash(root)
+
+    # A close-intervals batch with BOTH an OPEN row (e_close -> actionable close) AND an
+    # ALREADY-CLOSED-TO-LAST-VERIFIED row (e_closed_done -> already-acted, the resolver
+    # produces no spec for it).
+    # The already-closed row is swept at MID (the version its closed interval [GVT, MID]
+    # CONTAINS) -- the resolver resolves the interval-containing row for the SWEPT version,
+    # then hits the already-closed skip (valid_through == last_verified == MID). The OPEN
+    # row (e_close, [GVT, open]) is swept at LATER -- the open interval covers it, and its
+    # last_verified (MID) < swept, so it is a live close.
+    resp = client.post("/save/reverify-batch", json={
+        "action": "close-intervals",
+        "rows": [
+            _report_row(ids["e_close"], LATER_TAG, "failed", 5, None),
+            _report_row(ids["e_closed_done"], MID_TAG, "failed", 5, None),
+        ],
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # (1) The already-closed row is classified already_acted / no-action: NO field-delta,
+    # NO edits, carrying its identity + the close-intervals marker.
+    done = _row_for(body, ids["e_closed_done"])
+    assert done is not None, body
+    assert done["status"] == "already_acted", done
+    assert done["kcdx_id"] == ids["e_closed_done"], done
+    assert done["version"] == MID_TAG, done
+    assert done["reason"] == "interval already closed", done
+    assert "field_delta" not in done, done
+    assert "edits" not in done, done
+
+    # (2) The OPEN row is classified actionable WITH its valid_through field-delta + edits
+    # -- the classification did not break the working actionable path.
+    close = _row_for(body, ids["e_close"])
+    assert close is not None, body
+    assert close["status"] == "actionable", close
+    assert _delta_field(close, "valid_through_version") == ("", MID_TAG), close
+    assert close["edits"]["valid_through_version"] == MID_TAG, close
+
+    # (3) The preview WROTE NOTHING (the DB is byte-identical).
+    assert _db_hash(root) == db_before, \
+        "a reverify-batch preview must not touch the DB (already-acted classification)"
+
+
+# ============================================================================
 # A structural report-vs-DB mismatch -> 422, DB byte-identical, logged.
 # ============================================================================
 def test_reverify_batch_stale_matched_id_rejected(checkout, client_at, caplog):
@@ -352,6 +413,23 @@ def test_reverify_batch_acceptance_signal(checkout, client_at):
     ok2 = _db_hash(root) == db_before
     results.append(("reverify-batch-preview-writes-nothing", ok2,
                     None if ok2 else "the preview MUTATED the DB"))
+
+    # ACCEPT 3 (D41 fact 2): an already-acted row is classified already_acted / no-action
+    # EXPLICITLY (not silently omitted), carrying its marker, no field-delta/edits.
+    db_before3 = _db_hash(root)
+    r3 = client.post("/save/reverify-batch", json={
+        "action": "close-intervals",
+        "rows": [_report_row(ids["e_closed_done"], MID_TAG, "failed", 5, None)],
+    })
+    body3 = r3.json() if r3.status_code == 200 else {}
+    done = _row_for(body3, ids["e_closed_done"]) if body3 else None
+    ok3 = (r3.status_code == 200 and done is not None
+           and done.get("status") == "already_acted"
+           and done.get("reason") == "interval already closed"
+           and "edits" not in done
+           and _db_hash(root) == db_before3)
+    results.append(("reverify-batch-classifies-already-acted", ok3,
+                    None if ok3 else f"status={r3.status_code} body={body3}"))
 
     _emit_signal(results)
     failures = [(aid, d) for aid, ok, d in results if not ok]

@@ -401,15 +401,28 @@ def save_reverify_batch(
     READ-ONLY + computes; no DB write, no transaction). The FE posts the returned edits
     to /confirm/batch to transact.
 
-    The response shape (the batch field-delta list the FE renders):
+    The response shape (the batch field-delta list the FE renders -- one UNIFIED `rows`
+    list, each row carrying a `status` classification, D41 fact 2):
       {"action": str,
-       "rows": [{"kcdx_id": int, "valid_from_version": str,
-                 "field_delta": [{"field", "old", "new"}, ...],
-                 "edits": {col: new, ...}}, ...]}
-    Each row's `edits` is the BatchRowSpec `edits` the FE re-posts to /confirm/batch
-    UNCHANGED; `field_delta` is the human acceptance signal (law 5). A verify-all row
-    already covered (last_verified >= swept) is absent from `rows` (the resolver skipped
-    it -- nothing to add), so the FE shows only the rows that change.
+       "rows": [
+         # an ACTIONABLE row (the resolver produced an edit-spec):
+         {"status": "actionable", "kcdx_id": int, "valid_from_version": str,
+          "field_delta": [{"field", "old", "new"}, ...], "edits": {col: new, ...}},
+         # an ALREADY-ACTED row (the resolver produced NO spec -- the recommended
+         # action is already reflected in the DB, so there is nothing to confirm):
+         {"status": "already_acted", "kcdx_id": int, "version": str,
+          "reason": "interval already closed" | "already current"}, ...]}
+    An `actionable` row's `edits` is the BatchRowSpec `edits` the FE re-posts to
+    /confirm/batch UNCHANGED; `field_delta` is the human acceptance signal (law 5). An
+    `already_acted` row carries its identity + a human marker, NO `field_delta`/`edits`
+    (nothing to confirm, never in any batch) -- the s08 worklist moves it to its "no
+    further action" state by READING this classification, never re-deriving it
+    client-side (D41 fact 2: the FE reads the classification, never computes it). The
+    already-acted rows are the two resolver silent-skips surfaced explicitly: verify-all's
+    already-covered skip (last_verified >= swept -- "already current") and
+    close-intervals' already-closed skip (valid_through == last_verified -- "interval
+    already closed"); EVERY other no-spec path is a ReverifyResolveError (-> 422), so a
+    no-spec input row is unambiguously already-acted.
 
     Failure modes (NONE writes):
       bad action          -> HTTP 422 (a caller bug -- an action the resolver does not
@@ -455,16 +468,41 @@ def save_reverify_batch(
     # + the edits to re-post + the row identity. PURE -- field_delta is a no-I/O
     # description (the data-core's, reused -- law 6); this endpoint computes nothing else.
     rows_out = []
+    acted_keys = set()
     for spec in specs:
         delta = data_core.field_delta(
             spec["saved"], spec["edits"],
             field_order=data_core.ADDRESS_VERSIONS_CSV_HEADER)
         rows_out.append({
+            "status": "actionable",
             "kcdx_id": spec["kcdx_id"],
             "valid_from_version": spec["valid_from_version"],
             "field_delta": [{"field": f, "old": old, "new": new}
                             for f, (old, new) in delta.items()],
             "edits": spec["edits"],
         })
+        acted_keys.add(spec["kcdx_id"])
+
+    # CLASSIFY the already-acted rows (D41 fact 2): the resolver produces NO spec for a
+    # row whose recommended action is already reflected in the DB (verify-all's
+    # already-covered skip, last_verified >= swept; close-intervals' already-closed skip,
+    # valid_through == last_verified). EVERY other no-spec path is a ReverifyResolveError
+    # (handled above -> 422), so an input row that produced no spec is UNAMBIGUOUSLY
+    # already-acted. The match key is `kcdx_id`: the resolver keys each spec by its target
+    # row's kcdx_id (`spec["kcdx_id"]`), one spec per input row at most (verify-all attributes
+    # by matched_address_version_id -> exactly one row; close-intervals resolves the single
+    # interval-containing row of kcdx_id). The endpoint does NOT recompute the skip -- it
+    # surfaces it (the resolver stays untouched, 1.1 owns it). The marker is by action:
+    # close-intervals -> "interval already closed"; verify-all -> "already current".
+    reason = ("interval already closed" if body.action == "close-intervals"
+              else "already current")
+    for r in body.rows:
+        if r.kcdx_id not in acted_keys:
+            rows_out.append({
+                "status": "already_acted",
+                "kcdx_id": r.kcdx_id,
+                "version": r.version,
+                "reason": reason,
+            })
 
     return {"action": body.action, "rows": rows_out}
