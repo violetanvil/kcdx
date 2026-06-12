@@ -92,38 +92,51 @@ length-preserving precondition unconditionally rejects it. The boundary-time
 registration in comp-20 was merely the first caller to reach the full apply.
 TD-0010's deferred live proof is the reason this shipped unexercised.
 
-## Fix forks — SETTLED (Gate A architect-review, user-decided 2026-06-11)
+## Fix forks — SETTLED (Gate A + a follow-on simplification, user-decided 2026-06-11)
 
-1. **Baseline source: restore the DB `content_hash`.** The extractor already
-   computes a per-statement BLAKE3 over the statement's byte range, but the
-   USER-deployed DB drops the column (a pinned seeds-migration contract) and the
-   engine resolution layer carries no baseline — which is WHY the apply never
-   worked. Fix: restore `content_hash` to the user-DB statement export + carry it
-   to `refdb::StatementResolution`; at apply, verify the live site against the
-   curated hash, then use the verified live bytes as `pe->original` (length
-   precondition passes; foreign-patch / curated-drift detection restored; loud
-   first-writer-wins). One source of truth (the curated DB), not the on-disk
-   binary. Boot-only, never a hot path. Rejected: live-read-into-baseline
-   (AP14 — a verify that can only pass + silent clobber); on-disk DLL read
-   (DB-free but splits the source of truth — misses curated-vs-binary drift);
-   DB raw bytes (strictly more work than the hash for no unique protection).
+1. **Baseline source: read `original` from the live resolved-VA at apply; lean on
+   the existing replacement-vs-site idempotent/clobber check. NO DB change, NO
+   on-disk read, NO probe.** The DB already owns version-correctness (per-version
+   resolution gates which `address_versions` row resolves — `behavior-design.md`
+   §9), so the apply needs NO byte baseline for correctness or version-safety.
+   The byte-verify's only load-bearing job on this path is the
+   **replacement-vs-site** comparison the apply already implements
+   (`src/patch_engine.cpp:525` idempotent-skip when site == replacement;
+   `:548-565` first-writer-wins reject + the `g_patches` enrichment naming the
+   conflicting mod). Fix: in `src/lua_bind_statement.cpp`, before `ApplyPatch`,
+   set `pe->original` = the `byte_range_len` live bytes read at the resolved
+   statement VA. This satisfies `patch::Resolve`'s length precondition
+   (`:251-257`) while the REAL guard (replacement-vs-site) does the protective
+   work: a second identical-emit set → clean idempotent skip (comp-20's
+   `applied==true` arm); a foreign mod's bytes at the site → loud reject. The
+   AP14 "verify-against-itself" objection dissolves — the protective compare is
+   replacement-vs-site (non-tautological), not original-vs-site. Boot-only,
+   never a hot path. **Supersedes the earlier Gate-A pick (DB `content_hash`
+   restore):** that paid a full data-pipeline reshipment + a collision with the
+   in-flight `data/db-export` work to detect curated-vs-binary drift, a condition
+   the version-resolution layer already catches upstream. Rejected with it:
+   on-disk DLL read (same protection, but the live read IS the pristine site for
+   a never-touched statement — no file read needed). The earlier-rejected
+   live-read AP14 concern does not apply because the surviving guard is
+   replacement-vs-site, not a self-comparison.
 2. **Fixture target: re-point cap-92 + comp-20 off SaveGame** to a maintainer-
    chosen boot-safe, observably-exercised function (existing curated entity = no
    AP18; new entity = per-entity sign-off). The dev suite must not leave a live
    byte modification. Closes TD-0010's named blocker with a live-apply proof row.
 3. **Conflict-engine footprint gap → tracked as TD**, not fixed here. Statement
-   carriers bypass the pairwise matrix + conflict report (loud reject, but the
-   other entry unnamed). The integrity invariant is already restored by fork 1's
-   loud first-writer-wins; visibility is separable. Named trigger: the next
+   carriers are not in `g_patches`, so a statement-vs-statement clobber with
+   DIFFERING emits rejects loud but UNNAMED (the `:556-565` enrichment scans
+   `g_patches` only), and the conflict report omits statement writes. The
+   integrity invariant is already preserved by fork 1's loud reject; only the
+   NAMING of the other party is missing. Named trigger: the next
    statement-surface or conflict-engine cycle.
 
-## Probe owed before the fix builds (results-driven.md)
+## Scope after the simplification
 
-The fix's FIRST step: a disk==live probe across the curated statement set — does
-the live in-memory `.text` byte range equal the on-disk/hashed bytes? A base
-relocation over an absolute operand inside a statement range would falsify the
-hash-verify; rel32 displacements would not. Outcome map written before the run;
-the dependent baseline-verify step does not build until it lands.
+A single `src/`-only `/execute` fix (fork 1, in `lua_bind_statement.cpp` — the
+cause-test is comp-20-declarer-statement red→green) + the fixture re-point
+(fork 2, a target-selection sub-decision at the cycle) + a `/tech-debt` entry
+(fork 3). No `/plan` tree, no DB pipeline change, no owed probe.
 
 ## What this report does NOT do
 
