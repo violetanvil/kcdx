@@ -2981,13 +2981,21 @@ typedef struct kcdxStatementInterface {
 //     returns a teaching error naming the two sanctioned patterns (capture the
 //     value in your implementation at apply, or copy it out on the main thread).
 //     No query hides a blocking marshal.
-//   - COMMANDS (Set) — the MAIN-THREAD path is built today: a load-window Set
-//     records, a post-load main-thread Set executes the revert toggle inline. The
-//     OFF-THREAD queued Set (a post-load Set from a non-main thread queues and
-//     executes on the main thread at the next apply point) is a LATER step — for
-//     now an off-thread post-load Set returns a teaching error naming the
-//     queued-path-lands-later status. (Invoke — calling a callable value — is
-//     also the later step.)
+//   - COMMANDS (Set) — work from ANY thread. A load-window Set records; a
+//     post-load main-thread Set executes the revert toggle inline (the degenerate
+//     immediate case); a post-load Set from a NON-main thread QUEUES and executes
+//     its toggle on the game main thread at the next apply point (FIFO arrival
+//     order, each set its own toggle, no coalescing — riding the engine's existing
+//     off-thread->main task pump, no new dispatch path). The off-thread Set returns
+//     having QUEUED (true) — it never carries the toggle's eventual outcome; a
+//     queued toggle's failure logs async (a consumer-misuse failure attributed to
+//     the SETTING plugin, a declarer-code raise attributed to the DECLARER). Get()
+//     flips only when the queued toggle actually executes (an off-thread setter may
+//     briefly read the prior value — the same applies-at-next-apply-point semantics
+//     a load-time set has). Off-thread value CONSTRUCTION stages engine-side as the
+//     queued command's plain-data payload (scalars/strings/fn-pointers directly; a
+//     table as a description materialized on the main thread at execution) — the
+//     SAME builders, not a second access regime.
 //
 // The disassembler test — the engine does the heavy lifting; the author declares
 // intent. The C++ author writes NAMES + TYPED VALUES; the value handle carries
@@ -2996,9 +3004,16 @@ typedef struct kcdxStatementInterface {
 // Version 1: the four verbs (Declare/Set/Get/List), the engine-owned value-handle
 // model (coercion + table-traversal accessors, generation-checked staleness), the
 // C++-side value builders, the query thread wall, and the VM-adoption wave-end
-// gate. Invoke (calling a callable value) and the off-thread queued Set are NOT in
-// v1 — they land in a later step and append after the v1 markers (append-only ABI).
-#define kcdxBehaviorInterface_Version 1u
+// gate. Invoke (calling a callable value) and the off-thread queued Set were NOT in
+// v1 — they land in v2 and append after the v1 markers (append-only ABI).
+//
+// Version 2: appends Invoke (calling a callable value) below the v1 markers. The
+// off-thread queued Set has NO new ABI member — it is the SAME Set() (its v1
+// off-thread teaching error is replaced by the queue path); a v2 plugin's
+// off-thread post-load Set queues + executes on the main thread at the next apply
+// point. A v1 plugin reads every member at its v1 offset; the appended Invoke is
+// invisible to it (append-only). Bumped 1u -> 2u to gate the new layout.
+#define kcdxBehaviorInterface_Version 2u
 
 // Opaque value handle returned by Get(). The engine maps it to a behavior's
 // recorded (or default) value on the one VM + a generation counter; an accessor
@@ -3034,7 +3049,7 @@ typedef enum kcdxBehaviorType {
     kcdxBehaviorType_Number   = 3,
     kcdxBehaviorType_String   = 4,
     kcdxBehaviorType_Table    = 5,
-    kcdxBehaviorType_Function = 6,  // a callable value (Invoke is a later step)
+    kcdxBehaviorType_Function = 6,  // a callable value — call it with Invoke (v2)
 } kcdxBehaviorType;
 
 // A C++ behavior implementation / revert is a C function pointer + context. The
@@ -3201,12 +3216,10 @@ typedef struct kcdxBehaviorInterface {
                                    kcdxBehaviorValue child);
 
     // A C function pointer + context registers AS a callable value (for a C++
-    // default/impl that must BE a callable, or a callable behavior value). The
-    // ACCESSOR that CALLS such a value (Invoke) is a LATER step — this builder
-    // mints the value now so a callable default/value is representable (full
-    // parity: no value type is Lua-only), and Invoke appends after the v1 markers
-    // when it lands. Returns 0 + a teaching error off-thread/post-load (needs the
-    // live VM).
+    // default/impl that must BE a callable, or a callable behavior value). Call
+    // such a value with Invoke (v2, appended below). Full parity — no value type is
+    // Lua-only. Returns 0 + a teaching error off-thread/post-load (needs the live
+    // VM).
     kcdxBehaviorValue (*NewCallable)(kcdxBehaviorImplFn fn, void* userCtx);
 
     // ------------------------------------------------------------------
@@ -3224,13 +3237,35 @@ typedef struct kcdxBehaviorInterface {
     // New members go HERE, at the END, never mid-struct: a plugin DLL built
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
+
+    // Invoke a callable value (v2) — call a value whose type is
+    // kcdxBehaviorType_Function (built by NewCallable from a C fn-pointer, OR a
+    // Lua-declared function value reached through Get/an accessor). The engine
+    // derefs `callable`'s function ref on the one VM, pushes each `argv[i]`
+    // handle's value as a pcall argument (uniform with the value model — args are
+    // value handles, the SAME concept as construction), and pcalls. The pcall's
+    // FIRST return value is pinned into a fresh value handle written to *outResult
+    // (read it with the accessors); a callable that returns nothing sets *outResult
+    // to 0 (a valid no-result handle) and returns Ok.
     //
-    // The LATER-STEP additions append here when they land:
-    //   - Invoke(value, args…) — call a callable value (the C++→Lua call
-    //     machinery: the pcall harness reuses, the argument-marshal layer is new).
-    //   - the off-thread queued Set acknowledgement surface (a post-load
-    //     off-thread Set queues + executes on the main thread at the next apply
-    //     point); v1 returns the teaching error naming this later-step status.
+    // A QUERY — needs the live VM, so it honors the SAME thread-wall as every
+    // accessor (legal during the load waves under the wave-end gate; post-load on
+    // the game main thread only — an off-thread post-load Invoke returns
+    // kcdxBehaviorAccess_Thread). `callable` must resolve to a function value (else
+    // kcdxBehaviorAccess_TypeError naming the actual type); each `argv[i]` must be a
+    // valid non-consumed handle (else kcdxBehaviorAccess_BadHandle); `outResult`
+    // must be non-null. A pcall RAISE is kcdxBehaviorAccess_TypeError with the Lua
+    // error text via GetLastError (the call failed loud, never a silently-wrong
+    // result). On any non-Ok result *outResult is untouched and GetLastError carries
+    // the teaching text.
+    //
+    // The off-thread queued Set has NO new member here — it is the SAME Set()
+    // above; its v1 off-thread-post-load teaching error is replaced by the queue
+    // path (the post-load off-thread Set queues + executes its toggle on the game
+    // main thread at the next apply point, FIFO, no coalescing).
+    kcdxBehaviorAccess (*Invoke)(kcdxBehaviorValue callable,
+                                 const kcdxBehaviorValue* argv, size_t argc,
+                                 kcdxBehaviorValue* outResult);
 } kcdxBehaviorInterface;
 
 // -----------------------------------------------------------------------------

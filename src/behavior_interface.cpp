@@ -7,10 +7,12 @@
 //   - the four verb thunks (Declare/Set/Get/List), each validating C-ABI inputs,
 //     resolving the owning plugin from the handle, and routing to the registry;
 //   - the engine-owned VALUE-HANDLE model — an opaque kcdxBehaviorValue maps to
-//     (behavior full name | a kcdx-side built value | a table-child path) + the
-//     generation it was minted against. Values live on the ONE VM; this file
-//     NEVER marshals a value out — the coercion / table accessors deref the ref
-//     ON the VM (main thread) and coerce;
+//     (behavior full name | a kcdx-side built VM ref | an off-thread STAGED
+//     plain-data description) + the generation it was minted against. Values live
+//     on the ONE VM; this file NEVER marshals a value out — the coercion / table
+//     accessors deref the ref ON the VM (main thread) and coerce. A STAGED handle
+//     is the off-thread build path: no VM ref off-thread, so the value is a
+//     plain-data description the queued Set materializes on the main thread;
 //   - generation-checked staleness (a handle whose behavior's generation has
 //     advanced is STALE — a teaching error, never a dangle);
 //   - the C++-side value BUILDERS (typed scalars/strings/tables, a callable
@@ -26,16 +28,21 @@
 // C++ wave is done — so a load-wave query reaches the live VM under the gated
 // guarantee.
 //
-// Invoke (calling a callable value) and the off-thread QUEUED Set are the later
-// step (P2 s2). NewCallable mints a callable value now (full parity — no Lua-only
-// type), but the ACCESSOR that calls it appends after the v1 ABI markers when it
-// lands. An off-thread post-load Set returns the queued-path-lands-later teaching
-// error.
+// Invoke (calling a callable value) and the off-thread QUEUED Set land in v2 (this
+// step). Invoke derefs a function value's ref on the VM, marshals the argv handles
+// as pcall args, and pins the first return value into a fresh handle — the SAME
+// pcall harness the C-impl trampoline/boundary use. The off-thread post-load Set
+// QUEUES (it no longer errors on thread): the value stages engine-side as plain
+// data, the command rides the existing kcdx::task pump, and the queued command
+// materializes the value + runs ApplyPostLoadToggle on the game main thread at the
+// next DrainQueue — no new dispatch path.
 
 #include "behavior_interface.h"
 
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -51,6 +58,7 @@ extern "C" {
 #include "log.h"               // LOG_*_KV, LOG_PLUGIN_ERROR, ::kcdx::log::KV
 #include "lua_vm_build.h"      // CppWaveEnded — the wave-end gate order read
 #include "plugin_loader.h"     // AuthorForHandle / NameForHandle / g_manifests
+#include "task.h"              // the off-thread->main pump the queued Set rides
 #include "zone_gate.h"         // RejectReason — §6 engine-rejected branch
 
 namespace kcdx::behavior_interface {
@@ -63,6 +71,18 @@ constexpr const char* kCat = "BEHAVIOR_INTERFACE";
 // NewCallable above its definition.
 int BuildCImplTrampoline(lua_State* L, kcdxBehaviorImplFn fn, void* ctx,
                          bool isRevert);
+
+struct StagedValue;  // the off-thread plain-data payload (defined below)
+
+// Enqueue an off-thread post-load Set as a main-thread command (defined below,
+// after the staging machinery). Takes the moved-out staged payload + the resolved
+// caller identity; the queued command resolves + toggles on the game main thread at
+// the next DrainQueue. Used by Thunk_Set's off-thread branch above its definition.
+void EnqueueOffThreadSet(kcdxPluginHandle owningPlugin,
+                         const std::string& setterAuthor,
+                         const std::string& setterPlugin,
+                         const std::string& name,
+                         std::unique_ptr<StagedValue> payload);
 
 // === The per-thread error channel ===
 // Thread-local so a concurrent C++ caller never reads another thread's error.
@@ -108,9 +128,31 @@ Owner OwnerFromHandle(kcdxPluginHandle h) {
 //     the child off the VM into its own ref — it inherits the parent's identity
 //     for staleness by being minted against the parent's generation snapshot.
 //
+// A STAGED value — the plain-data description an OFF-THREAD post-load build
+// produces (design §8: off-thread value construction stages engine-side as the
+// queued command's payload; "not a second access regime" — the SAME builders make
+// it). The off-thread thread has no live-VM access, so a value cannot be a VM ref
+// built off-thread; it is staged as plain data and MATERIALIZED into a real VM ref
+// on the game main thread when the queued command runs. Scalars/strings/fn-pointers
+// stage trivially; a table stages as a recursive description (a list of staged
+// children — array part 1..N).
+struct StagedValue {
+    enum class Type { Bool, Int64, Double, String, Table, Callable } type = Type::Bool;
+    bool        b = false;
+    int64_t     i = 0;
+    double      d = 0.0;
+    std::string s;                                   // String
+    // Table description: array part (SetIndex, 1-based) + field part (SetField).
+    std::vector<std::pair<int64_t, std::unique_ptr<StagedValue>>> arrayEntries;
+    std::vector<std::pair<std::string, std::unique_ptr<StagedValue>>> fieldEntries;
+    kcdxBehaviorImplFn fn = nullptr;                 // Callable
+    void*              fnCtx = nullptr;              // Callable context
+};
+
 // kHandleKind discriminates; generation gates staleness for behavior handles and
-// consumption for built handles.
-enum class Kind { Behavior, Built };
+// consumption for built handles. A STAGED handle carries a plain-data description
+// (the off-thread build path) consumed by the queued Set / a staged-table builder.
+enum class Kind { Behavior, Built, Staged };
 
 struct HandleRec {
     Kind        kind = Kind::Behavior;
@@ -119,8 +161,18 @@ struct HandleRec {
     uint64_t    mintedGeneration = 0;  // the behavior's valueGeneration at mint
     // Built flavor:
     int         builtRef = LUA_NOREF;  // a luaL_ref this handle owns (Built only)
-    bool        consumed = false;      // a built handle moved into Set/Declare/a table
+    bool        consumed = false;      // a built/staged handle moved into Set/Declare/a table
+    // Staged flavor (off-thread plain-data description):
+    std::unique_ptr<StagedValue> staged;
 };
+
+// The handle map + id counter. Guarded by g_handlesMutex because the off-thread
+// queued-Set path (the off-thread builders + the off-thread Set) mints + consumes
+// handles from a non-main thread, concurrently with the main thread's accessors.
+// The map is the ONLY off-thread-touched state here; everything VM-touching stays
+// main-thread (the queued command materializes on the main thread). recursive so a
+// staged-table builder can hold the lock while consuming a child (both take it).
+std::recursive_mutex g_handlesMutex;
 
 std::map<uint64_t, HandleRec>& Handles() {
     static std::map<uint64_t, HandleRec> h;
@@ -132,6 +184,7 @@ uint64_t& NextHandleId() {
 }
 
 uint64_t MintBehaviorHandle(const std::string& fullName, uint64_t generation) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
     const uint64_t id = NextHandleId()++;
     HandleRec r;
     r.kind = Kind::Behavior;
@@ -142,6 +195,7 @@ uint64_t MintBehaviorHandle(const std::string& fullName, uint64_t generation) {
 }
 
 uint64_t MintBuiltHandle(int ref) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
     const uint64_t id = NextHandleId()++;
     HandleRec r;
     r.kind = Kind::Built;
@@ -150,6 +204,22 @@ uint64_t MintBuiltHandle(int ref) {
     return id;
 }
 
+uint64_t MintStagedHandle(std::unique_ptr<StagedValue> sv) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+    const uint64_t id = NextHandleId()++;
+    HandleRec r;
+    r.kind = Kind::Staged;
+    r.staged = std::move(sv);
+    Handles()[id] = std::move(r);
+    return id;
+}
+
+// NOTE: the returned pointer is only safe to use while g_handlesMutex is held by
+// the caller (or on the main thread where no off-thread erase races). The
+// main-thread accessors call it without the lock (they run single-threaded against
+// other main-thread accessors; the off-thread path only ADDS staged handles + marks
+// them consumed under the lock, never erases a behavior/built handle out from under
+// a main-thread accessor). The staged path takes the lock explicitly.
 HandleRec* FindHandle(kcdxBehaviorValue v) {
     auto it = Handles().find(static_cast<uint64_t>(v));
     return (it == Handles().end()) ? nullptr : &it->second;
@@ -319,25 +389,31 @@ bool Thunk_Declare(const char* name, const char* description,
 
     // The default must be a real, non-consumed built-value handle (nil is the
     // unset sentinel; a behavior handle is not a value to declare). Pin its ref
-    // into a fresh declare-owned default ref; consume the built handle.
-    HandleRec* dv = FindHandle(defaultValue);
-    if (!dv || dv->kind != Kind::Built || dv->consumed ||
-        dv->builtRef == LUA_NOREF) {
-        SetError(owningPlugin, "Declare",
-            "defaultValue must be a value built via NewBool/NewInt64/NewDouble/"
-            "NewString/NewTable/NewCallable (and not already consumed). nil is "
-            "the unset sentinel, never a value; default is what Get() answers "
-            "while the behavior was never set.");
-        return false;
+    // into a fresh declare-owned default ref; consume the built handle. (Declare
+    // is a load-time act, always main-thread — the lock guards against a concurrent
+    // off-thread builder mutating the shared map, not a same-call race.)
+    int defaultRef;
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+        HandleRec* dv = FindHandle(defaultValue);
+        if (!dv || dv->kind != Kind::Built || dv->consumed ||
+            dv->builtRef == LUA_NOREF) {
+            SetError(owningPlugin, "Declare",
+                "defaultValue must be a value built via NewBool/NewInt64/NewDouble/"
+                "NewString/NewTable/NewCallable (and not already consumed). nil is "
+                "the unset sentinel, never a value; default is what Get() answers "
+                "while the behavior was never set.");
+            return false;
+        }
+        // The default ref the registry owns: re-pin the built value into its own ref
+        // (the built handle's ref is released as the handle is consumed). Push the
+        // built value, ref it fresh.
+        lua_rawgeti(L, LUA_REGISTRYINDEX, dv->builtRef);
+        defaultRef = luaL_ref(L, LUA_REGISTRYINDEX);
+        luaL_unref(L, LUA_REGISTRYINDEX, dv->builtRef);
+        dv->builtRef = LUA_NOREF;
+        dv->consumed = true;
     }
-    // The default ref the registry owns: re-pin the built value into its own ref
-    // (the built handle's ref is released as the handle is consumed). Push the
-    // built value, ref it fresh.
-    lua_rawgeti(L, LUA_REGISTRYINDEX, dv->builtRef);
-    const int defaultRef = luaL_ref(L, LUA_REGISTRYINDEX);
-    luaL_unref(L, LUA_REGISTRYINDEX, dv->builtRef);
-    dv->builtRef = LUA_NOREF;
-    dv->consumed = true;
 
     // The C++ impl/revert are C function pointers. Wrapping them as Lua refs the
     // registry can pcall is the LATER-STEP bridge (the engine invokes a C
@@ -381,19 +457,58 @@ bool Thunk_Set(const char* name, kcdxBehaviorValue value,
         return false;
     }
     const Owner owner = OwnerFromHandle(owningPlugin);
+
+    // === Off-thread post-load Set → QUEUE (design §5.4 / §8) ===
+    // A post-load Set from a non-main thread does NOT touch the VM or the registry
+    // here — both are main-thread-only. It stages the value's plain-data payload
+    // (the value is an off-thread-STAGED handle, by construction: the builders stage
+    // off-thread) and enqueues a command. The command resolves the name, applies the
+    // window law + the toggle, and logs per-disposition attribution on the game main
+    // thread at the next DrainQueue. The Set returns having QUEUED (true) — it never
+    // carries the toggle's eventual outcome (design §5.4: the failure is async).
+    if (OffThreadPostLoadQuery()) {
+        std::unique_ptr<StagedValue> payload;
+        {
+            std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+            HandleRec* sv = FindHandle(value);
+            if (!sv || sv->kind != Kind::Staged || sv->consumed || !sv->staged) {
+                SetError(owningPlugin, "Set",
+                    "value must be a value built (NewBool/NewInt64/NewDouble/"
+                    "NewString/NewTable/NewCallable) on THIS off-thread call, which "
+                    "stages it for the queued command — pass a value you built "
+                    "off-thread (not a main-thread handle, not a consumed one). nil "
+                    "is the unset sentinel — to leave a behavior unset, don't set it.");
+                return false;
+            }
+            payload = std::move(sv->staged);
+            sv->consumed = true;
+        }
+        EnqueueOffThreadSet(owningPlugin, owner.author, owner.plugin,
+                            std::string(name), std::move(payload));
+        return true;  // QUEUED — the toggle runs (and any failure logs) async.
+    }
+
     lua_State* L = VmOrError(owningPlugin, "Set");
     if (!L) return false;
 
     // The value must be a real, non-consumed built-value handle (nil is the
-    // unset sentinel).
-    HandleRec* bv = FindHandle(value);
-    if (!bv || bv->kind != Kind::Built || bv->consumed ||
-        bv->builtRef == LUA_NOREF) {
-        SetError(owningPlugin, "Set",
-            "value must be a value built via NewBool/NewInt64/NewDouble/NewString/"
-            "NewTable/NewCallable (and not already consumed). nil is the unset "
-            "sentinel — to leave a behavior unset, don't set it.");
-        return false;
+    // unset sentinel). On the main thread / load-wave, builds are Built (VM-ref)
+    // handles — a Staged handle here would mean a value built off-thread then set
+    // on-thread, which the off-thread branch above already routed. VALIDATE only
+    // here (no pin yet) so a resolve/window-law rejection does not leak a ref; the
+    // pin happens after the window law passes. Lock guards the shared map against a
+    // concurrent off-thread builder.
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+        HandleRec* bv = FindHandle(value);
+        if (!bv || bv->kind != Kind::Built || bv->consumed ||
+            bv->builtRef == LUA_NOREF) {
+            SetError(owningPlugin, "Set",
+                "value must be a value built via NewBool/NewInt64/NewDouble/"
+                "NewString/NewTable/NewCallable (and not already consumed). nil is "
+                "the unset sentinel — to leave a behavior unset, don't set it.");
+            return false;
+        }
     }
 
     // Resolve. On a miss, the discriminating §6 set-resolution error.
@@ -423,28 +538,34 @@ bool Thunk_Set(const char* name, kcdxBehaviorValue value,
         return false;
     }
 
-    // Pin the value into a fresh set-owned ref, consume the built handle.
-    lua_rawgeti(L, LUA_REGISTRYINDEX, bv->builtRef);
-    const int newValueRef = luaL_ref(L, LUA_REGISTRYINDEX);
-    luaL_unref(L, LUA_REGISTRYINDEX, bv->builtRef);
-    bv->builtRef = LUA_NOREF;
-    bv->consumed = true;
-
-    // Post-load? (boundary completed, or already-applied mid-drain) → the toggle.
-    if (kcdx::behavior_registry::BoundaryCompleted() || b->applied) {
-        // The OFF-THREAD post-load queued Set is the LATER step (P2 s2). For s1,
-        // an off-thread post-load Set is a loud teaching error naming the
-        // queued-path-lands-later status (the MAIN-thread path executes inline).
-        if (!kcdx::log::IsGameMainThread()) {
-            luaL_unref(L, LUA_REGISTRYINDEX, newValueRef);
+    // Window law passed — now pin the value into a fresh set-owned ref + consume the
+    // built handle (re-found under the lock; the off-thread path only inserts, never
+    // erases a Built handle, so the re-find succeeds). The validate-above + pin-here
+    // split keeps a resolve/window-law rejection from leaking a ref.
+    int newValueRef;
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+        HandleRec* bv = FindHandle(value);
+        if (!bv || bv->kind != Kind::Built || bv->consumed ||
+            bv->builtRef == LUA_NOREF) {
             SetError(owningPlugin, "Set",
-                "an off-thread post-load Set queues to the game main thread — the "
-                "queued command path lands in a later step. For now, issue a "
-                "post-load Set from the game main thread (e.g. a "
-                "kcdxPlugin_PostGameLoad, a main-thread task, or an "
-                "implementation callback).");
+                "value handle was consumed or invalidated between validation and "
+                "the set — re-build the value.");
             return false;
         }
+        lua_rawgeti(L, LUA_REGISTRYINDEX, bv->builtRef);
+        newValueRef = luaL_ref(L, LUA_REGISTRYINDEX);
+        luaL_unref(L, LUA_REGISTRYINDEX, bv->builtRef);
+        bv->builtRef = LUA_NOREF;
+        bv->consumed = true;
+    }
+
+    // Post-load? (boundary completed, or already-applied mid-drain) → the toggle.
+    // This branch is reached only on the game main thread: the off-thread post-load
+    // Set was routed to the queue at the top of Thunk_Set (it never reaches here),
+    // so a post-load toggle here always executes inline on the main thread (the
+    // queued command also lands here, via the same registry call, when it runs).
+    if (kcdx::behavior_registry::BoundaryCompleted() || b->applied) {
         std::string toggleErr;
         const bool ok = kcdx::behavior_registry::ApplyPostLoadToggle(
             L, b, newValueRef, toggleErr);
@@ -531,6 +652,11 @@ uint32_t Thunk_List(const char* prefix, kcdxBehaviorListCb callback,
 // (caller pops). On a non-Ok result the stack is unchanged and g_lastError is
 // set. Generation-checked for behavior handles; consumed-checked for built.
 kcdxBehaviorAccess PushHandleValue(lua_State* L, kcdxBehaviorValue v) {
+    // Hold the handle lock for the map find+read: an off-thread builder may be
+    // inserting a staged handle concurrently (the queued-Set path). Recursive so a
+    // nested mint (ReadChild) re-locks safely. The VM push under the lock is fine —
+    // g_handlesMutex guards only the handle map, never the VM.
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
     HandleRec* r = FindHandle(v);
     if (!r) {
         g_lastError = "unknown value handle (0 or a never-minted handle).";
@@ -754,23 +880,305 @@ kcdxBehaviorAccess Thunk_Field(kcdxBehaviorValue table, const char* key,
 }
 
 // ====================================================================
+// Invoke — call a callable value (v2). A QUERY: needs the live VM, honors the
+// SAME thread-wall as every accessor. Reuses the engine's C++->Lua pcall harness
+// (the ref-deref + lua_pcall the C-impl trampoline / hook_chain already embody);
+// the argument-marshal layer (push each argv handle's value as a pcall arg) is the
+// NEW code. Args are value HANDLES — uniform with the value model (one value
+// concept for construction AND calling, no second arg regime). The pcall's first
+// return value is pinned into a fresh built handle (*outResult); a call returning
+// nothing sets *outResult to 0 and returns Ok.
+// ====================================================================
+kcdxBehaviorAccess Thunk_Invoke(kcdxBehaviorValue callable,
+                                const kcdxBehaviorValue* argv, size_t argc,
+                                kcdxBehaviorValue* outResult) {
+    g_lastError.clear();
+    if (!outResult) {
+        g_lastError = "Invoke: outResult is required (a kcdxBehaviorValue*).";
+        return kcdxBehaviorAccess_BadHandle;
+    }
+    if (argc > 0 && !argv) {
+        g_lastError = "Invoke: argv is null but argc > 0.";
+        return kcdxBehaviorAccess_BadHandle;
+    }
+    // The QUERY thread-wall (OffThreadPostLoadQuery checked FIRST, before any VM
+    // deref — Invoke is a query, main-thread-only post-load), then the live VM.
+    if (OffThreadPostLoadQuery()) {
+        g_lastError = std::string("Invoke needs the live VM — ") + kThreadPatterns;
+        return kcdxBehaviorAccess_Thread;
+    }
+    lua_State* L = kcdx::hooks::CurrentLuaState();
+    if (!L) {
+        g_lastError = "the kcdx Lua VM is not available — behavior values (incl. "
+                      "callables) live in the one VM.";
+        return kcdxBehaviorAccess_BadHandle;
+    }
+
+    // Push the callable value (generation-/consumption-checked via PushHandleValue).
+    const kcdxBehaviorAccess ca = PushHandleValue(L, callable);
+    if (ca != kcdxBehaviorAccess_Ok) return ca;  // g_lastError set by the push
+    if (lua_type(L, -1) != LUA_TFUNCTION) {
+        g_lastError = "Invoke on a " + TypeNameAtTop(L) +
+                      " value — the value is not a function (callable). Build a "
+                      "callable with NewCallable, or Get a behavior whose value is a "
+                      "function.";
+        lua_pop(L, 1);  // pop the non-function value
+        return kcdxBehaviorAccess_TypeError;
+    }
+
+    // Marshal each arg handle's value onto the stack as a pcall argument. On a bad
+    // arg handle, unwind (pop the function + the args pushed so far) and fail.
+    for (size_t k = 0; k < argc; ++k) {
+        const kcdxBehaviorAccess aa = PushHandleValue(L, argv[k]);
+        if (aa != kcdxBehaviorAccess_Ok) {
+            // g_lastError set by the push; name which arg failed.
+            g_lastError = "Invoke arg " + std::to_string(k) + ": " + g_lastError;
+            lua_pop(L, static_cast<int>(k) + 1);  // the k args pushed + the function
+            return aa;
+        }
+    }
+
+    // pcall with 1 expected return. A raise leaves the error message at the top.
+    const int rc = lua_pcall(L, static_cast<int>(argc), 1, 0);
+    if (rc != 0) {
+        const char* emsg = lua_tostring(L, -1);
+        g_lastError = std::string("Invoke: the callable raised — ") +
+                      (emsg ? emsg : "(no error message)");
+        lua_pop(L, 1);  // pop the error
+        return kcdxBehaviorAccess_TypeError;  // a pcall raise is a loud failure
+    }
+
+    // The call returned. The single result (or nil if the callable returned
+    // nothing) is at the top. nil → no result: set *outResult to 0 (a valid
+    // no-result handle), pop, Ok. Else pin it into a fresh built handle.
+    if (lua_type(L, -1) == LUA_TNIL) {
+        lua_pop(L, 1);
+        *outResult = 0;
+        return kcdxBehaviorAccess_Ok;
+    }
+    const int resultRef = luaL_ref(L, LUA_REGISTRYINDEX);  // pops the result
+    *outResult = MintBuiltHandle(resultRef);
+    return kcdxBehaviorAccess_Ok;
+}
+
+// ====================================================================
 // Value builders — pin a value on the VM, return a built handle.
 // ====================================================================
 
-// The build thread-wall: a build needs the live VM on the main thread post-load.
+// Off-thread post-load? Then a build STAGES (the off-thread thread has no live VM);
+// the queued command materializes it on the main thread. On the main thread (or
+// load-wave under the gate) a build pins on the VM as a Built handle.
+bool OffThreadBuild() { return OffThreadPostLoadQuery(); }
+
+// The build thread-wall for the MAIN-THREAD path: returns the live VM, or null +
+// error when the VM is genuinely unavailable. Only called when NOT staging.
 lua_State* BuilderVm() {
-    if (OffThreadPostLoadQuery()) {
-        g_lastError = std::string("value construction needs the live VM — ") +
-                      kThreadPatterns;
-        return nullptr;
-    }
     lua_State* L = kcdx::hooks::CurrentLuaState();
     if (!L) g_lastError = "the kcdx Lua VM is not available for value construction.";
     return L;
 }
 
+// Materialize a staged plain-data value into a VM ref on the (main-thread) VM.
+// Pushes nothing net of the ref; returns the luaL_ref the caller owns, or kNoRef
+// on a builder failure (a callable trampoline that failed to build). Recursive for
+// a staged table (each child materialized + rawseti'd).
+int MaterializeStaged(lua_State* L, const StagedValue& sv) {
+    switch (sv.type) {
+        case StagedValue::Type::Bool:
+            lua_pushboolean(L, sv.b ? 1 : 0);
+            break;
+        case StagedValue::Type::Int64:
+            lua_pushnumber(L, static_cast<lua_Number>(sv.i));
+            break;
+        case StagedValue::Type::Double:
+            lua_pushnumber(L, static_cast<lua_Number>(sv.d));
+            break;
+        case StagedValue::Type::String:
+            lua_pushlstring(L, sv.s.data(), sv.s.size());
+            break;
+        case StagedValue::Type::Callable: {
+            // Build the C-impl trampoline ref, then push its function value so the
+            // uniform luaL_ref below pins it the same way the scalar cases do.
+            const int ref = BuildCImplTrampoline(L, sv.fn, sv.fnCtx,
+                                                 /*isRevert=*/false);
+            if (ref == kcdx::behavior_registry::kNoRef) return kcdx::behavior_registry::kNoRef;
+            lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+            luaL_unref(L, LUA_REGISTRYINDEX, ref);  // the value is now on the stack
+            break;
+        }
+        case StagedValue::Type::Table: {
+            lua_newtable(L);
+            // Array part (SetIndex): materialize each child, rawseti at its index.
+            for (const auto& e : sv.arrayEntries) {
+                if (!e.second) continue;
+                const int childRef = MaterializeStaged(L, *e.second);
+                if (childRef == kcdx::behavior_registry::kNoRef) {
+                    lua_pop(L, 1);  // pop the partial table
+                    return kcdx::behavior_registry::kNoRef;
+                }
+                lua_rawgeti(L, LUA_REGISTRYINDEX, childRef);  // child value at top
+                luaL_unref(L, LUA_REGISTRYINDEX, childRef);
+                lua_rawseti(L, -2, static_cast<int>(e.first));  // table[index] = child
+            }
+            // Field part (SetField): materialize each child, setfield by key.
+            for (const auto& e : sv.fieldEntries) {
+                if (!e.second) continue;
+                const int childRef = MaterializeStaged(L, *e.second);
+                if (childRef == kcdx::behavior_registry::kNoRef) {
+                    lua_pop(L, 1);
+                    return kcdx::behavior_registry::kNoRef;
+                }
+                lua_rawgeti(L, LUA_REGISTRYINDEX, childRef);
+                luaL_unref(L, LUA_REGISTRYINDEX, childRef);
+                lua_setfield(L, -2, e.first.c_str());  // table[key] = child (pops child)
+            }
+            break;
+        }
+    }
+    return luaL_ref(L, LUA_REGISTRYINDEX);
+}
+
+// ====================================================================
+// The off-thread queued Set command (design §5.4 / §8).
+//
+// An off-thread post-load Set enqueues this onto the SHARED kcdx::task pump (the
+// same off-thread->main primitive the threading law routes hook dispatch through —
+// no new dispatch path). Run() fires on the GAME MAIN THREAD at the next
+// DrainQueue: it materializes the staged payload into a VM ref, resolves the name
+// (full §6 discrimination), and runs ApplyPostLoadToggle EXACTLY as the inline
+// main-thread Set does — then logs per-disposition attribution (a consumer-misuse
+// failure attributed to the SETTING plugin; a declarer-code raise already logged by
+// the registry attributed to the DECLARER). The command always runs post-load (it
+// was queued post-boundary), so it always takes the toggle path; the early-stop
+// window law cannot apply (init is well past EngineSubsystemsInit by DrainQueue).
+class QueuedSetCommand : public kcdxTask {
+public:
+    QueuedSetCommand(kcdxPluginHandle owningPlugin, std::string setterAuthor,
+                     std::string setterPlugin, std::string name,
+                     std::unique_ptr<StagedValue> payload)
+        : owningPlugin_(owningPlugin),
+          setterAuthor_(std::move(setterAuthor)),
+          setterPlugin_(std::move(setterPlugin)),
+          name_(std::move(name)),
+          payload_(std::move(payload)) {}
+
+    void Run() override {
+        // MAIN THREAD now (DrainQueue). The VM + the registry are safe to touch.
+        lua_State* L = kcdx::hooks::CurrentLuaState();
+        if (!L) {
+            // The VM vanished (should not happen post-boundary) — log loud,
+            // attributed to the setter (a consumer-side environment failure).
+            LogSetterFailure(
+                "the kcdx Lua VM was unavailable when the queued off-thread Set "
+                "ran on the main thread — the toggle did not execute.");
+            return;
+        }
+
+        // Resolve the name (the registry read happens HERE, on the main thread).
+        const kcdx::behavior_registry::Behavior* resolved =
+            kcdx::behavior_registry::ResolveForCaller(setterAuthor_, setterPlugin_,
+                                                      name_);
+        if (!resolved) {
+            // Consumer-misuse (an unresolvable name) → attributed to the SETTER.
+            Owner o; o.author = setterAuthor_; o.plugin = setterPlugin_;
+            LogSetterFailure(ResolutionMissError(name_, o));
+            return;
+        }
+        kcdx::behavior_registry::Behavior* b =
+            kcdx::behavior_registry::LookupMutable(resolved->fullName);
+        if (!b) {
+            LogSetterFailure("the resolved behavior '" + resolved->fullName +
+                             "' is no longer registered.");
+            return;
+        }
+
+        // Materialize the staged payload into a real VM ref (main thread). On a
+        // materialization failure (a callable trampoline that failed to build),
+        // log + bail without touching the record.
+        const int newValueRef = payload_ ? MaterializeStaged(L, *payload_)
+                                         : kcdx::behavior_registry::kNoRef;
+        if (newValueRef == kcdx::behavior_registry::kNoRef) {
+            LogSetterFailure("the queued off-thread Set's value could not be "
+                             "materialized on the main thread (a callable payload "
+                             "failed to build).");
+            return;
+        }
+
+        // The toggle — EXACTLY the inline main-thread Set's registry call. The
+        // registry releases the new ref on every path (records it on success,
+        // releases it on a failure that does not record), per its ownership
+        // contract. Per-disposition attribution, all ASYNC:
+        std::string toggleErr;
+        const bool ok = kcdx::behavior_registry::ApplyPostLoadToggle(
+            L, b, newValueRef, toggleErr);
+        if (ok) {
+            // Success — record the consumer->declarer edge (feeds ordering), the
+            // same as the inline path's post-record edge.
+            kcdx::behavior_registry::RecordEdge(setterAuthor_, setterPlugin_,
+                                                b->fullName);
+            LOG_DEBUG_KV(kCat, "queued_set_applied",
+                ::kcdx::log::KV("behavior", b->fullName.c_str()),
+                ::kcdx::log::KV("setter",
+                    kcdx::plugins::NameForHandle(owningPlugin_).c_str()));
+            return;
+        }
+        if (!toggleErr.empty()) {
+            // A teaching-error disposition (a revert-less post-load set) = a
+            // CONSUMER-MISUSE failure → attributed to the SETTING plugin (async).
+            LogSetterFailure(toggleErr);
+            return;
+        }
+        // toggleErr empty = a DECLARER-CODE raise (revert/implementation). The
+        // registry already logged it attributed to the DECLARER (the same as the
+        // inline path). Nothing more to attribute to the setter — the failure is
+        // the declarer's, already in the log.
+    }
+
+    void Dispose() override { delete this; }
+
+private:
+    // Log a consumer-misuse failure for THIS queued Set, attributed to the SETTING
+    // plugin (the engine log + the setter's plugin log) — async, never returned at
+    // the (already-completed) call site.
+    void LogSetterFailure(const std::string& msg) {
+        LOG_ERROR_KV(kCat, "queued_set_failed",
+            ::kcdx::log::KV("behavior", name_.c_str()),
+            ::kcdx::log::KV("setter",
+                kcdx::plugins::NameForHandle(owningPlugin_).c_str()),
+            ::kcdx::log::KV("reason", msg.c_str()));
+        if (owningPlugin_ != kcdxInvalidPluginHandle) {
+            LOG_PLUGIN_ERROR(owningPlugin_, kCat,
+                "queued off-thread kcdx.behavior Set on '%s' — %s",
+                name_.c_str(), msg.c_str());
+        }
+    }
+
+    kcdxPluginHandle             owningPlugin_;
+    std::string                  setterAuthor_;
+    std::string                  setterPlugin_;
+    std::string                  name_;
+    std::unique_ptr<StagedValue> payload_;
+};
+
+void EnqueueOffThreadSet(kcdxPluginHandle owningPlugin,
+                         const std::string& setterAuthor,
+                         const std::string& setterPlugin,
+                         const std::string& name,
+                         std::unique_ptr<StagedValue> payload) {
+    // Ride the existing shared pump (the high-water warn covers it). AddTask is
+    // thread-safe; the command's Run() fires on the main thread at the next tick.
+    auto* cmd = new QueuedSetCommand(owningPlugin, setterAuthor, setterPlugin, name,
+                                     std::move(payload));
+    kcdx::task::GetInterface()->AddTask(cmd);
+}
+
 kcdxBehaviorValue Thunk_NewBool(bool v) {
     g_lastError.clear();
+    if (OffThreadBuild()) {
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::Bool; sv->b = v;
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     lua_pushboolean(L, v ? 1 : 0);
@@ -779,6 +1187,11 @@ kcdxBehaviorValue Thunk_NewBool(bool v) {
 
 kcdxBehaviorValue Thunk_NewInt64(int64_t v) {
     g_lastError.clear();
+    if (OffThreadBuild()) {
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::Int64; sv->i = v;
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     lua_pushnumber(L, static_cast<lua_Number>(v));
@@ -787,6 +1200,11 @@ kcdxBehaviorValue Thunk_NewInt64(int64_t v) {
 
 kcdxBehaviorValue Thunk_NewDouble(double v) {
     g_lastError.clear();
+    if (OffThreadBuild()) {
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::Double; sv->d = v;
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     lua_pushnumber(L, static_cast<lua_Number>(v));
@@ -796,6 +1214,12 @@ kcdxBehaviorValue Thunk_NewDouble(double v) {
 kcdxBehaviorValue Thunk_NewString(const char* s, size_t len) {
     g_lastError.clear();
     if (!s) { g_lastError = "NewString: s is null."; return 0; }
+    if (OffThreadBuild()) {
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::String;
+        sv->s.assign(s, len == 0 ? std::char_traits<char>::length(s) : len);
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     if (len == 0) lua_pushstring(L, s);
@@ -805,6 +1229,11 @@ kcdxBehaviorValue Thunk_NewString(const char* s, size_t len) {
 
 kcdxBehaviorValue Thunk_NewTable(void) {
     g_lastError.clear();
+    if (OffThreadBuild()) {
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::Table;  // empty; SetIndex/SetField grow it
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     lua_newtable(L);
@@ -813,6 +1242,7 @@ kcdxBehaviorValue Thunk_NewTable(void) {
 
 // Push a built table handle at the VM top (validated), or return false + error.
 bool PushBuiltTable(lua_State* L, kcdxBehaviorValue table, const char* who) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
     HandleRec* r = FindHandle(table);
     if (!r || r->kind != Kind::Built || r->consumed || r->builtRef == LUA_NOREF) {
         g_lastError = std::string(who) + ": the table must be a NewTable() handle "
@@ -832,6 +1262,7 @@ bool PushBuiltTable(lua_State* L, kcdxBehaviorValue table, const char* who) {
 // child's ref + mark it consumed (its value is moved into the table). Returns
 // false + error if the child is not a valid built handle.
 bool ConsumeChildAtTop(lua_State* L, kcdxBehaviorValue child, const char* who) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
     HandleRec* c = FindHandle(child);
     if (!c || c->kind != Kind::Built || c->consumed || c->builtRef == LUA_NOREF) {
         g_lastError = std::string(who) + ": the child must be a built value "
@@ -845,9 +1276,49 @@ bool ConsumeChildAtTop(lua_State* L, kcdxBehaviorValue child, const char* who) {
     return true;
 }
 
+// Detach a STAGED child's plain-data description (consuming the child handle) for
+// insertion into a staged table. Returns the moved-out StagedValue, or null + error
+// if `child` is not a valid non-consumed Staged handle. Takes the handle lock.
+std::unique_ptr<StagedValue> ConsumeStagedChild(kcdxBehaviorValue child,
+                                                const char* who) {
+    std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+    HandleRec* c = FindHandle(child);
+    if (!c || c->kind != Kind::Staged || c->consumed || !c->staged) {
+        g_lastError = std::string(who) + ": the child must be an off-thread staged "
+                      "value (NewBool/.../NewTable/NewCallable built off-thread) and "
+                      "not already consumed.";
+        return nullptr;
+    }
+    std::unique_ptr<StagedValue> moved = std::move(c->staged);
+    c->consumed = true;
+    return moved;
+}
+
+// Reach the staged table description for in-place mutation (a staged SetIndex/
+// SetField). Returns null (no error set) when `table` is NOT a staged table — the
+// caller then takes the Built/VM path. Caller holds the lock.
+StagedValue* StagedTableOrNull(kcdxBehaviorValue table) {
+    HandleRec* r = FindHandle(table);
+    if (r && r->kind == Kind::Staged && !r->consumed && r->staged &&
+        r->staged->type == StagedValue::Type::Table) {
+        return r->staged.get();
+    }
+    return nullptr;
+}
+
 kcdxBehaviorAccess Thunk_SetIndex(kcdxBehaviorValue table, int64_t index,
                                   kcdxBehaviorValue child) {
     g_lastError.clear();
+    // Staged-table path (off-thread): record the child description under `index`.
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+        if (StagedValue* st = StagedTableOrNull(table)) {
+            std::unique_ptr<StagedValue> sc = ConsumeStagedChild(child, "SetIndex");
+            if (!sc) return kcdxBehaviorAccess_BadHandle;
+            st->arrayEntries.emplace_back(index, std::move(sc));
+            return kcdxBehaviorAccess_Ok;
+        }
+    }
     lua_State* L = BuilderVm();
     if (!L) return kcdxBehaviorAccess_Thread;
     if (!PushBuiltTable(L, table, "SetIndex")) return kcdxBehaviorAccess_TypeError;
@@ -866,6 +1337,15 @@ kcdxBehaviorAccess Thunk_SetField(kcdxBehaviorValue table, const char* key,
                                   kcdxBehaviorValue child) {
     g_lastError.clear();
     if (!key) { g_lastError = "SetField: key is null."; return kcdxBehaviorAccess_BadHandle; }
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_handlesMutex);
+        if (StagedValue* st = StagedTableOrNull(table)) {
+            std::unique_ptr<StagedValue> sc = ConsumeStagedChild(child, "SetField");
+            if (!sc) return kcdxBehaviorAccess_BadHandle;
+            st->fieldEntries.emplace_back(std::string(key), std::move(sc));
+            return kcdxBehaviorAccess_Ok;
+        }
+    }
     lua_State* L = BuilderVm();
     if (!L) return kcdxBehaviorAccess_Thread;
     if (!PushBuiltTable(L, table, "SetField")) return kcdxBehaviorAccess_TypeError;
@@ -881,12 +1361,17 @@ kcdxBehaviorAccess Thunk_SetField(kcdxBehaviorValue table, const char* key,
 kcdxBehaviorValue Thunk_NewCallable(kcdxBehaviorImplFn fn, void* userCtx) {
     g_lastError.clear();
     if (!fn) { g_lastError = "NewCallable: fn is null."; return 0; }
+    if (OffThreadBuild()) {
+        // A function pointer + context stages trivially (design §8) — materialized
+        // into a Lua C closure on the main thread when the queued command runs.
+        auto sv = std::make_unique<StagedValue>();
+        sv->type = StagedValue::Type::Callable; sv->fn = fn; sv->fnCtx = userCtx;
+        return MintStagedHandle(std::move(sv));
+    }
     lua_State* L = BuilderVm();
     if (!L) return 0;
     // Register the C function + context as a callable VALUE (a Lua C closure
-    // forwarding to fn with the value handle). The ACCESSOR that CALLS it
-    // (Invoke) is the later step — minting it now keeps a callable value
-    // representable (full parity: no value type is Lua-only).
+    // forwarding to fn with the value handle). Invoke (v2) calls such a value.
     const int ref = BuildCImplTrampoline(L, fn, userCtx, /*isRevert=*/false);
     if (ref == kcdx::behavior_registry::kNoRef) {
         g_lastError = "NewCallable: failed to build the callable trampoline.";
@@ -973,6 +1458,8 @@ kcdxBehaviorInterface g_interface = {
     /*SetField=*/     Thunk_SetField,
     /*NewCallable=*/  Thunk_NewCallable,
     /*GetLastError=*/ Thunk_GetLastError,
+    // --- APPEND-ONLY (v2): mirrors the struct's append-only order exactly ---
+    /*Invoke=*/       Thunk_Invoke,
 };
 
 }  // namespace

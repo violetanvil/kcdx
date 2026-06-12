@@ -1,11 +1,15 @@
 // CAP-102 — kcdxBehaviorInterface (C++ mirror of kcdx.behavior.*) end-to-end.
 //
-// The verification plugin that proves kcdxBehaviorInterface v1 works for a real
-// C++ DLL author: the four verbs over the engine-owned value-handle model (values
-// NEVER marshalled out of the one VM), the C++-side value builders, the
+// The verification plugin that proves kcdxBehaviorInterface works for a real C++
+// DLL author: the four verbs over the engine-owned value-handle model (values NEVER
+// marshalled out of the one VM), the C++-side value builders, the
 // generation-checked staleness, the coercion accessors, the QUERY thread-wall, the
-// window law, and the VM-adoption wave-end gate. Invoke + the off-thread queued Set
-// are a later step (NOT exercised here).
+// window law, and the VM-adoption wave-end gate (v1) — plus (v2, P2 s2) Invoke
+// (calling a callable value, both a C++-registered fn-pointer and a Lua-declared
+// function value) and the off-thread QUEUED Set (a post-load Set from a worker
+// thread queues + executes its toggle on the game main thread at the next
+// DrainQueue, with off-thread value construction staged engine-side + per-
+// disposition async attribution).
 //
 // Shape: NATIVE C++ DLL plugin + a sibling Lua plugin (cap-102-cpp-behavior-lua/)
 // for the two cross-language rows. The ONE registry serves both surfaces:
@@ -62,6 +66,7 @@ const char* kName = "cap_102_cpp_behavior";
 
 const kcdxInterface*         g_api      = nullptr;
 const kcdxBehaviorInterface* g_beh      = nullptr;
+const kcdxTaskInterface*     g_task     = nullptr;  // schedules the deferred queued-check
 kcdxPluginHandle             g_self     = kcdxInvalidPluginHandle;
 kcdxLogger                   g_log;
 bool                         g_post_ran = false;
@@ -107,6 +112,20 @@ void CppCrosslangImpl(kcdxBehaviorValue value, void* /*ctx*/) {
     }
 }
 
+// === The C++ NewCallable target (the cpp-callable Invoke row) ===
+// A kcdxBehaviorImplFn-shaped function registered AS a callable value via
+// NewCallable. When Invoked, the engine's C-impl trampoline hands it the FIRST
+// pcall arg as `value` (the trampoline forwards arg 1; the callable returns no Lua
+// value, so Invoke's result is a no-result handle). It records that it fired + the
+// int it received so the row can assert the call reached it with the arg.
+bool    g_cpp_callable_ran      = false;
+int64_t g_cpp_callable_arg      = -1;
+void CppCallable(kcdxBehaviorValue value, void* /*ctx*/) {
+    g_cpp_callable_ran = true;
+    int64_t n = -1;
+    if (g_beh->AsInt64(value, &n) == kcdxBehaviorAccess_Ok) g_cpp_callable_arg = n;
+}
+
 void Report(const char* row, bool pass, const char* reason) {
     if (pass) g_log.Info ("CAP102", "PASS %s: %s", row, reason);
     else      g_log.Error("CAP102", "FAIL %s: %s", row, reason);
@@ -132,6 +151,13 @@ const char* kRows[] = {
     "CAP-102-cpp-wave-end-gate-order",
     "CAP-102-crosslang-lua-sets-cpp",
     "CAP-102-crosslang-cpp-sets-lua",
+    // P2 s2 — Invoke + the off-thread queued Set.
+    "CAP-102-cpp-invoke-cpp-callable",
+    "CAP-102-cpp-invoke-lua-callable",
+    "CAP-102-cpp-offthread-set-queues",
+    "CAP-102-cpp-queued-misuse-attribution",
+    "CAP-102-cpp-queued-declarer-raise-attribution",
+    "CAP-102-cpp-offthread-table-payload",
 };
 
 // === The off-thread post-load QUERY fixture (the thread-wall regression) ===
@@ -187,6 +213,211 @@ void RunOffThreadQuery(OffThreadResult* out) {
         out->errText[sizeof(out->errText) - 1] = '\0';
     }
 }
+
+// === The off-thread QUEUED-SET fixtures (P2 s2) ===
+//
+// A post-load Set from a NON-main thread QUEUES (returns having queued) and its
+// toggle executes on the game main thread at the next DrainQueue. Each worker below
+// runs ON a transient std::thread spawned post-load, builds its value OFF-THREAD
+// (the builder stages it — no live VM off-thread), issues an off-thread Set (which
+// queues), records whether the Set returned true (queued, not errored on thread),
+// and is JOINED before the report (no fire-and-forget). The toggle's EFFECT (get()
+// flipped / the impl fired / the value attribution) is observed by a DEFERRED main-
+// thread task that runs on a LATER tick — AFTER the queued behavior commands have
+// drained (FIFO: the behavior commands are enqueued from these workers, the deferred
+// check is enqueued after the joins, so it drains after them).
+
+const char* kLuaOffthread        = "ts.cap_102_cpp_behavior_lua.lua_offthread";
+const char* kLuaOffthreadRevless = "ts.cap_102_cpp_behavior_lua.lua_offthread_revertless";
+const char* kLuaOffthreadRaiser  = "ts.cap_102_cpp_behavior_lua.lua_offthread_raiser";
+const char* kLuaOffthreadTable   = "ts.cap_102_cpp_behavior_lua.lua_offthread_table";
+
+// Each worker's "Set returned having queued" verdict (read by the deferred check
+// after all joins — plain storage, published by the join happens-before).
+std::atomic<bool> g_q_offthread_queued{false};
+std::atomic<bool> g_q_misuse_queued{false};
+std::atomic<bool> g_q_raiser_queued{false};
+std::atomic<bool> g_q_table_queued{false};
+
+// Worker: off-thread Set lua_offthread = 7 (a revert togglable int). Queues.
+void WkSetOffthread() {
+    kcdxBehaviorValue v = g_beh->NewInt64(7);            // staged off-thread
+    g_q_offthread_queued.store(g_beh->Set(kLuaOffthread, v, g_self));
+}
+// Worker: off-thread Set lua_offthread_revertless = 9 — a CONSUMER-MISUSE (a
+// revert-less post-load set). The Set still QUEUES off-thread (it never errors on
+// thread); the queued command then logs the failure attributed to the SETTER and
+// leaves the value unchanged (asserted by the deferred check: get() stays 5).
+void WkSetMisuse() {
+    kcdxBehaviorValue v = g_beh->NewInt64(9);
+    g_q_misuse_queued.store(g_beh->Set(kLuaOffthreadRevless, v, g_self));
+}
+// Worker: off-thread Set lua_offthread_raiser = true — a DECLARER-CODE raise (the
+// impl raises on true). Queues; the queued command runs the toggle, the impl raises,
+// the registry clears the record + logs attributed to the DECLARER (the deferred
+// check asserts get() reverted to the default false).
+void WkSetRaiser() {
+    kcdxBehaviorValue v = g_beh->NewBool(true);
+    g_q_raiser_queued.store(g_beh->Set(kLuaOffthreadRaiser, v, g_self));
+}
+// Worker: off-thread Set lua_offthread_table = { 77 } — a STAGED TABLE built
+// off-thread (NewTable + SetIndex stage the description), materialized on the main
+// thread at the queued command's execution. The impl records element [1] (77).
+void WkSetTable() {
+    kcdxBehaviorValue t = g_beh->NewTable();             // staged table off-thread
+    kcdxBehaviorValue e = g_beh->NewInt64(77);           // staged child off-thread
+    g_beh->SetIndex(t, 1, e);                            // stage into the table desc
+    g_q_table_queued.store(g_beh->Set(kLuaOffthreadTable, t, g_self));
+}
+
+// The DEFERRED check — a kcdxTask scheduled (from the InputLoaded handler, after the
+// off-thread Sets queued + joined) to run on a LATER main-thread tick, by which time
+// the queued behavior commands have drained. It reports the four off-thread-queued
+// rows by reading ACTUAL post-toggle state (get() values / the revert dispositions),
+// then self-disposes.
+struct DeferredQueuedCheck : kcdxTask {
+    void Run() override {
+        if (!g_beh) return;  // backstop already reported
+
+        // --- Row: off-thread Set queued → executed on main → get() flipped -------
+        // lua_offthread (default 0, applied at load with 0). The off-thread Set
+        // queued 7; after the drain the toggle applied 7. get()==7 is the proof the
+        // queued command executed on the main thread (an off-thread setter never
+        // touched the VM). FAILS if the Set errored on thread (queued=false), or the
+        // toggle never executed (get() still 0).
+        {
+            kcdxBehaviorValue h = 0;
+            bool got = g_beh->Get(kLuaOffthread, &h, g_self);
+            int64_t val = -1;
+            kcdxBehaviorAccess a = got ? g_beh->AsInt64(h, &val)
+                                       : kcdxBehaviorAccess_BadHandle;
+            const bool queued = g_q_offthread_queued.load();
+            const bool pass = queued && got && a == kcdxBehaviorAccess_Ok && val == 7;
+            char reason[400];
+            snprintf(reason, sizeof(reason),
+                "%s — off-thread Set(lua_offthread=7) queued=%d; after the next "
+                "DrainQueue get()=%lld (access=%d) (PASS: the off-thread Set QUEUED "
+                "(returned true on thread, never errored) and the toggle executed on "
+                "the game main thread at the next apply point — get() flipped 0->7. "
+                "FAILS if the Set errored on thread, or the toggle never ran (get() "
+                "still 0): the queued command path is broken)",
+                pass ? "off-thread queued Set executed on main"
+                     : "off-thread queued Set WRONG",
+                queued ? 1 : 0, static_cast<long long>(val), static_cast<int>(a));
+            g_api->ReportTestResult(g_self, "CAP-102-cpp-offthread-set-queues",
+                                    pass ? 1 : 0, reason);
+        }
+
+        // --- Row: queued misuse → attributed to the SETTER (async) ---------------
+        // lua_offthread_revertless (revert-LESS, applied at load = 5). The off-thread
+        // queued Set(9) is a consumer-misuse (a revert-less post-load set). It QUEUED
+        // off-thread; the queued command rejected the toggle, logged the failure
+        // attributed to the SETTING plugin (ts.cap_102_cpp_behavior), and left the
+        // value UNCHANGED. The observable proof here is get()==5 (unchanged); the
+        // attribution itself is the engine-log line the agent greps
+        // (BEHAVIOR_INTERFACE queued_set_failed setter=cap_102_cpp_behavior). FAILS
+        // if the value CHANGED (the revert-less post-load set was wrongly applied) or
+        // the Set errored on thread instead of queuing.
+        {
+            kcdxBehaviorValue h = 0;
+            bool got = g_beh->Get(kLuaOffthreadRevless, &h, g_self);
+            int64_t val = -1;
+            kcdxBehaviorAccess a = got ? g_beh->AsInt64(h, &val)
+                                       : kcdxBehaviorAccess_BadHandle;
+            const bool queued = g_q_misuse_queued.load();
+            const bool pass = queued && got && a == kcdxBehaviorAccess_Ok && val == 5;
+            char reason[460];
+            snprintf(reason, sizeof(reason),
+                "%s — off-thread Set(lua_offthread_revertless=9) queued=%d; after the "
+                "drain get()=%lld (access=%d) (PASS: a revert-less post-load Set is a "
+                "CONSUMER-MISUSE — it queued off-thread, the queued command rejected "
+                "the toggle, logged the failure attributed to the SETTER "
+                "(cap_102_cpp_behavior), and left the value at its load value 5. The "
+                "attribution is the engine-log 'queued_set_failed setter=...' line. "
+                "FAILS if the value changed (misuse wrongly applied) or the Set "
+                "errored on thread)",
+                pass ? "queued misuse attributed to setter (value unchanged)"
+                     : "queued misuse WRONG",
+                queued ? 1 : 0, static_cast<long long>(val), static_cast<int>(a));
+            g_api->ReportTestResult(g_self,
+                                    "CAP-102-cpp-queued-misuse-attribution",
+                                    pass ? 1 : 0, reason);
+        }
+
+        // --- Row: queued declarer-raise → attributed to the DECLARER (async) -----
+        // lua_offthread_raiser (revert togglable bool, applied clean at load with
+        // false). The off-thread queued Set(true) toggles it → the impl RAISES → the
+        // registry clears the record (get() reverts to the default false) and logs
+        // the raise attributed to the DECLARER (cap_102_cpp_behavior_lua). The
+        // observable proof is get()==false (reverted); the attribution is the engine
+        // log line (BEHAVIOR registry, declarer=...). FAILS if get() reads true (the
+        // raise disposition did not clear the record) or the Set errored on thread.
+        {
+            kcdxBehaviorValue h = 0;
+            bool got = g_beh->Get(kLuaOffthreadRaiser, &h, g_self);
+            bool val = true;
+            kcdxBehaviorAccess a = got ? g_beh->AsBool(h, &val)
+                                       : kcdxBehaviorAccess_BadHandle;
+            const bool queued = g_q_raiser_queued.load();
+            const bool pass = queued && got && a == kcdxBehaviorAccess_Ok &&
+                              val == false;
+            char reason[460];
+            snprintf(reason, sizeof(reason),
+                "%s — off-thread Set(lua_offthread_raiser=true) queued=%d; after the "
+                "drain get()=%d (access=%d) (PASS: the queued toggle ran the impl, "
+                "which RAISED — the registry cleared the record (get() reverted to "
+                "the default false) and logged the raise attributed to the DECLARER "
+                "(cap_102_cpp_behavior_lua), NOT the setter. The attribution is the "
+                "registry's declarer-attributed raise log line. FAILS if get() is "
+                "true (the raise did not clear the record) or the Set errored on "
+                "thread)",
+                pass ? "queued declarer-raise attributed to declarer (record cleared)"
+                     : "queued declarer-raise WRONG",
+                queued ? 1 : 0, val ? 1 : 0, static_cast<int>(a));
+            g_api->ReportTestResult(g_self,
+                                    "CAP-102-cpp-queued-declarer-raise-attribution",
+                                    pass ? 1 : 0, reason);
+        }
+
+        // --- Row: off-thread table-payload → the impl receives the table ---------
+        // lua_offthread_table (revert togglable table, applied at load { 0 }). The
+        // off-thread Set staged a TABLE { 77 } (built off-thread via NewTable +
+        // SetIndex — a plain-data description, materialized on the main thread at the
+        // queued command's execution). After the drain get()[1]==77 proves the staged
+        // table MATERIALIZED on the main thread + the toggle applied it. FAILS if the
+        // table did not materialize (get() not a table / wrong element) or the Set
+        // errored on thread.
+        {
+            kcdxBehaviorValue h = 0;
+            bool got = g_beh->Get(kLuaOffthreadTable, &h, g_self);
+            kcdxBehaviorType ty = got ? g_beh->TypeOf(h) : kcdxBehaviorType_Invalid;
+            kcdxBehaviorValue child = 0;
+            int64_t elem1 = -1;
+            bool idxOk = got && ty == kcdxBehaviorType_Table &&
+                         g_beh->Index(h, 1, &child) == kcdxBehaviorAccess_Ok &&
+                         g_beh->AsInt64(child, &elem1) == kcdxBehaviorAccess_Ok;
+            const bool queued = g_q_table_queued.load();
+            const bool pass = queued && got && ty == kcdxBehaviorType_Table &&
+                              idxOk && elem1 == 77;
+            char reason[460];
+            snprintf(reason, sizeof(reason),
+                "%s — off-thread Set(lua_offthread_table={77}) queued=%d; after the "
+                "drain get() type=%d [1]=%lld (PASS: the off-thread table built via "
+                "NewTable+SetIndex STAGED as a plain-data description, materialized "
+                "on the game main thread at the queued command's execution, and the "
+                "toggle applied it — get() is a table with [1]==77. FAILS if the "
+                "table did not materialize (wrong type/element) or the Set errored "
+                "on thread)",
+                pass ? "off-thread staged-table materialized + applied"
+                     : "off-thread table-payload WRONG",
+                queued ? 1 : 0, static_cast<int>(ty),
+                static_cast<long long>(elem1));
+            g_api->ReportTestResult(g_self, "CAP-102-cpp-offthread-table-payload",
+                                    pass ? 1 : 0, reason);
+        }
+    }
+    void Dispose() override { delete this; }
+};
 
 void OnMessage(kcdxMessage* msg) {
     if (msg->messageType != kcdxMessage_InputLoaded) return;
@@ -383,6 +614,108 @@ void OnMessage(kcdxMessage* msg) {
         g_api->ReportTestResult(g_self, "CAP-102-cpp-wave-end-gate-order",
                                 pass ? 1 : 0, reason);
     }
+
+    // === P2 s2: Invoke (synchronous, main thread, post-boundary) =============
+
+    // --- Row: Invoke a C++-registered (NewCallable) callable value -----------
+    // Build a callable value off a C function pointer (CppCallable), Invoke it with
+    // one value-handle arg (41). The engine's C-impl trampoline forwards arg 1 to
+    // CppCallable as its value; the callable returns no Lua value, so Invoke's
+    // result is a no-result handle (0). PASS: Invoke returns Ok, the callable FIRED
+    // and received 41, and the result is the no-result handle. FAILS if the call did
+    // not fire, the arg did not reach it, or Invoke errored. Reads ACTUAL state (the
+    // engine-set fire flag + the int the callable coerced from the handle).
+    {
+        g_cpp_callable_ran = false;
+        g_cpp_callable_arg = -1;
+        kcdxBehaviorValue callable = g_beh->NewCallable(CppCallable, nullptr);
+        kcdxBehaviorValue arg = g_beh->NewInt64(41);
+        kcdxBehaviorValue argv[1] = { arg };
+        kcdxBehaviorValue result = 12345;  // sentinel — must become 0 (no result)
+        kcdxBehaviorAccess a = g_beh->Invoke(callable, argv, 1, &result);
+        // PASS: Ok, the C callable fired with 41, the result is the no-result handle.
+        const bool pass = a == kcdxBehaviorAccess_Ok && g_cpp_callable_ran &&
+                          g_cpp_callable_arg == 41 && result == 0;
+        char reason[440];
+        snprintf(reason, sizeof(reason),
+            "%s — Invoke(NewCallable, [41]) access=%d; callable ran=%d arg=%lld "
+            "result=%llu (PASS: Invoke called the C++-registered callable value with "
+            "the value-handle arg — the callable fired and received 41; the C-impl "
+            "callable returns no Lua value so the result is the no-result handle 0. "
+            "FAILS if the call did not fire, the arg did not reach it, or Invoke "
+            "errored — args are value handles, uniform with the value model)",
+            pass ? "Invoke on a C++ callable value ok" : "Invoke (C++ callable) WRONG",
+            static_cast<int>(a), g_cpp_callable_ran ? 1 : 0,
+            static_cast<long long>(g_cpp_callable_arg),
+            static_cast<unsigned long long>(result));
+        g_api->ReportTestResult(g_self, "CAP-102-cpp-invoke-cpp-callable",
+                                pass ? 1 : 0, reason);
+    }
+
+    // --- Row: Invoke a LUA-declared callable value (returns a result) --------
+    // lua_callable is a behavior whose VALUE is a Lua function(a,b) -> a+b (the Lua
+    // sibling declared it; never set, so get() answers the default function). Get
+    // the function value, Invoke it with two value-handle args (2, 3) → the result
+    // handle must coerce to 5. PASS: Invoke Ok + AsInt64(result)==5. FAILS if the
+    // call did not fire, the args did not reach the function, or the result is
+    // wrong. This is the "returned result handle" half — a real Lua return value
+    // pinned into a fresh handle.
+    {
+        kcdxBehaviorValue fn = 0;
+        bool gotFn = g_beh->Get("ts.cap_102_cpp_behavior_lua.lua_callable",
+                                &fn, g_self);
+        kcdxBehaviorType ty = gotFn ? g_beh->TypeOf(fn) : kcdxBehaviorType_Invalid;
+        kcdxBehaviorValue a2 = g_beh->NewInt64(2);
+        kcdxBehaviorValue a3 = g_beh->NewInt64(3);
+        kcdxBehaviorValue argv[2] = { a2, a3 };
+        kcdxBehaviorValue result = 0;
+        kcdxBehaviorAccess ia = gotFn && ty == kcdxBehaviorType_Function
+            ? g_beh->Invoke(fn, argv, 2, &result)
+            : kcdxBehaviorAccess_TypeError;
+        int64_t rv = -1;
+        kcdxBehaviorAccess ra = (ia == kcdxBehaviorAccess_Ok)
+            ? g_beh->AsInt64(result, &rv) : kcdxBehaviorAccess_BadHandle;
+        const bool pass = gotFn && ty == kcdxBehaviorType_Function &&
+                          ia == kcdxBehaviorAccess_Ok && ra == kcdxBehaviorAccess_Ok &&
+                          rv == 5;
+        char reason[480];
+        snprintf(reason, sizeof(reason),
+            "%s — Get(lua_callable) type=%d; Invoke([2,3]) access=%d → result "
+            "AsInt64 access=%d value=%lld (PASS: a LUA-declared callable value, "
+            "called from C++ with value-handle args, returned a result handle "
+            "coercing to 2+3==5 — the pcall harness reuses, the arg-marshal is the "
+            "new layer; one value concept for construction AND calling. FAILS if "
+            "the call did not fire, the args did not reach the function, or the "
+            "result is wrong)",
+            pass ? "Invoke on a Lua callable value ok"
+                 : "Invoke (Lua callable) WRONG",
+            static_cast<int>(ty), static_cast<int>(ia), static_cast<int>(ra),
+            static_cast<long long>(rv));
+        g_api->ReportTestResult(g_self, "CAP-102-cpp-invoke-lua-callable",
+                                pass ? 1 : 0, reason);
+    }
+
+    // === P2 s2: the off-thread QUEUED Set fixtures ============================
+    // Spawn a transient worker per off-thread Set (each builds its value OFF-THREAD
+    // — the builder stages it — and issues an off-thread Set that QUEUES). JOIN each
+    // (no fire-and-forget). The toggle EFFECT is observed by a DEFERRED main-thread
+    // task scheduled AFTER the joins: FIFO puts the queued behavior commands (queued
+    // from the workers) before the deferred check, so by the time it runs the
+    // toggles have drained. We are post-boundary (PostLoad() true), so an off-thread
+    // Set takes the QUEUE path (not the inline toggle).
+    {
+        std::thread w1(WkSetOffthread); w1.join();
+        std::thread w2(WkSetMisuse);    w2.join();
+        std::thread w3(WkSetRaiser);    w3.join();
+        std::thread w4(WkSetTable);     w4.join();
+        // Schedule the deferred check (runs on a later main-thread tick, after the
+        // queued behavior commands drain). If the task interface is unavailable, the
+        // four queued rows go unreported (visible as an X/Y suite gap) — but the
+        // pump is the very thing under test, so this path is the failure signal.
+        if (g_task) {
+            g_task->AddTask(new DeferredQueuedCheck());
+        }
+    }
 }
 
 // === Stash between Load and PostGameLoad ===
@@ -417,6 +750,11 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     auto* messaging = static_cast<kcdxMessagingInterface*>(
         api->QueryInterface(kcdxInterface_Messaging, kcdxMessagingInterface_Version));
     if (messaging) messaging->RegisterListener(g_self, nullptr, OnMessage);
+
+    // The task interface — used to schedule the deferred queued-Set check on a
+    // later main-thread tick (after the queued behavior commands drain).
+    g_task = static_cast<const kcdxTaskInterface*>(
+        api->QueryInterface(kcdxInterface_Task, kcdxTaskInterface_Version));
 
     // --- Declare the C++ behaviors (declares are legal at the early stop) ----
     // cpp_scalar: a bool behavior, default false, with a revert (togglable).

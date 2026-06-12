@@ -68,10 +68,57 @@ if the VM is unavailable):
   build a table by writing child value handles into it (the child is consumed —
   its value moves into the table).
 - **`NewCallable(fn, ctx)`** — a C function pointer + context registers AS a
-  callable value (full parity — no value type is Lua-only).
+  callable value (full parity — no value type is Lua-only). Call it with `Invoke`
+  (below).
 
 A built handle is consumed when passed to `Set`/`Declare` or a table builder; nil
 is the unset sentinel — never a value.
+
+## Calling a callable value — `Invoke`
+
+A value whose type is `kcdxBehaviorType_Function` — built by `NewCallable` from a C
+function pointer, OR a Lua-declared function value reached through `Get`/an accessor
+— is **called** with `Invoke`:
+
+```cpp
+kcdxBehaviorAccess (*Invoke)(kcdxBehaviorValue callable,
+                             const kcdxBehaviorValue* argv, size_t argc,
+                             kcdxBehaviorValue* outResult);
+```
+
+Args are **value handles** — the SAME concept as construction (one value model for
+building AND calling, no second arg regime). Build each arg with a builder, pass an
+`argv` array + `argc`. The pcall's **first return value** is pinned into a fresh
+value handle written to `*outResult` (read it with the accessors); a callable that
+returns nothing sets `*outResult` to `0` (a valid no-result handle) and returns
+`kcdxBehaviorAccess_Ok`.
+
+```cpp
+// A Lua-declared callable: function(a, b) return a + b end, reached via Get.
+kcdxBehaviorValue fn = 0;
+g_beh->Get("redmoon.realism.adder", &fn, g_self);
+kcdxBehaviorValue argv[2] = { g_beh->NewInt64(2), g_beh->NewInt64(3) };
+kcdxBehaviorValue result = 0;
+if (g_beh->Invoke(fn, argv, 2, &result) == kcdxBehaviorAccess_Ok) {
+    int64_t sum = 0;
+    g_beh->AsInt64(result, &sum);   // 5
+}
+```
+
+`Invoke` is a **query** — it needs the live VM, so it honors the same thread-wall as
+every accessor (legal during the load waves under the wave-end gate; post-load on
+the game main thread only — an off-thread post-load `Invoke` returns
+`kcdxBehaviorAccess_Thread`). `callable` must resolve to a function value (else
+`kcdxBehaviorAccess_TypeError` naming the actual type); each `argv[i]` must be a
+valid non-consumed handle (else `kcdxBehaviorAccess_BadHandle`); `outResult` must be
+non-null. A pcall **raise** is `kcdxBehaviorAccess_TypeError` with the Lua error
+text via `GetLastError` — the call fails loud, never a silently-wrong result.
+
+**Single-surface (C++): the Lua author calls a function value natively** (`local f
+= kcdx.behavior.get("adder"); f(2, 3)`), so Lua needs no `Invoke` verb. `Invoke` is
+the C++ expression of the same capability — calling a Lua function value from C++,
+where the language cannot do it directly. Both surfaces can call a callable value;
+only the spelling differs.
 
 ## Copy-paste-runnable snippet
 
@@ -138,10 +185,25 @@ One law, two halves:
   the main thread*. No query hides a blocking marshal. (Regression-tested: a
   worker thread driving a post-load `Get` is rejected with the thread error — the
   wall returns before any VM access, so the off-thread call is crash-safe.)
-- **Commands** (`Set`) — the MAIN-THREAD path is built today: a load-window
-  `Set` records, a post-load main-thread `Set` toggles a `revert` declarer
-  inline. (The off-thread queued `Set` — a post-load `Set` from a non-main thread
-  that queues to the main thread — is NYI, below.)
+- **Commands** (`Set`) — work from **any thread**. A load-window `Set` records; a
+  post-load main-thread `Set` toggles a `revert` declarer inline; a post-load `Set`
+  from a **non-main thread QUEUES** and executes its toggle on the game main thread
+  at the next apply point (FIFO arrival order, each set its own toggle, no
+  coalescing — riding the engine's existing off-thread→main task pump, no new
+  dispatch path). The off-thread `Set` returns having **queued** (`true`) — it never
+  carries the toggle's eventual outcome; a queued toggle's failure logs **async** (a
+  consumer-misuse failure — a revert-less post-load set, an unresolvable name —
+  attributed to the **setting** plugin; a declarer-code raise attributed to the
+  **declarer**). `Get` flips only when the queued toggle actually executes (an
+  off-thread setter may briefly read the prior value — the same
+  applies-at-the-next-apply-point semantics a load-time set has).
+
+  **Off-thread value construction stages.** A value built off-thread (the builders,
+  called from a non-main thread post-load) stages engine-side as the queued
+  command's plain-data payload — scalars/strings/function-pointers directly, a table
+  as a description materialized on the main thread at execution. The SAME builders,
+  not a second access regime; pass the built handle to the off-thread `Set` as you
+  would on the main thread.
 
 ## The window law — a plugin-tier `Set` from `kcdxPlugin_Load` is out-of-window
 
@@ -155,18 +217,5 @@ resolve at the main stop; set from your main entry") — set plugin behaviors fr
 The discriminating resolution errors (reorder / failed-load / disabled /
 rejected / absent / typo / bare-name) are the same as the Lua surface — the wall
 is keyed on the early-vs-main stop, not the language.
-
-## Not yet implemented (this interface)
-
-- **`Invoke(handle, args…)`** — calling a callable value. `NewCallable` mints a
-  callable value now (so a callable value is representable — full parity), but
-  the accessor that CALLS it is a later step. Until then, read a function value's
-  presence via `TypeOf(value) == kcdxBehaviorType_Function`.
-- **The off-thread queued `Set`** — a post-load `Set` from a non-main thread
-  currently returns a teaching error naming the queued-path-lands-later status;
-  the queue (FIFO marshal to the main thread at the next apply point) is the
-  later step. Issue a post-load `Set` from the game main thread (a
-  `kcdxPlugin_PostGameLoad`, a main-thread task, or an implementation callback)
-  for now.
 
 This is the C++ mirror of [kcdx.behavior.*](../lua/behavior.md).

@@ -142,7 +142,13 @@ test_names          = ["CAP-102-cpp-declare-set-get",
                        "CAP-102-cpp-early-stop-out-of-window",
                        "CAP-102-cpp-wave-end-gate-order",
                        "CAP-102-crosslang-lua-sets-cpp",
-                       "CAP-102-crosslang-cpp-sets-lua"]
+                       "CAP-102-crosslang-cpp-sets-lua",
+                       "CAP-102-cpp-invoke-cpp-callable",
+                       "CAP-102-cpp-invoke-lua-callable",
+                       "CAP-102-cpp-offthread-set-queues",
+                       "CAP-102-cpp-queued-misuse-attribution",
+                       "CAP-102-cpp-queued-declarer-raise-attribution",
+                       "CAP-102-cpp-offthread-table-payload"]
 
 [load_order]
 priority = 30

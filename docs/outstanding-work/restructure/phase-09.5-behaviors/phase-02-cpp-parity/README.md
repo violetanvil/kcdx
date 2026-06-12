@@ -9,7 +9,7 @@ design settled), then the command-query thread contract's queued half. Design:
 | Step | Status | Commit |
 |---|---|---|
 | [1 — `kcdxBehaviorInterface` + the value-handle model](step-1-interface-handles.md) | DONE | 2e81f11 |
-| [2 — `Invoke` + the off-thread command queue](step-2-invoke-queue.md) | NOT STARTED | — |
+| [2 — `Invoke` + the off-thread command queue](step-2-invoke-queue.md) | DONE | (landed) |
 
 ## Phase verification gate
 

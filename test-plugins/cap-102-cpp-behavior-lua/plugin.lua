@@ -100,6 +100,94 @@ guard("set lua_raiser load", function()
     kcdx.behavior.set("lua_raiser", false)
 end)
 
+-- lua_callable: a behavior whose VALUE IS A FUNCTION (the Lua-declared callable
+-- the C++ Invoke row calls). default is a function(a, b) -> a + b; the C++ plugin
+-- Gets it (TypeOf == Function) and Invokes it with two value-handle args, asserting
+-- the result. Proves Invoke works on a LUA-declared callable value, not just a
+-- C++-registered fn-pointer.
+guard("declare lua_callable", function()
+    kcdx.behavior.declare("lua_callable", {
+        description    = "a behavior whose value is a callable (C++ Invoke target)",
+        default        = function(a, b) return a + b end,
+        implementation = function(value) end,  -- never set; the default IS the value
+    })
+end)
+
+-- The off-thread queued-Set targets (P2 s2). The C++ plugin spawns a transient
+-- worker std::thread post-load and issues a Set off-thread on each — the Set QUEUES
+-- (returns having queued) and the toggle executes on the game main thread at the
+-- next DrainQueue. Each impl records what it received so the deferred C++ check can
+-- assert the toggle ran with the off-thread-supplied value.
+--
+-- lua_offthread: a revert togglable int (applied at load with 0) — the off-thread
+-- queued Set toggles it to 7; the impl records 7; get() flips to 7 after the drain.
+local lua_offthread_impl_value = nil
+guard("declare lua_offthread", function()
+    kcdx.behavior.declare("lua_offthread", {
+        description    = "revert togglable int — off-thread queued Set target",
+        default        = 0,
+        implementation = function(value) lua_offthread_impl_value = value end,
+        revert         = function(old_value) end,
+    })
+end)
+guard("set lua_offthread load", function()
+    kcdx.behavior.set("lua_offthread", 0)  -- applied at load (revert path on toggle)
+end)
+
+-- lua_offthread_revertless: a REVERT-LESS int applied at load — an off-thread queued
+-- post-load Set on it is a CONSUMER-MISUSE (a revert-less post-load set); the queued
+-- command logs the failure attributed to the SETTING plugin (async), and the value
+-- does NOT change (the C++ deferred check asserts get() stayed at the load value).
+guard("declare lua_offthread_revertless", function()
+    kcdx.behavior.declare("lua_offthread_revertless", {
+        description    = "revert-LESS int — off-thread queued misuse target",
+        default        = 0,
+        implementation = function(value) end,  -- no revert ⇒ post-load set rejected
+    })
+end)
+guard("set lua_offthread_revertless load", function()
+    kcdx.behavior.set("lua_offthread_revertless", 5)  -- applied at load = 5
+end)
+
+-- lua_offthread_raiser: a revert togglable bool whose impl RAISES on the off-thread
+-- toggle value (true). Applied at load with false (clean). The off-thread queued Set
+-- toggles to true → the impl raises → the registry clears the record AND logs the
+-- raise attributed to the DECLARER (async). The C++ deferred check asserts get()
+-- went back to the default (false) — the observable proof the declarer-raise
+-- disposition ran (and the agent greps the log for the declarer attribution).
+guard("declare lua_offthread_raiser", function()
+    kcdx.behavior.declare("lua_offthread_raiser", {
+        description    = "revert togglable bool; impl raises on the off-thread toggle",
+        default        = false,
+        implementation = function(value)
+            if value == true then error("lua_offthread_raiser: deliberate raise") end
+        end,
+        revert         = function(old_value) end,
+    })
+end)
+guard("set lua_offthread_raiser load", function()
+    kcdx.behavior.set("lua_offthread_raiser", false)  -- applied clean at load
+end)
+
+-- lua_offthread_table: a revert togglable table behavior. The off-thread queued Set
+-- passes a STAGED table (built off-thread, materialized on the main thread at the
+-- queued command's execution); the impl records the table's element [1] so the C++
+-- deferred check asserts the table materialized + the impl received it.
+local lua_offthread_table_elem1 = nil
+guard("declare lua_offthread_table", function()
+    kcdx.behavior.declare("lua_offthread_table", {
+        description    = "revert togglable table — off-thread staged-table target",
+        default        = {},
+        implementation = function(value)
+            if type(value) == "table" then lua_offthread_table_elem1 = value[1] end
+        end,
+        revert         = function(old_value) end,
+    })
+end)
+guard("set lua_offthread_table load", function()
+    kcdx.behavior.set("lua_offthread_table", {0})  -- applied at load (revert on toggle)
+end)
+
 -- 2. Set the two C++-declared behaviors FROM LUA (the cross-language Set). The
 --    C++ plugin declared cpp_scalar / cpp_crosslang at its early stop; they are
 --    plugin-tier behaviors settable from THIS main stop. Use the explicit
@@ -119,11 +207,13 @@ kcdx.on("ready", function()
     local reason
     if pass then
         reason = "all cross-language declares + sets executed without error: "
-            .. "declared lua_togglable + lua_consumed + lua_raiser (this plugin's "
-            .. "tier) and load-set lua_raiser=false, set cpp_scalar=true + "
-            .. "cpp_crosslang=42 (the C++ plugin's tier, from Lua) — the "
-            .. "value-effect assertions are the C++ plugin's + this plugin's "
-            .. "impl-fired row; FAILS if any declare/set raised"
+            .. "declared lua_togglable + lua_consumed + lua_raiser + lua_callable + "
+            .. "the four off-thread targets (lua_offthread, _revertless, _raiser, "
+            .. "_table) (this plugin's tier) and load-set lua_raiser/_offthread/"
+            .. "_revertless/_raiser/_table, set cpp_scalar=true + cpp_crosslang=42 "
+            .. "(the C++ plugin's tier, from Lua) — the value-effect assertions are "
+            .. "the C++ plugin's (incl. Invoke + the off-thread queued Set rows) + "
+            .. "this plugin's impl-fired row; FAILS if any declare/set raised"
     else
         reason = "one or more cross-language declares/sets RAISED: "
             .. table.concat(errors, " | ")

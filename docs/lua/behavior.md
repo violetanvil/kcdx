@@ -254,9 +254,21 @@ log). A behavior **without** a `revert` raises a teaching error on a post-load
 `set` ("applies at load; it cannot change mid-session") and its record is
 untouched.
 
-**Thread + queue (today):** a post-load `set` runs **inline on the game main
-thread**. Off-thread post-load sets — queued and executed on the main thread at
-the next apply point — arrive with the C++ command-queue step.
+**Thread + queue.** A post-load `set` on the game main thread runs the toggle
+**inline**. A post-load `set` from **any other thread QUEUES** — the engine executes
+its toggle on the game main thread at the next apply point (FIFO arrival order, each
+set its own toggle, no coalescing). The off-thread set returns having **queued** (it
+never carries the toggle's eventual outcome); a queued toggle's failure is logged
+**async** — a consumer-misuse failure (a revert-less post-load set, an unresolvable
+name) attributed to the **setting** plugin, a declarer-code raise to the
+**declarer**. `get` flips only when the queued toggle actually executes (an
+off-thread setter may briefly read the prior value — the same
+applies-at-the-next-apply-point semantics a load-time set has). This rides the
+engine's existing off-thread→main task pump, which is **unbounded** (the engine
+never rations authors); a runaway producer trips a one-line high-water teaching
+warn, never a rejection. (The C++ surface
+[`kcdxBehaviorInterface`](../cpp/behavior.md) is the cross-language peer — the same
+queue, exercised from C++ via an off-thread `Set`.)
 
 ## `kcdx.behavior.get(name)` — read a behavior's current value
 
@@ -309,5 +321,14 @@ array means nothing matches the prefix.
 
 **Errors:** a non-string `prefix` raises a teaching error.
 
-This is the Lua surface of the named-behavior registry; the C++ mirror is the
-planned [kcdxBehaviorInterface](../cpp/behavior.md) (not yet implemented).
+This is the Lua surface of the named-behavior registry; the C++ mirror is
+[kcdxBehaviorInterface](../cpp/behavior.md) (the same one registry, both surfaces at
+parity — incl. the off-thread queued `Set`).
+
+**Single-surface (Lua): no `Invoke` verb — Lua calls a function value natively.**
+A behavior whose value is a function is called directly (`local f =
+kcdx.behavior.get("name"); f(args)`), so the Lua surface needs no explicit call
+verb. The C++ mirror adds [`Invoke`](../cpp/behavior.md#calling-a-callable-value--invoke)
+because a C++ caller cannot invoke a Lua function value directly — it goes through
+the engine's value-handle. This is a genuine single-surface case (the language
+provides it natively), not a parity gap.
