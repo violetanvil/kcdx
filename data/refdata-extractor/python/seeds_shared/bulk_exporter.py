@@ -132,20 +132,29 @@ _AV_AUTHORED_COLS = frozenset({
     "offset", "vtable_slot", "struct_offset",
     "aob", "anchor_string", "rule", "slot_count", "expect_unique", "derives_from",
     "value",   # builder-synthesized from vtable_slot; in neither CSV, reconstructed
+    # valid_through: the interval-CLOSE column, now AUTHORED (D40 -- moved off this
+    # derived overlay onto the curated seed CSV so an interval edit round-trips via
+    # the human-reviewable authored surface). The curated seed CSV carries
+    # valid_through_version (its game_versions tag); build_rows_from_csv resolves the
+    # tag -> the valid_through FK. So it is the seed CSV's now, NOT this overlay's --
+    # the overlay payload (_AV_DERIVED_COLS) no longer carries it.
+    "valid_through",
 })
 # The two key columns (carried in the derived overlay as the join keys, NOT part of
 # the derived payload). One of the three EXPLICIT partition sets.
 _AV_KEY_COLS = ("id", "kcdx_id")
 # The DERIVED av columns (in SCHEMA order) the curated-derived overlay carries as its
-# PAYLOAD -- an EXPLICIT allowlist, NOT a computed complement. These are the 8
+# PAYLOAD -- an EXPLICIT allowlist, NOT a computed complement. These are the 7
 # dump-derived columns: the function fingerprint (content_hash / length / arg-slot
-# observations / caller-agreement), the DEV-only discovery fields (auto_name /
-# decompile_quality), and the interval-close column (valid_through). Explicit so the
-# coverage assert in _curated_av_derived_cols can FIRE on a new unclassified SCHEMA
-# column instead of silently sweeping it in (the third partition set).
+# observations / caller-agreement) and the DEV-only discovery fields (auto_name /
+# decompile_quality). Explicit so the coverage assert in _curated_av_derived_cols can
+# FIRE on a new unclassified SCHEMA column instead of silently sweeping it in (the
+# third partition set). valid_through was MOVED to _AV_AUTHORED_COLS (D40 -- the
+# interval-CLOSE column is now authored on the curated seed CSV, no longer carried by
+# this derived overlay).
 _AV_DERIVED_COLS = frozenset({
     "length", "content_hash", "observed_arg_slots", "caller_reg_arg_count",
-    "caller_arg_agreement", "auto_name", "decompile_quality", "valid_through",
+    "caller_arg_agreement", "auto_name", "decompile_quality",
 })
 
 

@@ -628,13 +628,16 @@ def test_av_derived_partition_coverage_assert_is_real():
             av.pop()
         assert sentinel not in {n for (n, _t) in _bx.SCHEMA[BULK_AV_TABLE]}, (
             "SCHEMA restoration failed -- the sentinel column leaked to other tests")
-    # The unpatched partition is well-formed: the normal call returns the 8 derived
+    # The unpatched partition is well-formed: the normal call returns the 7 derived
     # columns in SCHEMA order, no assert. (Confirms restore + the happy path.)
+    # valid_through was MOVED to the AUTHORED set (D40 -- the interval-CLOSE column is
+    # now authored on the curated seed CSV as valid_through_version, no longer carried
+    # by this derived overlay), so the derived payload is now 7 columns.
     derived = _bx._curated_av_derived_cols()
     assert derived == [
         "length", "content_hash", "observed_arg_slots", "caller_reg_arg_count",
-        "caller_arg_agreement", "auto_name", "decompile_quality", "valid_through",
-    ], f"derived payload drifted from the expected 8 columns: {derived}"
+        "caller_arg_agreement", "auto_name", "decompile_quality",
+    ], f"derived payload drifted from the expected 7 columns: {derived}"
 
 
 if __name__ == "__main__":

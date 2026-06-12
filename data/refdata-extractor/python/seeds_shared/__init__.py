@@ -34,6 +34,7 @@ from .validators import (
     check_kcdx_id_known,
     check_every_entity_covered,
     check_survival_derives_from_known,
+    check_address_version_intervals,
 )
 from .row_builder import (
     build_bulk_row,
@@ -142,7 +143,7 @@ __all__ = [
     "authored_kind",
     "resolve_and_check_name_refs", "check_supersession_acyclic",
     "check_kcdx_id_known", "check_every_entity_covered",
-    "check_survival_derives_from_known",
+    "check_survival_derives_from_known", "check_address_version_intervals",
     "build_bulk_row", "build_curated_row",
     "build_survival_row", "survival_kind_form",
     "folded_av_cells", "FOLDED_SURVIVAL_COLS",

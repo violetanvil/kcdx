@@ -81,6 +81,13 @@ ADDRESS_VERSIONS_CSV_HEADER = [
     "survival_aob", "survival_anchor_string", "survival_derives_from",
     "survival_rule", "survival_slot_count", "survival_expect_unique",
     "value", "offset", "vtable_slot", "struct_offset",
+    # valid_through_version: the interval-CLOSE column, now AUTHORED (D40 -- moved
+    # off the bulk derived overlay onto the curated seed so an interval edit
+    # round-trips via the human-reviewable seed). Appended at the END (append-only
+    # discipline; existing positional column expectations are not disturbed). The
+    # exporter emits the game_versions.tag of the row's valid_through FK; '' (NULL)
+    # for an OPEN interval (the common case -- every baseline row is open).
+    "valid_through_version",
 ]
 
 # The three seed file names (the export targets under a seed dir).
@@ -336,6 +343,10 @@ def _export_address_versions(con):
                             av_id the survival table's `derives_from` did -- the CSV
                             carries the kcdx_id, so the export must invert it back).
       offset/vtable_slot/struct_offset <- INTEGER -> decimal text
+      valid_through_version <- game_versions.tag via the valid_through FK (D40 --
+                            the interval-CLOSE column is now AUTHORED, so the
+                            exporter emits it onto the seed; NULL valid_through =
+                            an OPEN interval -> '' in the CSV, the common case).
       value              <- the seed's authored `value` cell, which is empty on
                             every committed row; DB `value` is a derived mirror of
                             vtable_slot (row_builder), NOT an independent datum, so
@@ -361,11 +372,13 @@ def _export_address_versions(con):
             "SELECT id, kcdx_id, kind, module_id, rva, signature, "
             "last_verified_at_version, verified_by, verified_date, evidence_kind, "
             "offset, vtable_slot, struct_offset, valid_from, "
-            "aob, anchor_string, rule, slot_count, expect_unique, derives_from "
+            "aob, anchor_string, rule, slot_count, expect_unique, derives_from, "
+            "valid_through "
             "FROM address_versions WHERE kcdx_id IS NOT NULL"):
         (av_id, kcdx_id, kind_id, module_id, rva, signature, lvv_id, vby, vdt,
          ek_id, offset, vslot, struct_offset, valid_from_id,
-         fold_aob, fold_anchor, fold_rule, fold_slot, fold_eu, fold_df_av) = r
+         fold_aob, fold_anchor, fold_rule, fold_slot, fold_eu, fold_df_av,
+         valid_through_id) = r
 
         # survival_derives_from CSV cell: the av row's derives_from is the resolved
         # av_id (same value the survival table carried); the CSV carries the
@@ -401,6 +414,10 @@ def _export_address_versions(con):
             "offset": _int_to_text(offset),
             "vtable_slot": _int_to_text(vslot),
             "struct_offset": _int_to_text(struct_offset),
+            # valid_through_version: the interval-CLOSE FK -> its game_versions.tag;
+            # NULL (an OPEN interval) -> '' (D40, the authored interval column).
+            "valid_through_version": _text(gv_tag.get(valid_through_id)
+                                           if valid_through_id is not None else None),
         })
 
     rows.sort(key=lambda x: x["_sort"])

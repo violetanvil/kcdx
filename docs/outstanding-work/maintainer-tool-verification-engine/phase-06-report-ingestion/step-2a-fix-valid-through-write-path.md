@@ -48,10 +48,22 @@ distinct edit shape the preserve-set does not strip, e.g. the re-verify/interval
 `_apply_one_db` direct-write + deferred-commit txn + D21 rollback (D19 reused, law 6 — data-core sole
 writer); what is NEW is the `valid_through`-emitting UPDATE branch, not a parallel writer.
 
-**The interval validator** (gates the auto-filled AND the hand edit): `valid_through >= valid_from` (the
-close is not before the open), no overlap with the entity's other intervals, the open-row uniqueness (one
-`valid_through IS NULL` per kcdx_id — `ix_av_open_unique` is the DB guard; the validator fronts it with a
-clean error). A `valid_through_version` tag that resolves to no `game_versions` row rejects.
+**The interval validator** (gates the auto-filled AND the hand edit) — **scoped to authored-CLOSED
+intervals** (settled 2026-06-11, surfaced building 6.2a-fix): `valid_through_version` FK-resolvable +
+`valid_through >= valid_from` (the close is not before the open) on every row, AND no-overlap applied
+ONLY among EXPLICITLY-CLOSED intervals (rows the maintainer/tool set `valid_through` on). The seed-level
+"≥2 open rows" rejection is DROPPED — open-row uniqueness stays the DB's `ix_av_open_unique` + the
+write-time interval-close (`import_to_sqlite.py:2506/2653/3722` close the prior interval AT APPLY, not in
+the seed). **Why:** the validator runs on the prospective SEED, where a legitimate create-version carries
+TWO open rows for the entity (the prior row's close is a write-time side-effect, post-seed) — fronting
+open-row-uniqueness at the seed level would reject that legitimate transient (the 3 pre-existing tests
+`test_closed_row_edit_preserves_interval` / `test_nonbaseline_tag_edit_persists` /
+`test_create_version_flags_surface_in_preview` exercise it). The DB index is the real open-row guard
+(the step's own write-time-close contract); the seed validator catches the AUTHORED-interval errors D40
+cares about (a backwards/overlapping closed interval, an unknown tag), not the transient. A genuinely
+two-authored-open seed surfaces as the raw `IntegrityError` at apply (the transient-add-vs-authored-dup
+distinction isn't cleanly drawable at the pure-seed level without reading the committed DB — out of the
+seed-only gate's scope).
 
 **Two reconciliations land with the seam move:** the **round-trip oracle re-baselines** (deliberate +
 inspected — the only delta is `valid_through` moving overlay→authored-seed + any closed-interval values, the

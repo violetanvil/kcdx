@@ -113,6 +113,7 @@ from seeds_shared import (   # noqa: E402,F401
     check_kcdx_id_known,
     check_every_entity_covered,
     check_survival_derives_from_known,
+    check_address_version_intervals,
     resolve_and_check_name_refs,
     check_supersession_acyclic,
     resolve_version,
@@ -607,6 +608,13 @@ def build_rows(dump_dir, dicts):
     # an existing entity (shared with apply via seeds_shared.validators).
     ss.check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
 
+    # Interval integrity (D40, AUTHORED-CLOSED scope): valid_through_version
+    # FK-resolvable + valid_through >= valid_from on every closed row + no overlap
+    # among EXPLICITLY-CLOSED intervals, over the FULL seed. Open-row uniqueness is
+    # NOT fronted here -- it is the DB ix_av_open_unique index + the write-time close
+    # (a create-version's prospective seed legitimately carries two open rows).
+    ss.check_address_version_intervals(versions_seed)
+
     # rva -> kcdx_id (curated only) for the DEV-only tables' kcdx_id column.
     # rva -> av_id (universal) for the DEV-only tables' address_version_id column.
     rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
@@ -917,7 +925,9 @@ def _read_curated_av_derived_csv(bulk_dir):
     merges this onto the seed-built curated row (by kcdx_id), restoring the full curated
     av row byte-identical to the dump build -- incl. the promoted id, so the dependent
     curated statements/referenced_vars subset (filtered by the curated av_id set) is not
-    perturbed.
+    perturbed. (valid_through is NO LONGER in the derived overlay -- D40 moved it to the
+    AUTHORED curated seed as valid_through_version; the curated build resolves the seed
+    tag -> the FK. The overlay carries only the function fingerprint + DEV labels now.)
 
     Header MUST equal AV_DERIVED_CSV_COLS (id, kcdx_id, then the derived payload) -- a
     drift is a CsvGenesisError (AP14: never a silent column drop/misorder). Each cell is
@@ -1158,10 +1168,12 @@ def _build_curated_overlay(rows, dicts, n_functions, rva_to_av_id,
             f"(this baseline import only knows {GAME_VERSION_TAG!r})")
 
     # The DERIVED columns the overlay carries (the dump build's promote-kept
-    # fingerprint + DEV labels + valid_through), merged onto the seed-built authored
-    # row. The KEYS (id, kcdx_id) are NOT in this payload set -- `id` is applied as the
-    # row's av_id; `kcdx_id` is already the authored handle. Sourced from the overlay's
-    # own column declaration so it cannot drift from the exporter.
+    # fingerprint + DEV labels), merged onto the seed-built authored row. valid_through
+    # is NO LONGER here (D40 -- it moved to the AUTHORED curated seed, resolved from the
+    # valid_through_version tag by the caller after _merge_derived). The KEYS (id,
+    # kcdx_id) are NOT in this payload set -- `id` is applied as the row's av_id;
+    # `kcdx_id` is already the authored handle. Sourced from the overlay's own column
+    # declaration so it cannot drift from the exporter.
     from seeds_shared import AV_DERIVED_CSV_COLS
     _DERIVED_PAYLOAD = [c for c in AV_DERIVED_CSV_COLS if c not in ("id", "kcdx_id")]
 
@@ -1169,8 +1181,10 @@ def _build_curated_overlay(rows, dicts, n_functions, rva_to_av_id,
         """Overlay the curated-derived columns + the PROMOTED id from `curated_derived`
         onto a seed-built authored row, in place. The result is byte-identical to the
         dump build's PROMOTED row: authored columns from the seed builder, fingerprint +
-        DEV columns + valid_through from the overlay, and the row's stored id == the
-        dump's promoted av_id. A curated kcdx_id absent from the overlay is a lossy/
+        DEV columns from the overlay (valid_through is now AUTHORED on the seed -- D40 --
+        and set by the caller after this merge, NOT carried in the overlay payload), and
+        the row's stored id == the dump's promoted av_id. A curated kcdx_id absent from
+        the overlay is a lossy/
         incomplete export -> CsvGenesisError (AP14: never a silent NULL-fingerprint mint
         masquerading as a complete rebuild). Returns the row's restored av_id."""
         rec = curated_derived.get(kid)
@@ -1236,12 +1250,25 @@ def _build_curated_overlay(rows, dicts, n_functions, rva_to_av_id,
             verified_date=vdt, evidence_kind_id=ekn_id,
             offset=offset, vtable_slot=vslot, struct_offset=struct_offset)
         av_id = _merge_derived(av_row, kid)
+        # valid_through is now AUTHORED on the curated seed (D40), no longer in the
+        # derived overlay payload -- source it from the seed's valid_through_version
+        # tag (resolve -> the game_versions FK; '' = an OPEN interval -> None). At the
+        # baseline this is None for every committed row (all open), so the merged row
+        # is byte-identical to the prior overlay-sourced build; a CLOSED interval the
+        # maintainer authored round-trips through the seed here.
+        vtv = (vs.get("valid_through_version") or "").strip()
+        av_row["valid_through"] = _resolve_version_tag(vtv, where) if vtv else None
         versions_by_av_id[av_id] = av_row
 
     covered_kids = {v["kcdx_id"] for v in versions_by_av_id.values()
                     if v["kcdx_id"] is not None}
     ss.check_every_entity_covered(valid_kcdx_ids, covered_kids, GAME_VERSION_TAG)
     ss.check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
+    # Interval integrity (D40, AUTHORED-CLOSED scope): valid_through_version
+    # FK-resolvable + valid_through >= valid_from on every closed row + no overlap
+    # among EXPLICITLY-CLOSED intervals. Open-row uniqueness is NOT fronted here (the
+    # DB index + write-time close own it; a create-version seed carries two open rows).
+    ss.check_address_version_intervals(versions_seed)
 
     rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
                       for v in versions_by_av_id.values()
@@ -1694,6 +1721,14 @@ def _validate_full_seed_state():
     # survival_derives_from references an existing entity. Shared with rebuild.
     check_survival_derives_from_known(versions_seed, valid_kcdx_ids)
 
+    # Interval integrity (D40, AUTHORED-CLOSED scope): valid_through_version
+    # FK-resolvable + valid_through >= valid_from on every closed row + no overlap
+    # among EXPLICITLY-CLOSED intervals. Open-row uniqueness is NOT fronted here -- it
+    # is the DB ix_av_open_unique index + the write-time interval-close; the apply path
+    # legitimately presents two open rows transiently for a create-version. Shared with
+    # rebuild; the apply-time _db_tag_to_id is the real-DB FK backstop.
+    check_address_version_intervals(versions_seed)
+
     # Cross-row name/tag resolution + supersession acyclicity over the full
     # name seed. Build the same pre-resolution name rows build_rows constructs.
     name_rows = []
@@ -1788,6 +1823,11 @@ def _seed_action_rows(state):
             "kcdx_id": kid,
             "module": vs["module"].strip(),
             "valid_from_tag": vfv_tag,
+            # valid_through_tag (D40): the interval-CLOSE version tag from the authored
+            # seed -- None ('') = an OPEN interval. _apply_one_db's PRESENT path's
+            # interval branch emits the valid_through FK when this differs from the
+            # row's current value (the distinct interval edit; NOT the US-5 path).
+            "valid_through_tag": (vs.get("valid_through_version") or "").strip() or None,
             "rva": parse_int(srva) if srva else None,
             "kind": kind,
             "signature": sig,
@@ -2383,7 +2423,8 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
     tx = _Tx(con, deferred)
     counts = {"reverified": 0, "noop": 0, "added_entity": 0,
               "added_versions_row": 0, "deprecated": 0, "superseded": 0,
-              "notes_edited": 0, "skipped_dep_sup": 0, "full_column_updated": 0}
+              "notes_edited": 0, "skipped_dep_sup": 0, "full_column_updated": 0,
+              "interval_edited": 0}
 
     # Classify the entity-level deprecation/supersession edits on EXISTING names
     # rows: compare the resolved seed names row against the DB names row for every
@@ -2416,19 +2457,32 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
 
         existing = con.execute(
             "SELECT id, last_verified_at_version, verified_by, verified_date, "
-            "evidence_kind FROM address_versions WHERE kcdx_id = ? AND "
-            "valid_from = ?", (kid, vf_id)).fetchone()
+            "evidence_kind, valid_through FROM address_versions WHERE kcdx_id = ? "
+            "AND valid_from = ?", (kid, vf_id)).fetchone()
 
         if existing is not None:
             # PRESENT -> re-verify (audit-trio UPDATE), full-column correction
-            # (US-5), or no-op. The row's (kcdx_id, valid_from) identity key is
-            # immutable (the validator rejects a kcdx_id change); valid_through
-            # stays as-is (an UPDATE-in-place of the current row, no interval
-            # change). A change to a deprecation/supersession edge on the names
-            # row is the names-side path above, not handled here.
+            # (US-5), an INTERVAL edit (valid_through extend/close, D40), or no-op.
+            # The row's (kcdx_id, valid_from) identity key is immutable (the
+            # validator rejects a kcdx_id change). A change to a deprecation/
+            # supersession edge on the names row is the names-side path above.
             av_id = existing[0]
             cur_trio = (existing[1], existing[2], existing[3], existing[4])
             new_trio = (lvv_id, a["verified_by"], a["verified_date"], ekn_id)
+            cur_vt_id = existing[5]
+
+            # INTERVAL edit (D40): the desired valid_through FK from the action's
+            # valid_through_tag (None = OPEN -> NULL). When it differs from the row's
+            # current valid_through, this is the distinct interval edit -- emitted by
+            # its OWN UPDATE branch below (the US-5 full-column path's
+            # _UPDATE_PRESERVE_COLUMNS still EXCLUDES valid_through, so the interval
+            # never rides the full-column write; it has this dedicated emitting branch).
+            # The tag->FK is the apply-time backstop (_db_tag_to_id raises a clean
+            # error on a tag the DB's game_versions does not carry -- the validator's
+            # seed-closure fronts it).
+            want_vt_id = (_db_tag_to_id(con, a["valid_through_tag"], where)
+                          if a["valid_through_tag"] else None)
+            interval_changed = (want_vt_id != cur_vt_id)
 
             # Detect whether the edit touches any NON-trio curated column
             # (module/kind/rva/signature/the authored survival+offset columns).
@@ -2446,10 +2500,30 @@ def _apply_one_db(con, actions, state, which, user_projection, deferred=False):
                 kind_id_fn=lambda: _db_dict_id(
                     con, "address_versions", "kind", a["kind"], where))
 
+            # The DISTINCT interval-edit emitting branch (D40). Runs whenever the
+            # interval changed -- ALONE (when neither the trio nor a non-trio column
+            # moved) or ALONGSIDE a trio/full-column edit (each in its own UPDATE; the
+            # interval one sets ONLY valid_through, which the other two never touch:
+            # the trio path sets only the 4 audit cells, the full-column path excludes
+            # valid_through via _UPDATE_PRESERVE_COLUMNS). One UPDATE per touched
+            # concern keeps each path's contract intact.
+            if interval_changed:
+                tx.begin()
+                try:
+                    con.execute(
+                        "UPDATE address_versions SET valid_through = ? "
+                        "WHERE id = ?", (want_vt_id, av_id))
+                    tx.commit()
+                except Exception:
+                    tx.rollback()
+                    raise
+                counts["interval_edited"] += 1
+
             if not non_trio_changed:
-                # Trio-only (or pure no-op). UNCHANGED from before US-5.
+                # Trio-only (or pure no-op -- after any interval edit above).
                 if cur_trio == new_trio:
-                    counts["noop"] += 1
+                    if not interval_changed:
+                        counts["noop"] += 1
                     continue
                 tx.begin()
                 try:
@@ -3696,6 +3770,12 @@ def _single_row_action_from_seed(prospective_seed_dir, kcdx_id, tag, *, where):
                 "kcdx_id": int(kcdx_id),
                 "module": vs["module"].strip(),
                 "valid_from_tag": tag,
+                # valid_through_tag (D40): the interval-CLOSE tag from the authored
+                # seed (None = open). Threaded so a non-baseline-tag interactive edit
+                # (KI-0008 seam) carries the interval edit through _apply_one_db's
+                # PRESENT-path interval branch identically to a baseline-tag edit.
+                "valid_through_tag": (
+                    vs.get("valid_through_version") or "").strip() or None,
                 "rva": parse_int(srva) if srva else None,
                 "kind": ss.authored_kind(vs),
                 "signature": (vs.get("signature") or "").strip(),

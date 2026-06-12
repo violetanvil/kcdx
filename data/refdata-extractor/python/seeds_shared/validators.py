@@ -146,6 +146,15 @@ def read_address_versions_seed(path):
     CURATED rows only, so kind is required on every row; an empty or out-of-enum
     kind is a HARD ERROR.
 
+    `valid_through_version` is an OPTIONAL AUTHORED column (D40 -- the interval-CLOSE
+    column, moved off the bulk derived overlay onto this seed). EMPTY = an OPEN
+    interval (the common case; every baseline row is open). When PRESENT it is a
+    game_versions tag (the resolved game_versions.id is the row's valid_through FK).
+    Its interval invariants (valid_through >= valid_from, no overlap, open-row
+    uniqueness, the version-tag FK closure) are CROSS-row checks
+    (check_address_version_intervals), not done here per-row -- this reader does no
+    per-row format check on it (a tag string).
+
     Verification audit pair:
       - When last_verified_at_version is set, verified_by + verified_date +
         evidence_kind ALL three must be set. (Else "verified by what / when /
@@ -535,6 +544,99 @@ def check_every_entity_covered(valid_kcdx_ids, covered_kids, game_version_tag):
             f"valid_from_version={game_version_tag!r} "
             f"(first 5: {sample}); every named entity needs at least one "
             f"resolve fact for the baseline version")
+
+
+def check_address_version_intervals(versions_seed):
+    """Validate the AUTHORED-CLOSED per-entity version INTERVALS over the FULL
+    address_versions seed (D40 -- valid_through_version is an AUTHORED interval-CLOSE
+    column now). SCOPED to authored-CLOSED intervals (settled 2026-06-11, surfaced
+    building 6.2a-fix): this gate catches the AUTHORED-interval errors a maintainer/tool
+    can make (a backwards or overlapping CLOSED interval, an unknown close tag); it does
+    NOT front open-row uniqueness. For each entity (kcdx_id):
+
+      (1) valid_through_version FK-resolvable [EVERY closed row] -- a non-empty
+          valid_through_version must be one of the version tags the seed describes (the
+          set of all valid_from_version tags across the whole seed; the same closed-set
+          FK discipline check_kcdx_id_known / check_survival_derives_from_known use over
+          the seed). The apply-time _db_tag_to_id backstop re-checks against the real
+          DB's game_versions; this seed-closure catches a typo at author time. (The
+          larger live-DB game_versions read is deliberately NOT threaded into this
+          seed-only gate -- design-faithful: seed-closure here + apply-time DB backstop.)
+      (2) valid_through >= valid_from [EVERY closed row] -- an interval cannot END before
+          it STARTS (ordinal compare via the seed's lexicographically-ordered release
+          tags, the same string-compare the audit-pair lvv >= vfv check uses).
+      (3) no OVERLAP among EXPLICITLY-CLOSED intervals ONLY -- two CLOSED intervals of one
+          entity may not cover the same version. With the version tags ordered, a CLOSED
+          interval [vf, vt] and any OTHER CLOSED interval [vf2, vt2] of the same entity
+          must be disjoint (one ends strictly before the other starts).
+
+    OPEN-ROW UNIQUENESS IS DELIBERATELY NOT FRONTED HERE. The "at most one open interval
+    per entity" guard stays the DB's partial unique index ix_av_open_unique + the
+    write-time interval-close (the apply path closes the PRIOR interval AT APPLY, not in
+    the seed). The validator runs on the PROSPECTIVE SEED, where a legitimate
+    create-version legitimately carries TWO open rows for the entity (the prior row's
+    close is a write-time side-effect, post-seed); fronting open-row uniqueness here would
+    reject that legitimate transient. An OPEN row's [vf, +inf) span is therefore NOT
+    considered for overlap either -- only the AUTHORED-closed intervals are checked, since
+    an open row's "end" is the write-time close, not a seed fact. A genuinely
+    two-authored-open seed surfaces as the raw IntegrityError at apply (the
+    transient-add-vs-authored-dup distinction is not cleanly drawable at the pure-seed
+    level without reading the committed DB -- out of this seed-only gate's scope).
+
+    Runs over the FULL versions seed, shared by rebuild + apply (the same shape the
+    other cross-row checks take). EMPTY valid_through_version = an OPEN interval (the
+    common case); a row with no valid_through is the entity's current form.
+    """
+    # The version-tag universe the seed describes (every valid_from_version tag): the
+    # closed set a valid_through_version FK must resolve into (check (1)).
+    known_tags = {(r.get("valid_from_version") or "").strip()
+                  for r in versions_seed
+                  if (r.get("valid_from_version") or "").strip()}
+
+    # Group the seed rows per entity, capturing each row's (valid_from, valid_through).
+    by_entity = {}
+    for r in versions_seed:
+        kid = int(r["kcdx_id"])      # already validated as int by the reader
+        vf = (r.get("valid_from_version") or "").strip()
+        vt = (r.get("valid_through_version") or "").strip()
+        by_entity.setdefault(kid, []).append((vf, vt))
+
+    for kid, intervals in by_entity.items():
+        closed = []     # (vf, vt) for the entity's EXPLICITLY-CLOSED intervals only
+        for vf, vt in intervals:
+            if not vt:
+                # OPEN interval -- not an authored-closed fact; open-row uniqueness is
+                # the DB index + write-time close, not this seed-only gate. Skip it.
+                continue
+            # (1) FK closure: valid_through_version must be a known seed version tag.
+            if vt not in known_tags:
+                raise RuntimeError(
+                    f"address_versions_seed.csv (kcdx_id={kid}): "
+                    f"valid_through_version={vt!r} matches no version tag the seed "
+                    f"describes (known tags: {sorted(known_tags)}); a closed interval "
+                    f"must end at a version the seed knows")
+            # (2) valid_through >= valid_from (an interval cannot end before it starts).
+            if vt < vf:
+                raise RuntimeError(
+                    f"address_versions_seed.csv (kcdx_id={kid}): "
+                    f"valid_through_version={vt!r} < valid_from_version={vf!r} "
+                    f"(an interval cannot end before it starts)")
+            closed.append((vf, vt))
+
+        # (3) no overlap among EXPLICITLY-CLOSED intervals ONLY. Two closed [a,b],[c,d]
+        # of the same entity overlap unless b < c or d < a. Open rows are excluded (an
+        # open row's end is the write-time close, a post-seed fact, not a seed interval).
+        closed.sort()
+        for i in range(1, len(closed)):
+            prev_lo, prev_hi = closed[i - 1]
+            cur_lo, cur_hi = closed[i]
+            # Disjoint iff the previous closed interval ends strictly before this one starts.
+            if not (prev_hi < cur_lo):
+                raise RuntimeError(
+                    f"address_versions_seed.csv (kcdx_id={kid}): overlapping CLOSED version "
+                    f"intervals [{prev_lo}..{prev_hi}] and [{cur_lo}..{cur_hi}] "
+                    f"(an entity's closed intervals must be disjoint -- one ends before the "
+                    f"next begins)")
 
 
 def check_survival_derives_from_known(versions_seed, valid_kcdx_ids):

@@ -131,6 +131,70 @@ def dump_hash_for_rva(dump_dir, rva_int):
 
 
 # ---------------------------------------------------------------------------
+# The relaxed interval check (D40 / 6.2a-fix) -- a named, testable seam.
+# ---------------------------------------------------------------------------
+def interval_check_results(con):
+    """The well-formed-interval + open-row-uniqueness checks over the curated
+    address_versions rows of one DB connection. Returns a list of (name, ok, detail)
+    tuples (the same shape `check` consumes), so a unit test can inject a closed
+    interval into a built DB and assert these directly.
+
+    D40 reconciliation (6.2a-fix): a legitimately-CLOSED interval (valid_through set,
+    valid_through >= valid_from, no overlap with another closed interval) is VALID --
+    a D35 close produces the DB's first closed interval, which is NOT a baseline
+    violation. The prior "ALL rows open (valid_through IS NULL)" assertion was a
+    baseline-only invariant; it is REPLACED here by:
+      - closed intervals are WELL-ORDERED (valid_through >= valid_from), AND
+      - no two CLOSED intervals of one curated entity OVERLAP,
+    and the open-row-UNIQUENESS sub-check is KEPT (the real "at most one open row per
+    entity" guard, the ix_av_open_unique index). valid_from / valid_through are stored
+    game_versions ids assigned in version order, so the integer ordinal compare IS the
+    version order.
+    """
+    results = []
+    intervals = [(kid, vf, vt) for (kid, vf, vt) in con.execute(
+        "SELECT kcdx_id, valid_from, valid_through FROM address_versions "
+        "WHERE kcdx_id IS NOT NULL")]
+
+    # Closed intervals well-ordered (valid_through >= valid_from).
+    bad_ordering = sum(1 for (_kid, vf, vt) in intervals
+                       if vt is not None and vf is not None and vt < vf)
+    results.append((
+        "address_versions closed intervals well-ordered (valid_through >= valid_from)",
+        bad_ordering == 0,
+        "closed-rows-with-valid_through<valid_from=%d" % bad_ordering))
+
+    # No two CLOSED intervals of one curated entity overlap. An OPEN row is excluded
+    # (its end is the write-time close, not a stored interval fact).
+    by_ent = {}
+    for kid, vf, vt in intervals:
+        if vt is None:
+            continue
+        by_ent.setdefault(kid, []).append((vf, vt))
+    overlap_ents = 0
+    for kid, ivs in by_ent.items():
+        ivs.sort()
+        for i in range(1, len(ivs)):
+            if not (ivs[i - 1][1] < ivs[i][0]):
+                overlap_ents += 1
+                break
+    results.append((
+        "no curated entity has overlapping CLOSED address_versions intervals",
+        overlap_ents == 0, "entities-with-overlapping-closed=%d" % overlap_ents))
+
+    # Open-row uniqueness (KEPT): partial-unique caps open rows per CURATED entity at 1
+    # (kcdx_id IS NOT NULL); bulk rows have kcdx_id NULL and don't participate.
+    dup_open = scalar(con,
+        "SELECT COUNT(*) FROM (SELECT kcdx_id FROM address_versions "
+        "WHERE kcdx_id IS NOT NULL AND valid_through IS NULL "
+        "GROUP BY kcdx_id HAVING COUNT(*) > 1)")
+    results.append((
+        "no curated entity has 2 open address_versions rows", dup_open == 0,
+        "curated-entities-with-2-open=%d" % dup_open))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # The checks.
 # ---------------------------------------------------------------------------
 def run_checks(dump_dir, user_db, dev_db):
@@ -191,19 +255,12 @@ def run_checks(dump_dir, user_db, dev_db):
     check("every address_versions.id 1..N(functions) present",
           present == n_fn, "present=%d of %d" % (present, n_fn))
 
-    # --- 3. all baseline-open intervals + partial-unique-open (curated only) ---
-    n_open = scalar(dc, "SELECT COUNT(*) FROM address_versions "
-                        "WHERE valid_through IS NULL")
-    check("address_versions all baseline-open (valid_through IS NULL)",
-          n_open == n_av, "open=%d of %d" % (n_open, n_av))
-    # Partial-unique enforces "at most one open row per CURATED entity" (kcdx_id
-    # IS NOT NULL); bulk rows have kcdx_id NULL and don't participate.
-    dup_open = scalar(dc,
-        "SELECT COUNT(*) FROM (SELECT kcdx_id FROM address_versions "
-        "WHERE kcdx_id IS NOT NULL AND valid_through IS NULL "
-        "GROUP BY kcdx_id HAVING COUNT(*) > 1)")
-    check("no curated entity has 2 open address_versions rows", dup_open == 0,
-          "curated-entities-with-2-open=%d" % dup_open)
+    # --- 3. well-formed intervals + partial-unique-open (curated only) ---
+    # Delegated to the named, testable interval_check_results() seam (one
+    # responsibility -- a unit test injects a closed interval into a built DB and
+    # asserts these results directly, without driving the whole real-dump gate).
+    for name, ok, detail in interval_check_results(dc):
+        check(name, ok, detail)
 
     # --- 3b. NEW: kcdx_id is nullable; bulk rows = NULL, curated = NOT NULL.
     n_bulk = scalar(dc, "SELECT COUNT(*) FROM address_versions WHERE kcdx_id IS NULL")

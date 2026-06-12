@@ -101,6 +101,13 @@ EDITABLE_VERSION_COLUMNS = frozenset({
     "survival_aob", "survival_anchor_string", "survival_derives_from",
     "survival_rule", "survival_slot_count", "survival_expect_unique",
     "value", "offset", "vtable_slot", "struct_offset",
+    # valid_through_version: the interval-CLOSE column (D40 -- now authored). An edit to
+    # it is the distinct INTERVAL EDIT (extend/close), applied by _apply_one_db's
+    # PRESENT-path interval branch (which emits the valid_through FK) -- NOT the US-5
+    # full-column UPDATE, whose _UPDATE_PRESERVE_COLUMNS still excludes valid_through.
+    # Listing it here lets the caller-shape guard accept it as an editable cell; the
+    # row identity key (kcdx_id, valid_from_version) is still never editable.
+    "valid_through_version",
 })
 
 # The identity key (lookup, never editable) of an address_versions seed row.
