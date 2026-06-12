@@ -92,15 +92,38 @@ length-preserving precondition unconditionally rejects it. The boundary-time
 registration in comp-20 was merely the first caller to reach the full apply.
 TD-0010's deferred live proof is the reason this shipped unexercised.
 
-## Open questions
+## Fix forks — SETTLED (Gate A architect-review, user-decided 2026-06-11)
 
-- The fix fork (design surface — Gate A owed): what fills `original`?
-  (a) read the LIVE bytes at the statement VA at apply time (no DB baseline —
-  weaker tamper check), (b) extend the statement-resolution layer / DB to
-  expose the statement's instruction bytes (the deferred-op comment implies
-  this is the planned direction; also unblocks the site-dependent ops), or
-  (c) an explicit no-verify carrier mode in `patch::Resolve` for
-  resolvedVa-carrier entries. Labeled — not decided here.
+1. **Baseline source: restore the DB `content_hash`.** The extractor already
+   computes a per-statement BLAKE3 over the statement's byte range, but the
+   USER-deployed DB drops the column (a pinned seeds-migration contract) and the
+   engine resolution layer carries no baseline — which is WHY the apply never
+   worked. Fix: restore `content_hash` to the user-DB statement export + carry it
+   to `refdb::StatementResolution`; at apply, verify the live site against the
+   curated hash, then use the verified live bytes as `pe->original` (length
+   precondition passes; foreign-patch / curated-drift detection restored; loud
+   first-writer-wins). One source of truth (the curated DB), not the on-disk
+   binary. Boot-only, never a hot path. Rejected: live-read-into-baseline
+   (AP14 — a verify that can only pass + silent clobber); on-disk DLL read
+   (DB-free but splits the source of truth — misses curated-vs-binary drift);
+   DB raw bytes (strictly more work than the hash for no unique protection).
+2. **Fixture target: re-point cap-92 + comp-20 off SaveGame** to a maintainer-
+   chosen boot-safe, observably-exercised function (existing curated entity = no
+   AP18; new entity = per-entity sign-off). The dev suite must not leave a live
+   byte modification. Closes TD-0010's named blocker with a live-apply proof row.
+3. **Conflict-engine footprint gap → tracked as TD**, not fixed here. Statement
+   carriers bypass the pairwise matrix + conflict report (loud reject, but the
+   other entry unnamed). The integrity invariant is already restored by fork 1's
+   loud first-writer-wins; visibility is separable. Named trigger: the next
+   statement-surface or conflict-engine cycle.
+
+## Probe owed before the fix builds (results-driven.md)
+
+The fix's FIRST step: a disk==live probe across the curated statement set — does
+the live in-memory `.text` byte range equal the on-disk/hashed bytes? A base
+relocation over an absolute operand inside a statement range would falsify the
+hash-verify; rel32 displacements would not. Outcome map written before the run;
+the dependent baseline-verify step does not build until it lands.
 
 ## What this report does NOT do
 
