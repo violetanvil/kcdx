@@ -46,6 +46,28 @@ shape it takes:
 That is the whole surface model. A call you have never seen still resolves to
 the right place by these rules.
 
+### Tiers of intent — from "name a behavior" down to "rewrite bytes"
+
+The site-modification surface is layered, highest-level (least to write, the
+engine does the most) to lowest-level (most control, you supply the most):
+
+- **Behavior** (`kcdx.behavior.set/get/list`) — the top tier: name a common
+  behavior and a value; the engine carries the rest. A consumer plugin can be
+  two `set` lines with zero statement-level knowledge. Engine-shipped behaviors
+  live under `kcdx.behavior.*`; a plugin declares its own with
+  `kcdx.behavior.declare`. See [behavior.md](behavior.md).
+- **Hook** (`kcdx.hook.*`) — intercept a named game function with a callback
+  (before/after/around/replace/mid) when you need per-call logic.
+- **Statement** (`kcdx.statement.*`) — a static-bytes change at a located
+  statement, zero per-call cost, named not hex.
+- **Bytes** (`kcdx.bytes`) — a raw byte rewrite at a located site, the
+  lowest-level surface.
+
+Reach for the highest tier that does the job: a named behavior when one exists,
+a hook/statement/bytes verb when you need finer control. Every tier names its
+target (the engine resolves the address AND the verified ABI); the disassembler
+stays an expert-only escape hatch.
+
 ### kcdx.version
 
 `kcdx.version` is a string field (not a function) carrying the engine version,

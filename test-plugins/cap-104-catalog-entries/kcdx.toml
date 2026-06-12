@@ -1,0 +1,82 @@
+# CAP-104 — the shipped behavior-catalog entries (Phase 9.5 P3 s2).
+#
+# A real Lua plugin that exercises every shipped console-driven catalog entry
+# end-to-end: it SETS each catalog behavior (a load-time act) to a value that
+# changes its backing CVar away from the value found at boot, then asserts
+# post-boundary (at input_loaded, after the apply boundary fired) that the
+# CVar actually changed to the toggled value — proving the entry's
+# kcdx.console.execute toggle ran and the engine applied it.
+#
+# The six entries under test (each a kcdx.behavior.<bare> declared by the
+# engine catalog pack, backed by a known game console variable, proven to
+# exist on build release_1_5_1164953_841):
+#   motion_blur          -> r_MotionBlur
+#   depth_of_field       -> r_DepthOfField
+#   display_info         -> r_DisplayInfo
+#   chromatic_aberration -> r_ChromaticAberration
+#   show_compass         -> wh_ui_showCompass
+#   skip_intro_logos     -> g_skipIntro
+#
+# SAVE AND RESTORE (a hard requirement): for every entry the fixture captures
+# the CVar's CURRENT value BEFORE setting (kcdx.cvar.get_int — the verified
+# read surface), sets the behavior to a value that changes the CVar from that
+# captured value, asserts the change applied, and then RESTORES the original
+# value via kcdx.console.execute — on EVERY path, including an assertion
+# failure (the assert is pcall-guarded so a raise still restores). A
+# regression test must leave the developer's game exactly as it was found; a
+# test that permanently flips the dev's CVars is a side-effecting defect.
+#
+# Rows (all boot-only, auto-pass; the catalog sets run at plugin.lua load,
+# the boundary-dependent CVar-change asserts + the restores run at
+# input_loaded — the apply boundary runs pre-InputLoaded, so input_loaded is
+# the earliest post-boundary observation point):
+#   cap-104-motion_blur          — set kcdx.behavior.motion_blur so r_MotionBlur
+#       changes; post-boundary r_MotionBlur reads the toggled value.
+#   cap-104-depth_of_field       — set kcdx.behavior.depth_of_field so
+#       r_DepthOfField changes; post-boundary it reads the toggled value.
+#   cap-104-display_info         — set kcdx.behavior.display_info so
+#       r_DisplayInfo changes; post-boundary it reads the toggled value.
+#   cap-104-chromatic_aberration — set kcdx.behavior.chromatic_aberration so
+#       r_ChromaticAberration changes; post-boundary it reads the toggled value.
+#   cap-104-show_compass         — set kcdx.behavior.show_compass so
+#       wh_ui_showCompass changes; post-boundary it reads the toggled value.
+#   cap-104-skip_intro_logos     — set kcdx.behavior.skip_intro_logos so
+#       g_skipIntro changes; post-boundary it reads the toggled value.
+#   cap-104-restore-clean        — after every per-entry assert + restore, each
+#       backing CVar reads its ORIGINAL captured value again (the test left the
+#       dev's game exactly as found).
+#
+#   FALSIFIABLE (AP15): cap-104-<bare> FAILS if the behavior set RAISES, if the
+#   backing CVar did NOT change to the toggled value post-boundary (the
+#   console.execute effect did not apply), or if the CVar could not be read.
+#   cap-104-restore-clean FAILS if ANY backing CVar does not read its original
+#   captured value after the restores — a permanent CVar flip is a defect.
+#   Each row reads the ACTUAL live CVar value (kcdx.cvar.get_int), never a value
+#   it merely set, so no row is a tautology.
+#
+# Test mode: boot-only (launch-to-menu confirms all seven rows; no player
+# input).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name             = "cap_104_catalog_entries"
+display_name     = "CAP-104 shipped behavior-catalog entries"
+author           = "ts"
+description      = "Pure-Lua self-test of the six shipped console-driven catalog behaviors (motion_blur/depth_of_field/display_info/chromatic_aberration/show_compass/skip_intro_logos). Per entry: capture the backing CVar's value at boot (kcdx.cvar.get_int), set the catalog behavior to a value that changes the CVar away from it, assert post-boundary that the CVar reflects the toggled value (the kcdx.console.execute toggle ran and applied), then RESTORE the original value on every path (a failed assert still restores). A final row asserts every backing CVar reads its original value again — the test leaves the dev's game exactly as found."
+version          = "0.1.0"
+kcdx_min_version = "0.1.0"
+log_level        = "info"
+test_names       = [
+    "cap-104-motion_blur",
+    "cap-104-depth_of_field",
+    "cap-104-display_info",
+    "cap-104-chromatic_aberration",
+    "cap-104-show_compass",
+    "cap-104-skip_intro_logos",
+    "cap-104-restore-clean",
+]
+
+[entrypoints]
+lua = "plugin.lua"

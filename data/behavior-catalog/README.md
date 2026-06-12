@@ -15,3 +15,9 @@ declare code is unchanged, only the stamping root differs.
 | Name | What it does |
 |------|--------------|
 | [`kcdx.behavior.log_texture_streaming`](log_texture_streaming.lua) | Reads the texture-streaming CVar (`r_TexturesStreaming`) and logs it when set; changes no game state. |
+| [`kcdx.behavior.motion_blur`](motion_blur.lua) | Toggle camera motion blur (`r_MotionBlur`). |
+| [`kcdx.behavior.depth_of_field`](depth_of_field.lua) | Toggle the depth-of-field effect (`r_DepthOfField`). |
+| [`kcdx.behavior.display_info`](display_info.lua) | Toggle the on-screen display-info overlay (`r_DisplayInfo`). |
+| [`kcdx.behavior.chromatic_aberration`](chromatic_aberration.lua) | Toggle the chromatic-aberration effect (`r_ChromaticAberration`). |
+| [`kcdx.behavior.show_compass`](show_compass.lua) | Toggle the HUD compass (`wh_ui_showCompass`). |
+| [`kcdx.behavior.skip_intro_logos`](skip_intro_logos.lua) | Toggle skipping the startup intro logos (`g_skipIntro`). |
