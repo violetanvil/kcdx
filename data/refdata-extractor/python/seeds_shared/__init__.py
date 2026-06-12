@@ -108,6 +108,10 @@ from .read_api import (
     read_modules,
     DbReadError,
 )
+from .reverify_resolver import (
+    resolve_reverify_batch,
+    ReverifyResolveError,
+)
 
 # The deferred-commit surface (step 4a -- THE maintainer-tool write mechanism) lives
 # in import_to_sqlite (it operates on apply_seeds' open connections), NOT in a
@@ -166,6 +170,9 @@ __all__ = [
     "field_delta", "is_new_version_nothing_changed",
     "derive_status", "read_curated_set", "read_entity_detail",
     "read_version_rows", "read_modules", "DbReadError",
+    # The bulk re-verify RESOLVE seam (D39): the data-core computes the per-row
+    # edit-specs from the v3 report; the /save/reverify-batch preview endpoint calls it.
+    "resolve_reverify_batch", "ReverifyResolveError",
     # Lazily re-exported from import_to_sqlite via __getattr__ (the deferred-commit
     # write mechanism -- step 4a): the handle type, its misuse error, and the
     # commit/rollback the maintainer-tool backend drives on confirm/cancel.

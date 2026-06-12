@@ -62,6 +62,16 @@ read_version_rows = _seeds_shared.read_version_rows
 read_modules = _seeds_shared.read_modules
 DbReadError = _seeds_shared.DbReadError
 
+# The bulk re-verify RESOLVE seam (D39): the data-core computes the per-row re-verify
+# edit-specs FROM the v3 report ({kcdx_id, valid_from_version, edits} -- the shape
+# /confirm/batch consumes), reading the matched row by matched_address_version_id
+# (verify-all) or the interval-containing row of kcdx_id+version (close-intervals). NO
+# WRITE -- it reads READ-ONLY + computes; the batch write path transacts (D19/law 6).
+# The /save/reverify-batch PREVIEW endpoint calls it; ReverifyResolveError signals a
+# structural report-vs-DB mismatch (a stale matched id, a missing close-target).
+resolve_reverify_batch = _seeds_shared.resolve_reverify_batch
+ReverifyResolveError = _seeds_shared.ReverifyResolveError
+
 # The export + round-trip + field-delta surface the save spine uses (later steps).
 export_seeds = _seeds_shared.export_seeds
 round_trip = _seeds_shared.round_trip

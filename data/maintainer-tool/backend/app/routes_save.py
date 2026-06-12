@@ -50,9 +50,9 @@ seed) WITHOUT opening or writing any DB.
 """
 import logging
 from collections import OrderedDict
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from . import data_core
@@ -351,3 +351,120 @@ def save_edit_notes(body: EditNotesSave):
         validate=lambda version: data_core.edit_notes(
             load_config().out_dir, None, body.kcdx_id, body.notes,
             version=version, validate_only=True))
+
+
+# ---------------------------------------------------------------------------
+# The bulk re-verify PREVIEW endpoint (design D39 / S7 "Batch mutation"). The FE sends
+# the v3 report's actionable rows + the batch action (verify-all | close-intervals) +
+# the auth-ready identity context (D17); this endpoint routes them through the data-core
+# `reverify_resolver` (which reads the DB + computes the per-row edit-specs -- D39), then
+# returns the per-row FIELD-DELTAS (`field: old -> new`) for the s08 batched-confirm UI.
+# PREVIEW-ONLY: it READS the DB (the resolver opens it READ-ONLY) + computes; it WRITES
+# NOTHING, opens NO transaction (the same Save-previews / Confirm-transacts contract the
+# six single-edit /save/* previews honor -- D16/law 5). The FE then POSTs the SAME
+# computed edits to /confirm/batch (the 6.2 endpoint) to transact (D19 -- the write
+# mechanism is unchanged; only the edit-spec SOURCE moved to the resolver).
+# ---------------------------------------------------------------------------
+class ReportRow(BaseModel):
+    """One actionable v3-report row the resolver reads (the subset it needs -- the report
+    schema's full row carries more). The FE forwards these from the imported report; the
+    resolver attributes each to its matched/target address_versions row and computes the
+    edit-spec. matched_address_version_id is an int on a verified-block row, None on a
+    failed row (the report's attribution invariant)."""
+    kcdx_id: int
+    version: str
+    verdict: str
+    method_rank: int
+    matched_address_version_id: Optional[int] = None
+
+
+class ReverifyBatchPreview(BaseModel):
+    """The /save/reverify-batch request: the batch ACTION + the report rows for that
+    block + the auth-ready identity context (D17a -- the verified_by the verify-all trio
+    writes is the resolved author, the same identity that authors the eventual git
+    commit). `version_tag` is unused by the resolve (each row carries its own resolved
+    version); kept off the body -- the row's `version` is the swept tag."""
+    action: str                       # "verify-all" | "close-intervals"
+    rows: List[ReportRow]
+    author_name: Optional[str] = None
+    author_email: Optional[str] = None
+
+
+@router.post("/save/reverify-batch")
+def save_reverify_batch(
+        body: ReverifyBatchPreview,
+        x_kcdx_author_name: Optional[str] = Header(default=None),
+        x_kcdx_author_email: Optional[str] = Header(default=None)):
+    """Bulk re-verify PREVIEW (D39): resolve the report rows for ONE batch action into
+    per-row edit-specs (the data-core `reverify_resolver`), and return the per-row
+    field-deltas for the s08 batched confirm. Writes NOTHING (the resolver reads
+    READ-ONLY + computes; no DB write, no transaction). The FE posts the returned edits
+    to /confirm/batch to transact.
+
+    The response shape (the batch field-delta list the FE renders):
+      {"action": str,
+       "rows": [{"kcdx_id": int, "valid_from_version": str,
+                 "field_delta": [{"field", "old", "new"}, ...],
+                 "edits": {col: new, ...}}, ...]}
+    Each row's `edits` is the BatchRowSpec `edits` the FE re-posts to /confirm/batch
+    UNCHANGED; `field_delta` is the human acceptance signal (law 5). A verify-all row
+    already covered (last_verified >= swept) is absent from `rows` (the resolver skipped
+    it -- nothing to add), so the FE shows only the rows that change.
+
+    Failure modes (NONE writes):
+      bad action          -> HTTP 422 (a caller bug -- an action the resolver does not
+                             know).
+      ReverifyResolveError -> HTTP 422 (a structural report-vs-DB mismatch: a stale
+                             matched id, an unknown report version, a missing
+                             close-target -- the caller surfaces it; the report is
+                             stale/foreign, a maintainer-visible problem, not a silent
+                             skip).
+      DbReadError         -> HTTP 422 (no curated DB resolved -- the s01 empty state's
+                             read-path counterpart)."""
+    config = load_config()
+    # The injected commit identity (D17a) -- the SAME resolution the /confirm endpoints
+    # use (body field > header > configured maintainer identity), so the verify-all
+    # trio's verified_by is the identity that will author the commit. Imported lazily to
+    # avoid the routes_confirm <-> routes_save import cycle (routes_confirm imports the
+    # save bodies from here).
+    from .routes_confirm import _resolve_author
+    author_name, _author_email = _resolve_author(
+        body.author_name, body.author_email, x_kcdx_author_name, x_kcdx_author_email)
+
+    # The report rows as plain dicts the resolver reads (the BaseModel -> dict; the
+    # resolver indexes by key, not attribute -- the data-core takes no Pydantic dep).
+    report_rows = [r.model_dump() for r in body.rows]
+
+    try:
+        specs = data_core.resolve_reverify_batch(
+            config.out_dir, report_rows, action=body.action,
+            verified_by=author_name)
+    except data_core.ReverifyResolveError as exc:
+        # A structural report-vs-DB mismatch (a stale matched id, an unknown version, a
+        # missing close-target) OR a bad action -- a caller/input problem the FE surfaces.
+        # NO write happened (the resolver only reads). logging.md: log before returning.
+        log.warning("reverify-batch preview rejected (action=%s): %s", body.action, exc)
+        raise HTTPException(status_code=422, detail=str(exc))
+    except data_core.DbReadError as exc:
+        log.warning("reverify-batch preview rejected -- no curated DB (action=%s): %s",
+                    body.action, exc)
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # Shape each resolved edit-spec into the FE's batch field-delta row: the field-delta
+    # (field_delta over the resolver-returned saved/edits, ordered by the version header)
+    # + the edits to re-post + the row identity. PURE -- field_delta is a no-I/O
+    # description (the data-core's, reused -- law 6); this endpoint computes nothing else.
+    rows_out = []
+    for spec in specs:
+        delta = data_core.field_delta(
+            spec["saved"], spec["edits"],
+            field_order=data_core.ADDRESS_VERSIONS_CSV_HEADER)
+        rows_out.append({
+            "kcdx_id": spec["kcdx_id"],
+            "valid_from_version": spec["valid_from_version"],
+            "field_delta": [{"field": f, "old": old, "new": new}
+                            for f, (old, new) in delta.items()],
+            "edits": spec["edits"],
+        })
+
+    return {"action": body.action, "rows": rows_out}
