@@ -5,7 +5,7 @@ kcdx_id,valid_from_version,module,rva,kind,signature,last_verified_at_version,ve
 4,1.5.1164953,WHGame.dll,0x00865FB4,function,void (ptr self),1.5.1164953,VioletAnvil,2026-05-28,live_production,,,,,,,,,,,
 5,1.5.1164953,WHGame.dll,0x0056174C,callsite,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0,,,,,1,,,,,
 6,1.5.1164953,WHGame.dll,0x00561745,callsite,,1.5.1164953,VioletAnvil,2026-05-28,pattern_scan,48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 44 8A F0,,,,,1,,,,,
-7,1.5.1164953,WHGame.dll,0x005605BC,callsite,,1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin,48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02,,,,,1,,,,,1.5.1164953
+7,1.5.1164953,WHGame.dll,0x005605BC,callsite,,1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin,48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 02,,,,,1,,,,,
 8,1.5.1164953,WHGame.dll,0x00566040,callsite,,1.5.1164953,VioletAnvil,2026-05-28,live_test_plugin,48 83 EC 28 48 8B 41 08 48 8B 88 90 00 00 00 48 81 C1 60 0B 00 00 48 8B 01 FF 50 08 3C 01,,,,,1,,,,,
 9,1.5.1164953,WHGame.dll,0x0086AD99,instruction_anchor,,1.5.1164953,VioletAnvil,2026-05-28,predecessor_sig,48 8B 0D ?? ?? ?? ??,,12,,,1,,,,,
 10,1.5.1164953,WHGame.dll,0x0492B8A8,data_slot,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,9,disp32@9,,,,,,,
