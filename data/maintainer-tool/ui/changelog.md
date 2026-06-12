@@ -4,6 +4,26 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-12 — s09 Needs-action view authored (the standing lifecycle-completeness surface, TRD D41)
+- NEW screen `screens/s09-needs-action.md` (v1/high): a standing, tool-wide surface listing every
+  entity whose lifecycle is INCOMPLETE at the current game version, grouped by KIND into collapsible
+  sections — **Uncovered at current version** (closed interval, no successor, not deprecated/superseded),
+  **Never verified** (`last_verified_at_version` NULL), **Broken references** (dangling
+  deprecation/supersession). Each row carries a kind-appropriate resolution action that NAVIGATES to
+  the existing canonical resolve flow (s05 author-successor / s02 deprecate-supersede-fix-ref / s04
+  verify) and returns to s09 (law 2/3/6 — s09 detects + routes, never reimplements editing).
+- The EMPTY state is the GOAL (success-framed, not a neutral empty): *"Every entity's lifecycle is
+  complete at version <V> — nothing needs action."* (the `success` token). Loading + error +
+  disabled + edge states specified per the established pattern.
+- s01 navigator gains a `[Needs action ▸ N]` affordance + count badge (un-badged at 0); the screen
+  index + navigation map add s09.
+**Integrated in:** `screens/s09-needs-action.md` (new); `screens/s01-navigator.md` (the affordance
+row); `design.md` (screen index + navigation map).
+**Why:** TRD D41 settled the standing needs-action view's BEHAVIOR but not its screen spec; this
+authors the visual + interaction layer on it (`.claude/rules/spec-conformance.md` — the screen spec
+is the build authority an executor builds to). Surfaced when `/plan` halted: a new-screen build step
+needs its screen spec before decomposition.
+
 ## 2026-06-12 — s08 reconciles against current DB state + the lifecycle-completeness surface (TRD D41)
 - s08 is no longer stateless against the DB: a re-imported row whose recommended action ALREADY
   landed (a `failed` row already closed to `last_verified_at_version`; a verified row already

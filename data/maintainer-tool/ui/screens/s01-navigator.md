@@ -22,6 +22,7 @@ search + filters fixed at top, the list scrolls beneath.
 | Kind filter | `filter control` (`Select`) | all / the nine `kind` values (the entity's current-row kind) | `set_kind_filter(value)` |
 | Entity row | `entity list row` (`NavLink`/row) | `name` · `kcdx_id` (mono) · `status chip` | `select_entity(kcdx_id)` → s02 |
 | `+ New entity` | `button` (primary) | — | `open_new_entity()` → s05 (overlay) |
+| `[Needs action ▸ N]` | `button` (default) + `Badge` count | the needs-action entity count (the lifecycle-completeness detection query's total; un-badged at `0`) | `open_needs_action()` → s09 (the standing lifecycle-completeness surface, TRD D41) |
 
 The status chip (`Badge`) derives from the entity's lifecycle flags + current-version
 verification (`status_active` / `status_deprecated` / `status_superseded` /

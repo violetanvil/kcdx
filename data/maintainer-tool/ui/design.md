@@ -386,6 +386,7 @@ diff cell) are app components built FROM these.
 | [`screens/s05-create.md`](screens/s05-create.md) | Create new entity / new version | overlay (modal/sheet) + detail | v1 |
 | [`screens/s06-save-confirm.md`](screens/s06-save-confirm.md) | Save confirm (field delta + approval) + the toast/overlay concern | overlay | v1 |
 | [`screens/s08-verification-worklist.md`](screens/s08-verification-worklist.md) | Verification report worklist (import the in-game plugin's report → pass/fail → batched bulk re-verify) | right pane / phone drill-down | v1 |
+| [`screens/s09-needs-action.md`](screens/s09-needs-action.md) | Needs-action view (incomplete-lifecycle entities grouped by kind → route each to its canonical resolve flow, TRD D41) | right pane / phone drill-down | v1 |
 
 *(s07 — the desktop status bar — is dissolved in the web pivot: its version/verify content
 moved into s02's header; its save-result + notices became the top-anchored toast, specified
@@ -404,7 +405,9 @@ D24–D31.)*
 ```
 s01 navigator ── the home view (phone) / left pane (wide); search + filters + list;
  │                [+ New entity ▸ s05]   [Import verification report ▸ s08]
+ │                [Needs action ▸ s09]  (count badge; the standing lifecycle-completeness surface)
  │  select/tap an entity ──▶ s02 entity detail (right pane / drill-down)
+ │  s09 needs-action ── incomplete-lifecycle entities by kind; a row's resolution ──▶ s02/s04/s05, returns to s09
  │
  └─ s02 entity detail ── header (identity read-only + the version & verify surface) +
         │                 lifecycle (editable: supersede/deprecate) + version area
