@@ -1,7 +1,9 @@
 ---
 id: KI-0017
 opened: 2026-06-11
-status: Open
+status: Closed
+closed: 2026-06-11
+closed_by_commit: 3421de2
 commit_at_filing: 08e2f2a7fe629f00cbbdfa41ba81e2c7c1a325e6
 ---
 
@@ -227,9 +229,55 @@ defect class). NOT an exempt.
 **The future-TD live-byte-write item is DROPPED** — that proof now exists (this
 is it). Nothing to defer.
 
-## What this report does NOT do
+## Resolution (closed 2026-06-11)
 
-- Does not propose a fix.
-- Does not assign root cause beyond labeled hypothesis.
-- Closure handled by `/debug KI-0017` (which lands the fix and closes per
-  doc-organization.md).
+**Root cause (mechanism, falsifiable — Gate-B-verified):** `kcdx.statement.
+replace_with` routes its byte write through the existing patch engine via a
+carrier `patch::PatchEntry` (`src/lua_bind_statement.cpp` ~:282). The handler set
+the carrier's `resolvedVa` + `replacement` but NEVER assigned `pe->original` (the
+pre-image bytes). `patch::Resolve`'s FIRST precondition (`src/patch_engine.cpp:
+251-257`) rejects any entry where `original.size() != replacement.size()` — an
+unset `original` has size 0 while the emitted `replacement` carries the
+statement's `byte_range_len` (3 for SaveGame's `function_entry`). So every
+statement write was rejected at apply with `original/replacement length mismatch
+(0 vs N)` BEFORE reaching the `resolvedVa` carrier path. The empty `original` was
+INEVITABLE because the statement-resolution layer (`refdb::StatementResolution`,
+`src/refdb.h:393-426`) exposes byte_range/kind/captures but NO instruction-bytes
+field — the handler built the carrier from the emit + the resolved VA alone, with
+no source for the pre-image. The defect is registration-time-independent (PROBE A,
+static read): it rejected load-wave AND boundary-time registrations identically;
+the filed "boundary-time registration misses a capture stage" hypothesis was
+disproven. The path had never successfully applied any statement — no fixture
+ever drove a real apply (cap-92 stopped at registration/error assertions; the
+live-apply proof was the deferred TD-0010) until comp-20 reached it.
+
+**Fix (`402d028`):** `src/lua_bind_statement.cpp` reads `byte_range_len` live
+bytes at the resolved statement VA into `pe->original` before `ApplyPatch`,
+making `original.size() == replacement.size()` and clearing the precondition. The
+fill is NOT a tautological self-check (AP14-clear): `original` exists only to pass
+the length gate; the protective compare is `replacement`-vs-site (`patch_engine.
+cpp:525` idempotent-skip, `:548` first-writer-wins reject) — non-tautological.
+No patch-engine change, no DB change, no on-disk read.
+
+**Fixtures (`3421de2`):** `cap-92-replace-with-registers` + `comp-20-declarer-
+statement` re-framed to assert the LIVE APPLY (`:applied()==true`, the strongest
+regression — guards the never-applied defect class end-to-end), with the
+order-independent `wrote_bytes==byte_range_len` equality confirmed engine-side in
+the STATEMENT log (the handle exposes no Lua byte-range accessor); the pre-write
+bytes are NOT asserted (a cap-96 co-location artifact). Both stay PERMANENT
+(bucket-1, not an exempt).
+
+**Verification:** the user-experienced re-verify launch
+(`kcdx-dev_2026-06-11_19-35-37.log`) — both rows `verdict=PASS`; the engine
+STATEMENT line confirms `replace_with applied name="comp20_decl_stmt"
+target="SaveGame" op="replace_with_noop" stmt_kind="assign" byte_range_len=3
+wrote_bytes=3` from inside the apply boundary, pre-InputLoaded via the boundary's
+own ApplyZone drain. The boundary-time statement apply lands end-to-end.
+
+**Residual (not this bug):** the foreign-mod reject assumes a pristine read (a
+foreign write BEFORE kcdx's read would be silently clobbered) — bounded by fork-1
+("the live read IS the pristine site for a never-touched statement"). The related
+ordering surface — statement carriers are not in `g_patches`, so a
+statement-vs-statement clobber rejects loud but UNNAMED, and the conflict report
+omits statement writes — is the fork-3 tech-debt item (TD-0012, named
+trigger: the next statement-surface or conflict-engine cycle).
