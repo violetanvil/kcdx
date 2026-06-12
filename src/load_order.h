@@ -2,6 +2,7 @@
 #include <climits>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -207,5 +208,137 @@ struct Snapshot {
 };
 Snapshot CaptureState();
 void RestoreState(const Snapshot& snap);
+
+// ============================================================================
+// Behavior dependency edges — persisted, self-invalidating store (design §6,
+// Phase 9.5 s6). A behavior consumer→declarer edge is recorded in-memory each
+// time a `set` resolves (or fails on ordering) at the behavior surface
+// (behavior_registry::Edges()); this unit OWNS persisting that set across
+// launches so a known bad order is recognized UP FRONT at the next launch,
+// before any plugin executes — and (a later step's) auto-order method reads
+// the same edges. The store lives in the load_order unit because §11 places
+// edge persistence + the (future) auto-order + write-back here (the unit that
+// owns order computation).
+//
+// The store is `kcdx-engine/behavior_edges.toml` (the path fixed at build,
+// derived via kcdx::paths::EngineDataDirPath(), mirroring order_persist's
+// load_order.toml derivation). Its I/O mirrors order_persist exactly: a parse
+// error is WARN + skip + rebuild (never a hard fail), a write failure is a loud
+// ERROR, an absent file is a normal first-run state.
+// ============================================================================
+
+// One persisted behavior dependency edge: a consumer plugin
+// (`<author>.<plugin>`) set a behavior whose full stamped name is
+// `behaviorFullName`. The DECLARER plugin is derivable from the behavior name's
+// `<author>.<plugin>` prefix (the first two dot-segments); a catalog name
+// (`kcdx.behavior.<bare>`) has no plugin declarer and is never recorded as an
+// edge (the behavior surface records edges only on the prefixed branches).
+struct BehaviorEdge {
+    std::string consumerAuthor;
+    std::string consumerPlugin;
+    std::string behaviorFullName;  // the stamped <author>.<plugin>.<bare>
+};
+
+// A recognized stale edge at launch: a persisted edge whose consumer now loads
+// BEFORE its declarer in the CURRENT resolved order (the reorder violation), so
+// the consumer's set will fail again this launch. Returned by
+// RecheckBehaviorEdgesAtLaunch for the up-front WARN.
+struct RecognizedConflict {
+    std::string consumerAuthor;
+    std::string consumerPlugin;
+    std::string declarerAuthor;
+    std::string declarerPlugin;
+    std::string behaviorFullName;
+};
+
+// ---- Pure (re)serialization — factored out so the self-test drives them from
+// literals with NO file I/O (mirrors order_persist's pure serializers). ----
+
+// Serialize the session's OBSERVED behavior edges to behavior_edges.toml body
+// text: a leading "# managed by kcdx" comment block, then one [[edge]] table
+// per edge (consumer = "<author>.<plugin>", behavior = "<full name>"). The
+// store is REBUILT from each launch's observed set, so this is a full
+// replacement, never a merge — a consumer that no longer sets a behavior simply
+// is not in `edges` and so drops its row automatically.
+std::string SerializeBehaviorEdgesToml(const std::vector<BehaviorEdge>& edges);
+
+// Parse behavior_edges.toml body text back into edges. A whole-file parse error
+// yields an EMPTY vector (the caller treats it as no prior store — WARN + skip +
+// rebuild, never a hard fail). A malformed individual [[edge]] table (missing/
+// wrong-typed field, an un-splittable consumer / behavior name) is skipped with
+// a WARN; the remaining edges still load. `parseFailedOut` (optional) is set
+// true ONLY on a whole-file parse error (so the caller can WARN the right
+// reason); a per-row skip leaves it false.
+std::vector<BehaviorEdge> ParseBehaviorEdgesToml(const std::string& text,
+                                                 bool* parseFailedOut = nullptr);
+
+// The PRUNE + RE-CHECK core (pure — drives off the resolved order already in
+// this unit's caches): for each persisted edge, prune it if its consumer OR its
+// declarer is absent from the discovered plugin set (IsKnownPlugin); for a
+// surviving edge whose consumer now RunsBefore its declarer, emit a
+// RecognizedConflict. `discovered` answers "is `<author>.<plugin>` an installed
+// plugin?" (the binder's g_manifests check, injected so this stays testable);
+// returns the recognized conflicts (the up-front-WARN set). A pruned edge drives
+// NO conflict and NO constraint.
+std::vector<RecognizedConflict> RecheckBehaviorEdges(
+    const std::vector<BehaviorEdge>& edges,
+    const std::function<bool(const std::string& author,
+                             const std::string& plugin)>& isKnownPlugin);
+
+// ---- Live boot/teardown entry points (the file-touching wrappers). ----
+
+// LAUNCH re-check — called AFTER load_order::Resolve() + the pak-mod version
+// gate, BEFORE any plugin script executes (the seam co-located with
+// order_persist::PersistResolvedOrder in the boot sequence). Reads the prior
+// behavior_edges.toml, prunes edges whose consumer/declarer is absent from the
+// discovered plugin set, and logs each surviving recognized conflict (a
+// consumer now loading before its declarer) UP FRONT at WARN — naming both
+// plugins, the behavior, and the auto-order pointer (design §10). A parse error
+// is WARN + skip (the store rebuilds at teardown). Returns the recognized
+// conflicts (for the self-test); the live caller uses it only for the warn.
+std::vector<RecognizedConflict> RecheckBehaviorEdgesAtLaunch();
+
+// TEARDOWN / end-of-session WRITE — called AFTER the apply boundary
+// (behavior_registry::RunApplyBoundary), once the session's observed edges are
+// final. Serializes behavior_registry::Edges() to behavior_edges.toml,
+// REPLACING the prior file (the store is rebuilt per launch — a dropped-consumer
+// edge vanishes by not being in this launch's observed set). Write-if-changed
+// (a steady-state boot writes nothing) + fail-loud on an I/O error.
+void PersistBehaviorEdges();
+
+// Did a PRIOR launch record that this consumer set this behavior? Consulted by
+// the behavior binder's resolution-error branches for the §6 "second-launch
+// error upgrade": a persisted edge from a prior launch CONFIRMS the
+// consumer→declarer→behavior relation, so a branch-1 (reorder) or bare-name
+// error may name the behavior confidently instead of using the first-launch
+// (calibrated-to-what-the-engine-knows) wording. Reads the in-memory snapshot
+// of the prior store that RecheckBehaviorEdgesAtLaunch loaded at boot — NOT the
+// file (one launch-time read, no per-set I/O). Returns false on a first launch
+// (no prior store) or a miss. The set this checks is the PRIOR launch's
+// (loaded at boot, immutable for the session) — never this session's own
+// in-flight edges, so it answers "has this exact edge been seen across a prior
+// launch boundary?" truthfully.
+bool PriorLaunchEdgeConfirms(const std::string& consumerAuthor,
+                             const std::string& consumerPlugin,
+                             const std::string& behaviorFullName);
+
+// Bare-name variant for the §6 bare-name error upgrade: did a PRIOR launch
+// record that this consumer set a behavior whose BARE component (the last
+// dot-segment of the stamped full name) equals `bareName`? On a hit, fills
+// `fullNameOut` with the recorded full `<author>.<plugin>.<bare>` name (so the
+// upgraded error can name the declarer the prior launch saw) and returns true.
+// This is what lets a bare-name set — which carries no prefix to discriminate
+// with on a first launch — name its declarer confidently from the second
+// launch. Returns false on a first launch or a miss.
+bool PriorLaunchEdgeForBare(const std::string& consumerAuthor,
+                            const std::string& consumerPlugin,
+                            const std::string& bareName,
+                            std::string& fullNameOut);
+
+// Test-only: seed the prior-launch edge cache directly (no file), so a self-test
+// can drive PriorLaunchEdgeConfirms + the binder's second-launch upgrade. The
+// SOLE intended caller is the load_order edge self-test; production populates
+// the cache via RecheckBehaviorEdgesAtLaunch's boot read.
+void SetPriorLaunchEdgesForTest(const std::vector<BehaviorEdge>& edges);
 
 }  // namespace kcdx::load_order

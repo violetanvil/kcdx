@@ -40,6 +40,7 @@
 #include "mod_absorb/pak_mod_registry_selftest.h"  // cap-54 engine self-report
 #include "mod_absorb/enabled_list_builder_selftest.h"  // cap-55 engine self-report
 #include "mod_absorb/order_persist_selftest.h"  // cap-56 engine self-report
+#include "load_order_edge_selftest.h"            // cap-101 behavior-edge persistence
 #include "mod_absorb/mod_absorb_e2e_selftest.h"  // cap-57 engine self-report
 #include "mod_absorb/record_validate_selftest.h"  // cap-58 engine self-report
 #include "blake3_selftest.h"                       // cap-59 engine self-report
@@ -598,6 +599,11 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 // behaviors are applied.
                 kcdx::behavior_registry::RunApplyBoundary(L);
 
+                // The session's observed behavior edges are FINAL here (post-
+                // boundary, every plugin.lua set has run). Persist them so the
+                // next launch's RecheckBehaviorEdgesAtLaunch can re-check them.
+                kcdx::load_order::PersistBehaviorEdges();
+
                 // A behavior implementation registers intent (kcdx.hook /
                 // kcdx.bytes / kcdx.statement.*) which QUEUES into
                 // lua_registry — and a registration queued at THIS point
@@ -754,6 +760,14 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
     // write-if-changed skip + fail-loud paths are the batched verification
     // checkpoint, not this self-test. One-shot guarded internally.
     kcdx::mod_absorb::RunOrderPersistSelfTestOnce();
+
+    // cap-101-edge-persist: engine self-report for behavior dependency edge
+    // persistence + the launch re-check + prune (Phase 9.5 s6). Same boot-only
+    // timing as the cap-52..56 mod-absorb siblings — the PURE serializer/parser/
+    // prune assertions touch no global state, and the reorder-recognition
+    // assertion drives the global load_order state in isolation and RESTORES it
+    // (the cap-54/55 snapshot/restore pattern). One-shot guarded internally.
+    kcdx::load_order::RunEdgePersistSelfTestOnce();
 
     // cap-57-mod-absorb-e2e: engine self-report for the END-TO-END mod-loader-
     // absorb regression net (closeout) — src/mod_absorb/mod_absorb_e2e_selftest.cpp.

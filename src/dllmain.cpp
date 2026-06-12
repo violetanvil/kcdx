@@ -206,6 +206,11 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // fine here. See docs/mod-loader-absorb.md "Step 5".
     kcdx::mod_absorb::order_persist::PersistResolvedOrder();
 
+    // Launch-time behavior-edge re-check. The resolved order is FINAL here and
+    // this runs BEFORE DiscoverAndLoad (plugin execution, :303), so a persisted
+    // stale edge (a consumer now loading before its declarer) surfaces UP FRONT.
+    kcdx::load_order::RecheckBehaviorEdgesAtLaunch();
+
     if (!kcdx::hooks::Install()) {
         kcdx::log::Error("hooks::Install failed — no patches will be applied");
         return 1;

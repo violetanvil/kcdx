@@ -128,10 +128,26 @@ so it names the right correction. The branches:
 | Set a **bare** name no plugin declares | a bare name carries no `<author>.<plugin>` prefix to discriminate with | "no plugin loaded so far declares `<bare>`; if it belongs to another plugin, use its full `<author>.<plugin>.<bare>` name." |
 
 The error is a normal Lua error in your script (the call site fails loudly; the
-load continues). Each failed set is also **recorded as a dependency edge** — so
-the engine learns "you wanted `<owner>`'s behavior" even when the set failed,
-which feeds the launch-time recognition + the auto-order method (both land in a
-later step).
+load continues). Each set is also **recorded as a dependency edge** — "this
+consumer set this behavior" — which kcdx **persists across launches** (in
+`kcdx-engine/behavior_edges.toml`, an engine-managed file; don't hand-edit it).
+Two things you SEE because of the persisted store:
+
+- **The next launch recognizes a bad order up front.** When kcdx records that
+  you set a behavior whose declarer loads *after* you, it re-checks that edge at
+  the very next launch — **before any plugin runs** — and logs a warn naming
+  both plugins, the behavior, and the fix. You learn about the wrong order even
+  before the failing plugin runs again.
+- **From the second launch the error names the behavior confidently.** On the
+  first launch the engine only knows "that prefix's plugin loads later." Once an
+  edge is persisted, a later reorder error — or a bare-name "no declarer" error —
+  **names the exact behavior and declarer** the prior launch resolved, instead of
+  the hedged first-launch wording.
+
+The store is **self-invalidating**: it is rebuilt from each launch's observed
+sets, so a consumer you updated to no longer set a behavior drops its edge; an
+edge whose consumer or declarer is no longer installed is ignored and pruned (no
+stale edge ever drives a warn).
 
 ### The window law — plugin behaviors resolve at the main stop
 
@@ -154,9 +170,10 @@ When the engine recognizes a wrong order (a consumer set above its declarer),
 the fix is a **callable auto-order method** that computes a corrected load
 order satisfying the recorded dependencies (consumer below declarer) and writes
 it back — no engine ever silently reorders your list. It is invoked on demand
-(a future launcher button is the intended caller); the persisted edges surface
-the conflict up front at the next launch. (The persistence + the method land in
-a later step.)
+(a future launcher button is the intended caller); the persisted edges (above)
+surface the conflict up front at the next launch. (The auto-order method itself
+lands in a later step; the persisted edges + the launch-time recognition are
+live now.)
 
 ## The apply boundary — record at load, apply once
 

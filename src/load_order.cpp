@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <sstream>
 #include <string_view>
 #include <unordered_map>
 
 #include "toml.hpp"
 
+#include "behavior_registry.h"  // Edges() — the in-memory set-edges the store persists
 #include "log.h"
 #include "paths.h"   // ToUtf8 (path -> std::string under C++20+ char8_t)
 #include "plugin_loader.h"
@@ -384,6 +386,399 @@ void RestoreState(const Snapshot& snap) {
     for (const auto& kv : snap.effective) g_effective.emplace(kv.first, kv.second);
     g_userOverrides.clear();
     for (const auto& kv : snap.userOverrides) g_userOverrides.emplace(kv.first, kv.second);
+}
+
+// ============================================================================
+// Behavior dependency edges — persisted store + launch-time re-check + prune.
+// I/O mirrors src/mod_absorb/order_persist.cpp EXACTLY (the existing
+// launch-time persisted-TOML store): the same file read/write helpers + binary
+// trunc write, the same WRITE-IF-CHANGED, the same fail-loud shape (a parse
+// error → WARN + skip + rebuild, never a hard fail), the same path derivation
+// via kcdx::paths::EngineDataDirPath(). Category tag "BEHAVIOR" (the behavior
+// surface's tag — these edges ARE the behavior story; the load_order unit
+// merely hosts the store per §11).
+// ============================================================================
+
+namespace {
+
+constexpr const char* kEdgeCat = "BEHAVIOR";
+
+// Read a whole file into `out`. false (out empty) iff the file is present but
+// unreadable; `existed` distinguishes "absent" (a normal first-run state, true
+// return, empty out) from "present-but-unreadable" (false return). Mirrors
+// order_persist::ReadFileText.
+bool ReadEdgeFileText(const fs::path& path, std::string& out, bool& existed) {
+    out.clear();
+    std::error_code ec;
+    existed = fs::exists(path, ec);
+    if (!existed) return true;  // absent -> empty document, not a failure.
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;       // present but unreadable -> failure.
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    out = ss.str();
+    return true;
+}
+
+// Write `text` (binary, truncate). false on failure. Mirrors
+// order_persist::WriteFileText.
+bool WriteEdgeFileText(const fs::path& path, const std::string& text) {
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f) return false;
+    f << text;
+    return f.good();
+}
+
+// The behavior-edge store path: <EngineDataDir>/behavior_edges.toml — derived
+// the same way order_persist derives load_order.toml.
+fs::path BehaviorEdgesPath() {
+    return kcdx::paths::EngineDataDirPath() / L"behavior_edges.toml";
+}
+
+// The PRIOR launch's edges, loaded ONCE at boot by
+// RecheckBehaviorEdgesAtLaunch and read by PriorLaunchEdgeConfirms (the binder's
+// second-launch error upgrade). Immutable for the session after the boot load —
+// never this session's own in-flight edges. Function-local static (no
+// init-order dependence on other TUs).
+std::vector<BehaviorEdge>& PriorLaunchEdges() {
+    static std::vector<BehaviorEdge> s;
+    return s;
+}
+
+// Split a stamped behavior full name `<author>.<plugin>.<bare>` into its
+// declarer (author, plugin). Returns false if the name does not have at least
+// three dot-segments with a non-empty author + plugin (a catalog
+// `kcdx.behavior.<bare>` name splits to author="kcdx" plugin="behavior", which
+// is NOT a plugin in the discovered set, so it prunes — see RecheckBehaviorEdges).
+bool DeclarerFromBehaviorName(const std::string& fullName,
+                              std::string& authorOut, std::string& pluginOut) {
+    const size_t d1 = fullName.find('.');
+    if (d1 == std::string::npos || d1 == 0) return false;
+    const size_t d2 = fullName.find('.', d1 + 1);
+    if (d2 == std::string::npos || d2 == d1 + 1) return false;  // empty plugin
+    authorOut = fullName.substr(0, d1);
+    pluginOut = fullName.substr(d1 + 1, d2 - d1 - 1);
+    return true;
+}
+
+}  // namespace
+
+std::string SerializeBehaviorEdgesToml(const std::vector<BehaviorEdge>& edges) {
+    std::string out =
+        "# managed by kcdx — behavior dependency edges (consumer -> behavior).\n"
+        "# Each [[edge]] records that a plugin SET a named behavior. kcdx\n"
+        "# re-checks these at the next launch BEFORE plugins run: a consumer\n"
+        "# that now loads before its declarer is reported up front. The store\n"
+        "# is rebuilt from each launch's observed sets — do not hand-edit; an\n"
+        "# edge whose consumer or declarer is no longer installed is dropped.\n";
+    for (const BehaviorEdge& e : edges) {
+        if (e.consumerPlugin.empty() || e.behaviorFullName.empty()) continue;
+        out += "\n[[edge]]\n";
+        out += "consumer = \"";
+        out += e.consumerAuthor;
+        out += ".";
+        out += e.consumerPlugin;
+        out += "\"\n";
+        out += "behavior = \"";
+        out += e.behaviorFullName;
+        out += "\"\n";
+    }
+    return out;
+}
+
+std::vector<BehaviorEdge> ParseBehaviorEdgesToml(const std::string& text,
+                                                 bool* parseFailedOut) {
+    if (parseFailedOut) *parseFailedOut = false;
+    std::vector<BehaviorEdge> edges;
+    if (text.empty()) return edges;
+
+    toml::table doc;
+    try {
+        doc = toml::parse(text);
+    } catch (const toml::parse_error& e) {
+        // Whole-file parse error → empty store, the caller WARNs + rebuilds
+        // (never a hard fail). Mirrors order_persist's read-fail posture.
+        if (parseFailedOut) *parseFailedOut = true;
+        log::WarnF("behavior_edges.toml: parse error: %s — the prior edge store "
+                   "is ignored this launch and rebuilt at session end (no stale "
+                   "edge drives a warn)", e.description().data());
+        return edges;
+    }
+
+    auto* arr = doc.get("edge");
+    if (!arr || !arr->is_array()) {
+        // No [[edge]] rows — an empty store (a fresh write, or a hand-emptied
+        // file). Not an error.
+        return edges;
+    }
+
+    for (const auto& elem : *arr->as_array()) {
+        if (!elem.is_table()) {
+            log::Warn("behavior_edges.toml: [[edge]] entry is not a table; "
+                      "skipping this edge (the store rebuilds at session end)");
+            continue;
+        }
+        const auto& t = *elem.as_table();
+        auto* consumerNode = t.get("consumer");
+        auto* behaviorNode  = t.get("behavior");
+        if (!consumerNode || !consumerNode->is_string() ||
+            !behaviorNode || !behaviorNode->is_string()) {
+            log::Warn("behavior_edges.toml: an [[edge]] is missing a string "
+                      "'consumer' or 'behavior'; skipping it (rebuilt at "
+                      "session end)");
+            continue;
+        }
+        const std::string consumer = std::string(*consumerNode->value<std::string>());
+        const std::string behavior = std::string(*behaviorNode->value<std::string>());
+
+        // consumer = "<author>.<plugin>" — split on the FIRST dot (an author is
+        // dot-free per the namespace charset, so the first dot separates author
+        // from plugin). A malformed consumer (no dot, empty half) is skipped.
+        const size_t cd = consumer.find('.');
+        if (cd == std::string::npos || cd == 0 || cd == consumer.size() - 1) {
+            log::WarnF("behavior_edges.toml: an [[edge]] has a malformed "
+                       "consumer '%s' (expected <author>.<plugin>); skipping it",
+                       consumer.c_str());
+            continue;
+        }
+        if (behavior.empty()) continue;
+
+        BehaviorEdge e;
+        e.consumerAuthor   = consumer.substr(0, cd);
+        e.consumerPlugin   = consumer.substr(cd + 1);
+        e.behaviorFullName = behavior;
+        edges.push_back(std::move(e));
+    }
+    return edges;
+}
+
+std::vector<RecognizedConflict> RecheckBehaviorEdges(
+    const std::vector<BehaviorEdge>& edges,
+    const std::function<bool(const std::string&, const std::string&)>&
+        isKnownPlugin) {
+    std::vector<RecognizedConflict> conflicts;
+    for (const BehaviorEdge& e : edges) {
+        // Derive the declarer plugin from the behavior name's prefix.
+        std::string declAuthor, declPlugin;
+        if (!DeclarerFromBehaviorName(e.behaviorFullName, declAuthor, declPlugin)) {
+            // Not a 3-segment plugin name (a catalog name, or malformed) — no
+            // plugin declarer to order against; prune (no warn, no constraint).
+            continue;
+        }
+        // PRUNE: an edge whose consumer OR declarer is absent from the
+        // discovered plugin set is ignored (not loaded, not re-checked). A
+        // pruned edge drives no warn and no constraint (design §6).
+        if (!isKnownPlugin(e.consumerAuthor, e.consumerPlugin)) continue;
+        if (!isKnownPlugin(declAuthor, declPlugin)) continue;
+
+        // RE-CHECK against the CURRENT resolved order. The consumer set the
+        // behavior; if the consumer now RunsBefore its declarer, the declarer's
+        // declares run AFTER the consumer's set — the reorder violation. (The
+        // declarer plugin's load-order key is its [plugin].name, which is the
+        // <plugin> component.)
+        if (RunsBefore(e.consumerPlugin, declPlugin)) {
+            RecognizedConflict c;
+            c.consumerAuthor   = e.consumerAuthor;
+            c.consumerPlugin   = e.consumerPlugin;
+            c.declarerAuthor   = declAuthor;
+            c.declarerPlugin   = declPlugin;
+            c.behaviorFullName = e.behaviorFullName;
+            conflicts.push_back(std::move(c));
+        }
+    }
+    return conflicts;
+}
+
+std::vector<RecognizedConflict> RecheckBehaviorEdgesAtLaunch() {
+    const fs::path path = BehaviorEdgesPath();
+    std::string text;
+    bool existed = false;
+    if (!ReadEdgeFileText(path, text, existed)) {
+        // Present but unreadable — WARN + skip (the store rebuilds at teardown).
+        // Never a hard fail (mirrors order_persist's read-fail handling, minus
+        // the merge-base concern: this store is rebuilt wholesale, so an
+        // unreadable prior file just means "no recognition this launch").
+        LOG_WARN_KV(kEdgeCat, "behavior_edges_read_fail",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("consequence",
+                "behavior_edges.toml exists but could not be read — no "
+                "up-front conflict recognition this launch; the store is "
+                "rebuilt from this session's observed sets at the apply "
+                "boundary"));
+        return {};
+    }
+    if (!existed) return {};  // first run — nothing to recognize yet.
+
+    // A whole-file parse error already WARNed inside ParseBehaviorEdgesToml and
+    // yielded an empty set; that path returns no conflicts and rebuilds — so the
+    // caller needs no parse-failed flag here (nullptr out-param).
+    const std::vector<BehaviorEdge> edges =
+        ParseBehaviorEdgesToml(text, nullptr);
+
+    // Cache the prior-launch edges for the binder's second-launch error upgrade
+    // (PriorLaunchEdgeConfirms reads this). These are the PRIOR launch's edges,
+    // immutable for the session — never this session's in-flight edges.
+    PriorLaunchEdges() = edges;
+
+    // The discovered-plugin test: a "<author>.<plugin>" names an INSTALLED
+    // plugin iff g_manifests carries it (every discovered plugin — enabled,
+    // disabled, or engine-rejected — appears here; the SAME check the behavior
+    // binder's FindOwningPlugin uses). An absent consumer/declarer prunes.
+    auto isKnownPlugin = [](const std::string& author,
+                            const std::string& plugin) -> bool {
+        for (const auto& m : kcdx::plugins::g_manifests) {
+            if (m.author == author && m.name == plugin) return true;
+        }
+        return false;
+    };
+
+    const std::vector<RecognizedConflict> conflicts =
+        RecheckBehaviorEdges(edges, isKnownPlugin);
+
+    for (const RecognizedConflict& c : conflicts) {
+        // Up-front recognized-conflict WARN (design §10): name both plugins,
+        // the behavior, and the auto-order fix. This fires BEFORE the consumer
+        // plugin runs again, so the user learns about the bad order even before
+        // the failing set re-raises. The auto-order method is a later step, so
+        // the pointer is prose (no call yet).
+        LOG_WARN_KV(kEdgeCat, "recognized_stale_edge",
+            kcdx::log::KV("behavior", c.behaviorFullName),
+            kcdx::log::KV("consumer", c.consumerAuthor + "." + c.consumerPlugin),
+            kcdx::log::KV("declarer", c.declarerAuthor + "." + c.declarerPlugin),
+            kcdx::log::KV("detail",
+                "a prior launch recorded that '" + c.consumerAuthor + "." +
+                c.consumerPlugin + "' sets '" + c.behaviorFullName +
+                "', but '" + c.consumerPlugin + "' loads BEFORE its declarer '" +
+                c.declarerPlugin + "' — the set will fail again this launch. "
+                "Move '" + c.consumerAuthor + "." + c.consumerPlugin +
+                "' below '" + c.declarerAuthor + "." + c.declarerPlugin +
+                "' in load_order.toml (or use kcdx.behavior's auto-order method "
+                "once it lands)"));
+    }
+
+    if (!conflicts.empty()) {
+        LOG_INFO_KV(kEdgeCat, "behavior_edges_rechecked",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("recognized", (uint64_t)conflicts.size()),
+            kcdx::log::KV("loaded_edges", (uint64_t)edges.size()));
+    }
+    return conflicts;
+}
+
+void PersistBehaviorEdges() {
+    // Build the edge set from this session's OBSERVED edges (the in-memory set
+    // the behavior surface recorded on every resolved/ordering-failed set). The
+    // store is REPLACED wholesale — a consumer that no longer sets a behavior is
+    // simply not in this set, so its edge drops automatically (self-invalidation
+    // by rebuild, design §6).
+    std::vector<BehaviorEdge> edges;
+    const auto& observed = kcdx::behavior_registry::Edges();
+    edges.reserve(observed.size());
+    for (const auto& se : observed) {
+        BehaviorEdge e;
+        e.consumerAuthor   = se.consumerAuthor;
+        e.consumerPlugin   = se.consumerPlugin;
+        e.behaviorFullName = se.behaviorFullName;
+        edges.push_back(std::move(e));
+    }
+
+    const fs::path path = BehaviorEdgesPath();
+    const std::string serialized = SerializeBehaviorEdgesToml(edges);
+
+    // No observed edges AND no prior file: nothing to persist (an absent file
+    // stays absent — don't write a header-only file on a clean boot with no
+    // behavior sets). If a prior file exists, fall through so a now-empty set
+    // REPLACES it (a consumer that stopped setting must clear the stale store).
+    std::string existing;
+    bool existed = false;
+    if (!ReadEdgeFileText(path, existing, existed)) {
+        // Present but unreadable — we can still WRITE the rebuilt store (the
+        // write does not depend on the old content). WARN that we could not diff
+        // (the rewrite is unconditional). Mirrors order_persist::WriteModOrderTxt.
+        LOG_WARN_KV(kEdgeCat, "behavior_edges_read_fail_prewrite",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("consequence",
+                "behavior_edges.toml exists but could not be read — rewriting "
+                "with this session's observed edges unconditionally (could not "
+                "compare to detect an actual change)"));
+        existing.clear();
+    }
+    if (edges.empty() && !existed) {
+        LOG_DEBUG_KV(kEdgeCat, "behavior_edges_persist_skip",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("reason",
+                "no behavior edges observed this session and no prior store — "
+                "nothing to persist (file left absent)"));
+        return;
+    }
+
+    if (serialized == existing) {
+        LOG_DEBUG_KV(kEdgeCat, "behavior_edges_persist_skip",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("reason",
+                "unchanged — this session's observed edges match the on-disk "
+                "store"));
+        return;
+    }
+
+    if (!WriteEdgeFileText(path, serialized)) {
+        LOG_ERROR_KV(kEdgeCat, "behavior_edges_persist_write_fail",
+            kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+            kcdx::log::KV("edge_count", (uint64_t)edges.size()),
+            kcdx::log::KV("consequence",
+                "could not write behavior_edges.toml — this session's behavior "
+                "dependency edges were NOT persisted; the next launch cannot "
+                "recognize a known bad order up front (the set still fails loud "
+                "at its call site, so nothing is silently wrong)"));
+        return;
+    }
+
+    LOG_INFO_KV(kEdgeCat, "behavior_edges_persist_write",
+        kcdx::log::KV("file", kcdx::paths::ToUtf8(path)),
+        kcdx::log::KV("edge_count", (uint64_t)edges.size()));
+}
+
+bool PriorLaunchEdgeConfirms(const std::string& consumerAuthor,
+                             const std::string& consumerPlugin,
+                             const std::string& behaviorFullName) {
+    for (const BehaviorEdge& e : PriorLaunchEdges()) {
+        if (e.consumerAuthor == consumerAuthor &&
+            e.consumerPlugin == consumerPlugin &&
+            e.behaviorFullName == behaviorFullName) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PriorLaunchEdgeForBare(const std::string& consumerAuthor,
+                            const std::string& consumerPlugin,
+                            const std::string& bareName,
+                            std::string& fullNameOut) {
+    for (const BehaviorEdge& e : PriorLaunchEdges()) {
+        if (e.consumerAuthor != consumerAuthor ||
+            e.consumerPlugin != consumerPlugin) {
+            continue;
+        }
+        // The bare component is the last dot-segment of the stamped full name.
+        const size_t lastDot = e.behaviorFullName.rfind('.');
+        const std::string bare = (lastDot == std::string::npos)
+            ? e.behaviorFullName
+            : e.behaviorFullName.substr(lastDot + 1);
+        if (bare == bareName) {
+            fullNameOut = e.behaviorFullName;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Test-only seam (declared in load_order.h) — set the prior-launch edge cache
+// directly so a self-test can exercise PriorLaunchEdgeConfirms (and the binder's
+// upgrade) without a file. Lives here so the cache static stays private to this
+// TU; production populates the cache via RecheckBehaviorEdgesAtLaunch's boot read.
+void SetPriorLaunchEdgesForTest(const std::vector<BehaviorEdge>& edges) {
+    PriorLaunchEdges() = edges;
 }
 
 }  // namespace kcdx::load_order

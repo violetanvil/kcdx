@@ -203,6 +203,22 @@ Per-field rules:
 `load_order.toml`. kcdx regenerates effective values from author
 hints next launch.
 
+## Behavior dependency edges — `kcdx-engine/behavior_edges.toml`
+
+The load-order unit also owns the **behavior dependency edge store**
+(`kcdx-engine/behavior_edges.toml`) — an engine-managed file (not user-edited)
+that records which plugins set which named behaviors (`kcdx.behavior.set`). At
+the next launch, kcdx re-checks these edges against the resolved order **before
+any plugin runs**: a consumer that now loads before its declarer is reported up
+front, and the persisted edge sharpens the resolution error from the second
+launch on. The store is rebuilt from each launch's observed sets and
+self-invalidates (a dropped or uninstalled edge is pruned). It is the
+load-order-side persistence of the named-behavior ordering story; the
+author-facing surface is documented in [`lua/behavior.md`](lua/behavior.md)
+("The ordering errors" / "Fixing a bad order"). The future auto-order method
+(which reads these edges to compute a corrected order and writes it back through
+this unit) lands in a later step.
+
 ## Capability gating
 
 Each plugin's declared entries (its `kcdx.*` Lua calls / `kcdx*Interface`

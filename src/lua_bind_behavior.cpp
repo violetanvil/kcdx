@@ -539,14 +539,30 @@ int RaiseSetResolution(lua_State* L, const std::string& nameArg,
             // reorder names both plugins + the direction. First-launch
             // wording is calibrated to what the engine KNOWS at this point:
             // the prefix's plugin loads later, not (yet) that it declares
-            // this specific name — a persisted edge confirms the declaration
-            // from the second launch (step 6).
+            // this specific name. SECOND-LAUNCH UPGRADE (design §6): if a
+            // persisted edge from a PRIOR launch confirms this consumer set
+            // exactly this behavior, the engine KNOWS the declaration exists —
+            // so the error upgrades to the discriminating form that names the
+            // behavior confidently (no longer the hedged "the prefix's plugin
+            // loads later"). On a miss (first launch / no edge) the
+            // first-launch wording stands unchanged.
             branch = "owner_later";
-            detail = "kcdx.behavior.set('" + full + "'): '" + owner +
-                "' loads after you — move '" + caller.author + "." +
-                caller.plugin + "' below it (in load_order.toml) so its "
-                "declares run before your set, or use kcdx.behavior's "
-                "auto-order once it lands.";
+            if (kcdx::load_order::PriorLaunchEdgeConfirms(
+                    caller.author, caller.plugin, full)) {
+                branch = "owner_later_confirmed";
+                detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                    "' DECLARES the behavior '" + bare + "' but loads AFTER "
+                    "you (a prior launch confirmed this dependency) — move '" +
+                    caller.author + "." + caller.plugin + "' below '" + owner +
+                    "' (in load_order.toml) so its declares run before your "
+                    "set, or use kcdx.behavior's auto-order once it lands.";
+            } else {
+                detail = "kcdx.behavior.set('" + full + "'): '" + owner +
+                    "' loads after you — move '" + caller.author + "." +
+                    caller.plugin + "' below it (in load_order.toml) so its "
+                    "declares run before your set, or use kcdx.behavior's "
+                    "auto-order once it lands.";
+            }
         } else {
             // Owner loaded earlier (or same-keyed), enabled, did not fail,
             // and declared nothing under its prefix: the named behavior does
@@ -561,13 +577,31 @@ int RaiseSetResolution(lua_State* L, const std::string& nameArg,
     } else {
         // Branch d — a bare name (or any non-3-segment form) with no
         // declarer found: there is no <author>.<plugin> prefix to
-        // discriminate with. A persisted edge from a prior launch upgrades
-        // this to the discriminating form (step 6).
-        branch = "bare_no_declarer";
-        detail = "kcdx.behavior.set('" + nameArg + "'): no plugin loaded so "
-            "far declares '" + nameArg + "'. If it belongs to another "
-            "plugin, use its full <author>.<plugin>.<bare> name; browse "
-            "kcdx.behavior.list() to see what is declared.";
+        // discriminate with on a FIRST launch. SECOND-LAUNCH UPGRADE
+        // (design §6): a persisted edge from a PRIOR launch upgrades this to
+        // the discriminating form — if this consumer set a behavior whose bare
+        // component matches this bare name in a prior launch, the engine
+        // recorded the FULL <author>.<plugin>.<bare> it resolved to back then,
+        // so the error names that declarer confidently instead of the generic
+        // "use the full name" hint. On a miss (first launch / no edge) the
+        // first-launch wording stands unchanged.
+        std::string priorFull;
+        if (kcdx::load_order::PriorLaunchEdgeForBare(
+                caller.author, caller.plugin, nameArg, priorFull)) {
+            branch = "bare_confirmed";
+            detail = "kcdx.behavior.set('" + nameArg + "'): a prior launch "
+                "resolved this bare name to '" + priorFull + "' — that "
+                "declarer is not loaded so far this launch (it is missing, "
+                "disabled, or loads after you). Use the full name '" +
+                priorFull + "' and make sure its plugin loads before you "
+                "(check load_order.toml), or browse kcdx.behavior.list().";
+        } else {
+            branch = "bare_no_declarer";
+            detail = "kcdx.behavior.set('" + nameArg + "'): no plugin loaded so "
+                "far declares '" + nameArg + "'. If it belongs to another "
+                "plugin, use its full <author>.<plugin>.<bare> name; browse "
+                "kcdx.behavior.list() to see what is declared.";
+        }
     }
 
     // Edge recording on the prefixed ordering-failed branches (a/b/c): a
