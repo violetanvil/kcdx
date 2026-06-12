@@ -4,6 +4,28 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-12 — s08 reconciles against current DB state + the lifecycle-completeness surface (TRD D41)
+- s08 is no longer stateless against the DB: a re-imported row whose recommended action ALREADY
+  landed (a `failed` row already closed to `last_verified_at_version`; a verified row already
+  covered) now renders in a **"no further action"** state — surfaced, auditable, no checkbox, not in
+  any batch — so the actionable blocks show only rows still needing the action (a partly-acted
+  re-import shows true remaining work; confirming never produces a no-op write).
+- A close-intervals action that ORPHANS an entity (no interval covers the current version, not
+  deprecated/superseded) FLAGS it as **needs action** (the close stays atomic; the orphan appears in
+  the standing needs-action view). A **standing needs-action view/filter** (tool-wide) lists every
+  incomplete-lifecycle entity at the current version (orphan / never-verified / broader integrity
+  gaps), catching gaps from any flow.
+- The **`[Fix ▸]` flow** now carries the failing row's divergence `detail` to s04 (the maintainer
+  sees WHAT diverged) AND preserves a return path back to the worklist (report intact, no one-way
+  dead-end); an applied row shows its resulting value, not just an "applied" marker.
+**Integrated in:** `screens/s08-verification-worklist.md` (Contents `[Fix ▸]` row; the
+report-vs-DB-reconciliation + close→needs-action + Fix-flow sections; the "Already acted on" +
+"Orphaned by a close" states).
+**Why:** surfaced during live acceptance of Phase 6 (6.3) — a re-imported report framed an
+already-closed interval as a fresh failing row + a no-op confirm; the lifecycle was left silently
+incomplete after a close. TRD D41 settles the reconciliation + lifecycle-completeness model; this
+screen spec builds to it (`.claude/rules/spec-conformance.md`).
+
 ## 2026-06-10 — s08 names the static-evidence tier `live_test_plugin` (sync to the settled TRD D29)
 - s08's verify-all delta now names the ranks-2–5 `passed_not_verified` `evidence_kind` as
   **`live_test_plugin`** (was "the static-evidence tier", left unnamed pending the TRD fold). The

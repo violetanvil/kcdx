@@ -3,6 +3,36 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-12 — entity-lifecycle completeness + report-vs-DB reconciliation (D41; extends D39/D40)
+
+The tool guarantees no entity is ever left silently incomplete at the current game version, and the
+report worklist reconciles against current DB state instead of treating every report row as new.
+- **A standing "needs action" view** lists every version-relative incomplete-lifecycle entity at the
+  current version V — the **uncovered-at-V orphan** (no `address_versions` interval covers V AND not
+  deprecated AND not superseded → the entity resolves to nothing), a **never-verified** row
+  (`last_verified_at_version IS NULL`), and the broader version-relative integrity set. This is a
+  layer ABOVE the write-time structural HARD-ERROR checks (which can't know a specific version V).
+  Reachable any time; catches gaps from any flow.
+- **Report-vs-DB reconciliation** — the data-core derives "already acted on" from `(report version +
+  current DB state)`, reading the live DB per row. Close-intervals gains the symmetric already-done
+  skip (`valid_through == last_verified_at_version` → no edit-spec) that verify-all already had
+  (`last_verified >= swept` → no edit) — closing the silent no-op confirm. No report-schema change,
+  no engine change (the DB is the live source of truth; the report's `kcdx_id` + `version` are the
+  reconciliation keys).
+- **s08** reflects it: an already-acted row moves to a "no further action" state (surfaced, not
+  actionable); a close that orphans an entity flags it as needs-action (the close stays atomic, the
+  orphan resolved separately); `[Fix ▸]` carries the divergence `detail` to s04 + returns to the
+  worklist; an applied row shows its resulting value.
+**Integrated in:** `design.md` D41 (the decisions table); `ui/screens/s08-verification-worklist.md`
+(reconciliation + close→needs-action + Fix-flow + the two new states); `ui/changelog.md`.
+**Why:** surfaced during live acceptance of Phase 6 (6.3) — a re-imported report framed an
+already-closed interval as a fresh failing row and confirming produced a no-op edit with an empty
+field-delta; a close that orphaned an entity left the lifecycle silently incomplete. Settled via
+`/design` (the user: "the report should carry the information needed… can't the DB derive that based
+on the report version it ran on and the current DB state"; "we need to ensure the lifecycle is
+complete"). Extends D39 (the resolver gains the close-intervals skip) and D40 (the authored
+`valid_through` is what the close writes / the orphan check reads) — neither superseded.
+
 ## 2026-06-10 — seeds RETIRE; both DBs rebuild from tracked CSVs (curated git + bulk Git LFS); the dump retires to expert-only (D38, supersedes D20)
 
 `data/seeds/` is fully deprecated — nothing reads it (archived at `data/seeds - deprecated/`

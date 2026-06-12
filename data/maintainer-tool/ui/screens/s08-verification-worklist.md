@@ -37,7 +37,7 @@ around it (law 2); `‹ back` (phone) returns to s01.
 | `[Select all verified]` / `[Select all failing]` | `button` (subtle) | toggles all rows in the block | `select_all_verified()` / `select_all_failing()` |
 | `[Verify N rows]` | `button` (primary, verified block) | the selected verified rows | `bulk_verify(selected)` → s06 batch confirm (TRD D32/D35) |
 | `[Close intervals · N rows]` | `button` (primary, failing block) | the selected failing rows | `bulk_close_intervals(selected)` → s06 batch confirm (TRD D35) |
-| A failing row's `[Fix ▸]` | `button` (subtle) | the failing row | `select_entity(kcdx_id)` → s02 / s04 |
+| A failing row's `[Fix ▸]` | `button` (subtle) | the failing row + its divergence `detail` (TRD D41) | `select_entity(kcdx_id)` → s02 / s04, CARRYING the row's `detail`; a return path back to the worklist (report intact) |
 | `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 
 **The verdict (per row) — the 7-state enum + the proof rank (TRD D36).** The in-game sweep runs
@@ -84,6 +84,23 @@ into:
   **`collapsible section`** (collapsed by default — it is informational, not the work surface), the
   rows fully visible + auditable when expanded, never silently dropped (law 4 / no silent-success).
 
+**Report-vs-DB reconciliation — an already-acted-on row shows no-further-action (TRD D41).** The
+worklist is NOT stateless against the DB: the data-core reconciles each report row against the
+CURRENT database state and derives whether the report's recommended action is ALREADY reflected
+(it reads the row's live state for the report's `(kcdx_id, version)` — the `/save/reverify-batch`
+preview already reads per-row DB state). A row whose recommended action already landed —
+a `failed` row whose interval is already closed to `last_verified_at_version`
+(`valid_through == last_verified_at_version`, non-NULL); a verified-block row already covered
+(`last_verified_at_version >= report version`) — **moves out of its actionable block into a
+"no further action" state** (rendered like the no-action block: surfaced, auditable, no checkbox,
+not in any batch, with a marker — *"interval already closed at this version"* /
+*"already current"*). The actionable verified/failing blocks therefore show ONLY rows that still
+NEED the action — a re-imported partly-acted report shows true remaining work, never a wall of
+already-done rows framed as new, and confirming never produces a no-op write (the data-core emits
+no edit-spec for an already-done row — the close-intervals already-done skip mirrors verify-all's
+existing skip, TRD D41/D39). Nothing is hidden (law 4 / no silent-success — the already-resolved
+rows are shown, just not actionable).
+
 **Two batched bulk actions, each ONE batched confirm (law 5 at batch scale, TRD D32/D35).** The
 verified block and the failing block each have their own bulk action + s06 batch confirm. Neither
 auto-writes — the maintainer reviews the whole batch delta and confirms once → ONE atomic
@@ -110,6 +127,35 @@ gate (law 8) does NOT apply. The no-action block has no bulk action.
   UNVERIFIED at the new version by the existing derivation. The maintainer then fixes the function
   individually via `[Fix ▸]` (a corrected/variant row via the author flow, AP18 per-row — never in
   the batch).
+
+**Close → needs-action (TRD D41).** A close-intervals action that ORPHANS an entity — retracts
+`valid_through` below the current game version with no successor row covering it, and the entity is
+neither deprecated nor superseded — leaves an incomplete lifecycle. The close stays ONE atomic
+transaction (it is not coupled to a forced next step); the now-orphaned entity is FLAGGED as
+**needs action** and appears in the standing needs-action view (below) for the maintainer to
+complete separately (author a successor row for the current version, OR mark the entity deprecated,
+OR supersede it). The orphan is never silent — the close surfaces it, the maintainer resolves it
+when they choose.
+
+**The Fix flow carries context and returns (TRD D41).** `[Fix ▸]` is a round-trip, context-carrying
+navigation, not a one-way drop: it carries the failing row's divergence `detail` (the engine's
+reason, e.g. *"on-disk body hash mismatch: build diverged from the recorded version"*) to the s04
+field editor so the maintainer sees WHAT diverged without re-checking the worklist; and it preserves
+a **return path** back to the worklist with the imported report intact (the report's client-side
+state survives the Fix excursion — s08 and s02/s04 are peer content screens, so the report is not
+lost on navigate-away). An applied row (after a confirmed close or verify) shows its RESULTING value
+(the new `valid_through`), not only an "applied" marker — the maintainer sees what the action
+produced.
+
+**The standing needs-action view (TRD D41).** Lifecycle completeness is a standing, tool-wide
+property, not a per-report afterthought: a **needs-action view/filter** lists every entity whose
+lifecycle is incomplete at the current game version — the uncovered-at-V orphan (no interval covers
+the current version, not deprecated, not superseded → no row is authoritative for the current
+version; the entity is UNVERIFIED there, resolving only by best-match to a stale closed row), a never-verified row
+(`last_verified_at_version IS NULL`), and the broader version-relative integrity gaps — reachable
+any time and catching gaps from ANY flow (a close-intervals orphan, a hand-edit, a pre-existing
+incomplete row). Each entry names its resolution path. (Surface placement is the tool-wide
+needs-action view; this s08 screen feeds it — a close that orphans a row lands in it.)
 
 No silent bulk write — the delta is always shown before anything lands.
 
@@ -148,6 +194,21 @@ No silent bulk write — the delta is always shown before anything lands.
   (law 7). Verified-block rows carry the verify checkbox; failing-block rows carry the
   close-intervals checkbox AND a `[Fix ▸]` (the close retracts the interval; the fix authors the
   correction — distinct actions); no-action-block rows carry NEITHER (shown, no action — D36).
+- **Already acted on (report-vs-DB reconciliation, TRD D41)** — a re-imported row whose recommended
+  action already landed in the DB (a `failed` row whose interval is already closed to
+  `last_verified_at_version`; a verified row already covered at the report version) renders in a
+  **"no further action"** state — surfaced + auditable (a marker *"interval already closed"* /
+  *"already current"*), NO checkbox, NOT in any batch. It is excluded from the actionable
+  verified/failing blocks so those show only rows still needing the action; confirming a batch never
+  includes it (the data-core emits no edit-spec for an already-done row — no no-op write, no
+  empty-delta confirm). Shown, never hidden (law 4 / no silent-success); the maintainer sees a
+  partly-acted re-import as true remaining work plus the already-resolved rows, never a wall of
+  done rows framed as new.
+- **Orphaned by a close (needs action, TRD D41)** — a close-intervals action that leaves an entity
+  with no interval covering the current game version and no deprecation/supersession flags it as
+  **needs action**: the close completes atomically, and the orphaned entity appears in the standing
+  needs-action view for the maintainer to complete (author successor / deprecate / supersede). The
+  orphan is surfaced, never silent; resolving it is a separate deliberate act, not forced inline.
 - **Edge content** — a report with **0 failing** → the split defaults to Verified, the summary
   reads *"All `N` checked rows still resolve"*, only the verify-all action is active; **0 verified**
   (all fail) → the verify action is disabled, the failing block's close-intervals action is active,
