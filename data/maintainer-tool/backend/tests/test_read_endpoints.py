@@ -39,6 +39,7 @@ RUN
 ---
     python -m pytest data/maintainer-tool/backend/tests/ -q
 """
+import hashlib
 import logging
 import os
 import shutil
@@ -337,3 +338,131 @@ def test_no_db_entity_and_versions_also_return_signal(empty_checkout, client_at)
         resp = client.get(path)
         assert resp.status_code == 200, (path, resp.text)
         assert resp.json()["state"] == "empty", (path, resp.json())
+
+
+# ----------------------------------------------------------------------------
+# Case 6: GET /needs-action surfaces the lifecycle-completeness set (the three
+# incomplete-lifecycle kinds + a consistent total_count + version), READ-ONLY.
+#
+# WHAT THIS PROVES: the endpoint exposes audit_lifecycle's structured three-kind
+# shape (uncovered / never_verified / broken_refs) + version, derives the ONE
+# total_count the s01 `[Needs action]` badge binds (D41 fact 1 / s09 §Contents),
+# and mutates NOTHING (the curated DB is byte-identical before/after -- DETECTION is
+# read-only, plan-spec §"Cross-step invariants"). The mini-dump checkout is the real
+# curated seed set; whichever kinds are non-empty, the shape + count consistency +
+# byte-identity are the falsifiable bar.
+# ----------------------------------------------------------------------------
+NEEDS_ACTION_KINDS = ("uncovered", "never_verified", "broken_refs")
+
+
+def _db_hash(checkout_root):
+    """A content hash over the curated reference DBs under the checkout's out_dir
+    (data/) -- proves a read endpoint mutated nothing (byte-identical before/after)."""
+    h = hashlib.sha256()
+    for name in ("reference.sqlite", "reference-dev.sqlite"):
+        p = os.path.join(_out_dir(checkout_root), name)
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()
+
+
+def test_needs_action_surfaces_three_kinds_and_consistent_count(resolved_checkout,
+                                                                client_at):
+    client = client_at(resolved_checkout)
+    resp = client.get("/needs-action")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # The three kind lists + total_count + version are present (s09 §Contents bindings).
+    for kind in NEEDS_ACTION_KINDS:
+        assert kind in body, f"needs-action missing kind list {kind!r}: {body}"
+        assert isinstance(body[kind], list), (kind, body[kind])
+    assert "total_count" in body, f"needs-action missing total_count: {body}"
+    assert "version" in body, f"needs-action missing version: {body}"
+
+    # total_count is the consistent sum of the three lists' lengths (the s01 badge).
+    expected_total = sum(len(body[k]) for k in NEEDS_ACTION_KINDS)
+    assert body["total_count"] == expected_total, (body["total_count"], expected_total)
+
+    # The endpoint surfaces the data-core's three lists + version verbatim (thin caller,
+    # modulo the JSON-boundary seam): total_count is the ONLY backend-derived field.
+    expected = _json_safe(data_core.audit_lifecycle(_out_dir(resolved_checkout)))
+    for kind in NEEDS_ACTION_KINDS:
+        assert body[kind] == expected[kind], (
+            f"endpoint must surface audit_lifecycle's {kind} verbatim")
+    assert body["version"] == expected["version"]
+
+
+def test_needs_action_is_read_only(resolved_checkout, client_at):
+    """The GET is read-only: the curated DB is byte-identical after the request
+    (DETECTION is read-only -- no write, no transaction; plan-spec §"Cross-step
+    invariants")."""
+    client = client_at(resolved_checkout)
+    before = _db_hash(resolved_checkout)
+    resp = client.get("/needs-action")
+    assert resp.status_code == 200, resp.text
+    assert _db_hash(resolved_checkout) == before, (
+        "GET /needs-action mutated the curated DB -- a read endpoint mutates nothing")
+
+
+def test_needs_action_no_db_checkout_returns_empty_signal(empty_checkout, client_at,
+                                                          caplog):
+    """A no-DB checkout -> GET /needs-action returns the same empty SIGNAL (200,
+    state="empty") the other read endpoints return, not a 500 -- the s01 empty state
+    the frontend binds (the s09 error/empty states route through it). The detection
+    failure (DbReadError from _open_ro) is caught and logged before returning (the
+    shared _no_db_signal branch this endpoint reuses)."""
+    client = client_at(empty_checkout)
+    with caplog.at_level(logging.WARNING, logger="app.routes_read"):
+        resp = client.get("/needs-action")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "empty", resp.json()
+    assert any("data-core read failed" in r.message for r in caplog.records), \
+        [r.message for r in caplog.records]
+
+
+# ============================================================================
+# The canonical-signal emitter -- maps the load-bearing properties to the ACCEPT
+# grammar (.claude/rules/acceptance-signal.md) so the agent reads ONE verdict line.
+# ============================================================================
+def _emit_signal(results):
+    passed = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    for aid, ok, detail in results:
+        verdict = "PASS" if ok else "FAIL"
+        suffix = f" -- {detail}" if (not ok and detail) else ""
+        print(f"ACCEPT-RESULT: {verdict} {aid}{suffix}")
+    print(f"ACCEPT-SUITE: {passed}/{total} passing")
+
+
+def test_needs_action_acceptance_signal(resolved_checkout, client_at):
+    client = client_at(resolved_checkout)
+    results = []
+
+    # ACCEPT 1: the endpoint returns the structured three-kind shape + total_count + version.
+    resp = client.get("/needs-action")
+    body = resp.json() if resp.status_code == 200 else {}
+    ok1 = (resp.status_code == 200
+           and all(k in body and isinstance(body[k], list) for k in NEEDS_ACTION_KINDS)
+           and "total_count" in body and "version" in body)
+    results.append(("needs-action-returns-three-kind-shape", ok1,
+                    None if ok1 else f"status={resp.status_code} body={body}"))
+
+    # ACCEPT 2: total_count equals the sum of the three lists' lengths (the s01 badge).
+    expected_total = sum(len(body.get(k, [])) for k in NEEDS_ACTION_KINDS) if body else -1
+    ok2 = bool(body) and body.get("total_count") == expected_total
+    results.append(("needs-action-total-count-consistent", ok2,
+                    None if ok2 else f"total_count={body.get('total_count')} sum={expected_total}"))
+
+    # ACCEPT 3: the GET is read-only (the curated DB is byte-identical after).
+    before = _db_hash(resolved_checkout)
+    client.get("/needs-action")
+    ok3 = _db_hash(resolved_checkout) == before
+    results.append(("needs-action-read-only", ok3,
+                    None if ok3 else "GET /needs-action MUTATED the curated DB"))
+
+    _emit_signal(results)
+    failures = [(aid, d) for aid, ok, d in results if not ok]
+    assert not failures, "needs-action acceptance drift:\n  " + \
+        "\n  ".join(f"{aid}: {d}" for aid, d in failures)

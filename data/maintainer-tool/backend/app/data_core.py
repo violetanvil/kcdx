@@ -72,6 +72,16 @@ DbReadError = _seeds_shared.DbReadError
 resolve_reverify_batch = _seeds_shared.resolve_reverify_batch
 ReverifyResolveError = _seeds_shared.ReverifyResolveError
 
+# The entity-lifecycle COMPLETENESS audit (D41 fact 1): the data-core READS the curated
+# DB and computes the version-relative needs-action set -- the three incomplete-lifecycle
+# kinds (uncovered orphans / never-verified / broken refs) at the current game version V.
+# NO WRITE -- it reads READ-ONLY (_open_ro) + computes; DETECTION is read-only (law 6 /
+# plan-spec "the detection is READ-ONLY"). The /needs-action read endpoint calls it;
+# LifecycleAuditError signals an unknown tag / empty game_versions (DbReadError, a missing
+# curated DB, surfaces through _open_ro).
+audit_lifecycle = _seeds_shared.audit_lifecycle
+LifecycleAuditError = _seeds_shared.LifecycleAuditError
+
 # The export + round-trip + field-delta surface the save spine uses (later steps).
 export_seeds = _seeds_shared.export_seeds
 round_trip = _seeds_shared.round_trip

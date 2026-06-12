@@ -127,6 +127,36 @@ def list_modules():
         return _no_db_signal(exc, config)
 
 
+@router.get("/needs-action")
+def get_needs_action():
+    """The needs-action set for s09 (the lifecycle-completeness surface) + the s01
+    `[Needs action ▸ N]` count badge.
+
+    Returns audit_lifecycle's dict -- {version, version_ordinal, uncovered[],
+    never_verified[], broken_refs[]} (the three incomplete-lifecycle kinds at the
+    current game version V, D41 fact 1 / s09 §Contents) -- PLUS a `total_count` (the
+    sum of the three lists' lengths, the s01 badge binding). DETECTION is READ-ONLY
+    (plan-spec §"Cross-step invariants"): the endpoint calls audit_lifecycle (no write,
+    no transaction) and derives only this one count -- the rule logic stays in the
+    data-core (D13/R3). A missing curated DB / an unresolvable audit input yields the
+    same 200 {state, detail} empty signal the other read endpoints use (state="empty"),
+    NOT an HTTP error -- the s01 empty state the frontend binds (the s09 error/empty
+    states route through it)."""
+    config = load_config()
+    try:
+        result = data_core.audit_lifecycle(config.out_dir)
+    except (data_core.LifecycleAuditError, data_core.DbReadError) as exc:
+        return _no_db_signal(exc, config)
+    # The ONE backend-derived value (D13/R3 -- the backend derives nothing else): the
+    # needs-action total the s01 badge / s09 header bind, the sum of the three kinds'
+    # lengths. The three lists + version come straight from the data-core, surfaced
+    # unchanged through the JSON-boundary seam.
+    result["total_count"] = (len(result["uncovered"])
+                             + len(result["never_verified"])
+                             + len(result["broken_refs"]))
+    return _json_safe(result)
+
+
 @router.get("/entities/{kcdx_id}/versions")
 def get_entity_versions(kcdx_id: int):
     """The entity's version rows, NEWEST-first, each with its derived status (s02

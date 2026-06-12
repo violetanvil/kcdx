@@ -9,7 +9,7 @@ Both read-only / preview-only; the write path is unchanged (law 6 / D19).
 
 | Step | Status | Commit |
 |---|---|---|
-| [2.1 — The needs-action read endpoint](step-1-needs-action-endpoint.md) | NOT STARTED | — |
+| [2.1 — The needs-action read endpoint](step-1-needs-action-endpoint.md) | DONE | (landed) — read-only GET /needs-action exposes the 1.2 detection query (three kinds + total_count for the s01 badge); `audit_lifecycle` exported through the seeds_shared → data_core seam. test_read_endpoints 12 passed (ACCEPT 3/3), mutation-confirmed; full backend suite 78 passed. |
 | [2.2 — The reconciliation classification in the /save/reverify-batch preview](step-2-reconciliation-preview.md) | NOT STARTED | — |
 
 ## Phase verification gate
