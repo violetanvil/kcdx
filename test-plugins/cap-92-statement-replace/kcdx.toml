@@ -21,26 +21,33 @@
 #   function_entry  -> statement idx 0, kind "assign", byte_range_len 3
 #   first_return    -> statement idx 13, kind "return"
 #
-# SAFETY — the rows do NOT destructively rewrite a live game function, and they
-# do NOT assert a live byte write (KI-0017 re-frame). No curated function is a
-# safe NOP target (every curated row is a function kcdx uses or forwards to
-# plugins), and no statement tables are deployed, so a live :applied()==true
-# against a real game function is unprovable AND would be a foot-gun. The rows
-# pin the apply path's RESOLVE + KIND-CHECK + REGISTER-AS-Kind::Statement +
-# honest verdict (Pending / degraded function_no_statements / co-location
-# reject) — the full WIRING up to the write decision; :applied()==true against a
-# real game function is a FAIL arm. The live byte-write proof is future coverage
-# blocked on a purpose-built curated test-stub function (one kcdx never calls and
-# never forwards, with statement data deployed) — net-new curation, AP18-gated;
-# tracked as tech-debt, not this fixture's to make.
+# SAFETY + the LIVE APPLY (KI-0017 Fork-2 CORRECTED AGAIN). The launch
+# (kcdx-dev_2026-06-11_19-13-16.log) FALSIFIED the wiring-only re-frame:
+# statement tables ARE deployed in the runtime reference.sqlite (the earlier
+# "not deployed" read data/db-export/, the git export, not the runtime DB), and
+# the apply HONESTLY LANDS (log 5751: STATEMENT line stmt_kind="assign"
+# byte_range_len=3 wrote_bytes=3). So cap-92-replace-with-registers now asserts
+# the LIVE APPLY: :applied()==true is the EXPECTED PASS (the write lands with the
+# resolved byte-range). The SaveGame function_entry NOP is harmless — an identity
+# re-write of the site cap-96 already NOP'd first (native bytes E9 4C F4 -> 90 90
+# 90, log 5423), and standalone a 3-byte entry NOP on a function the suite does
+# not call in the test window. The rows do NOT assert the pre-write site bytes
+# (90 90 90 is a co-location artifact of cap-96 applying first, NOT the proof).
+# Degraded function_no_statements / Pending stay as HONEST FALLBACK arms (a build
+# not deploying SaveGame statements). The future live-byte-write tech-debt item
+# is DROPPED — that proof now exists.
 #
 # FALSIFIABLE per row (a row that can never go red proves nothing):
 #   - cap-92-replace-with-registers : replace_with(SaveGame, function_entry,
 #       kcdx.op.replace_with_noop()) MUST register (handle non-nil — the op value
-#       is accepted as the required positional and the curated target resolves);
-#       and the entry MUST NOT be a Kind::Hook (no callback was taken). RED if the
-#       handle is nil (the surface regressed) OR the entry silently became a
-#       callback path.
+#       is accepted as the required positional and the curated target resolves)
+#       AND the apply MUST land (:applied()==true — the write at the resolved
+#       statement VA over byte_range_len=3; wrote_bytes==byte_range_len is
+#       engine-confirmed in the STATEMENT log line, the handle exposes no
+#       byte-range accessor to Lua). RED if the handle is nil (the surface
+#       regressed) OR :applied()==false with a reason that is NEITHER a degraded
+#       deploy-state miss NOR a co-location reject (a real apply-path regression).
+#       Degraded function_no_statements / Pending are honest fallback arms.
 #   - cap-92-kind-mismatch : replace_with(SaveGame, function_entry [an "assign"
 #       statement], kcdx.op.always_take_branch() [requires "branch"]) MUST be
 #       REJECTED at apply with a teaching reason naming the actual kind

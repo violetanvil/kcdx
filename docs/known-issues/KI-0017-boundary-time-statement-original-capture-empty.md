@@ -179,6 +179,54 @@ forwards, with statement data deployed for it — net-new curation, AP18-gated,
 user-approved). Filed as its own tech-debt entry naming that blocker; NOT folded
 into this cycle and NOT dropped.
 
+## Fork-2 CORRECTED AGAIN — assert the live apply (the launch falsified the re-frame's premises, 2026-06-11)
+
+The `402d028` wiring-only re-frame rested on two facts the live launch
+(`kcdx-dev_2026-06-11_19-13-16.log`) FALSIFIED:
+
+1. **Statement tables ARE deployed** in the runtime `reference.sqlite` (the full
+   corpus from `data/refdata-extractor/`). The earlier "not deployed" read was of
+   `data/db-export/` — the curated GIT EXPORT, not the runtime DB. Proof: cap-83
+   statement-resolve PASS + the engine STATEMENT line
+   `replace_with applied name="comp20_decl_stmt" target="SaveGame"
+   op="replace_with_noop" stmt_kind="assign" byte_range_len=3 wrote_bytes=3`
+   (log 5751).
+2. **The apply HONESTLY LANDS.** `comp20_decl_stmt applied successfully at
+   0x...965DD1B04: 90 90 90 -> 90 90 90` (log 5750). The fix works end-to-end —
+   the live byte-write proof we kept saying we couldn't have EXISTS, this is it.
+
+**The byte-anchoring correction (load-bearing):** do NOT assert the site bytes
+are `90 90 90` — that is a CO-LOCATION ARTIFACT. cap-96 applies FIRST and NOPs
+the SaveGame entry (log 5423: `cap96_replace_registers applied at
+0x...965DD1B04: E9 4C F4 -> 90 90 90` — the NATIVE bytes are `E9 4C F4`); cap-92
+(log 5636) and comp-20 (log 5750) then see `90 90 90 -> 90 90 90` only because
+the earlier fixture already NOP'd the shared site. Asserting `== 90 90 90`
+couples the test to apply ORDER + the cap-96 fixture + the build's entry
+instruction. **Assert the build-stable, order-independent fact instead:**
+`:applied()==true` AND `wrote_bytes == byte_range_len` against `function_entry`
+resolving to idx0/kind=assign/brl=3. NEVER assert the pre-write bytes.
+
+**Re-frame REVERSED:**
+- `comp-20-declarer-statement` + `cap-92-replace-with-registers`: `:applied()==true`
+  is now a PASS (with `wrote_bytes==byte_range_len` against the resolved range);
+  degraded `function_no_statements` / Pending stay as HONEST FALLBACK arms (a
+  future build that doesn't deploy SaveGame statements), NOT the expected arm.
+- `cap-92-kind-mismatch` / `-deferred-op` / `-zero-dispatch`: unchanged
+  (reject/static-op structural properties, no apply dependency).
+- Matrix: the falsifiable claim is `:applied()==true with wrote_bytes==byte_range_len
+  against the resolved function_entry`; strike the "deploy-state-DEGRADED is
+  expected" framing.
+
+**Safety settled:** the SaveGame `function_entry` NOP is harmless in-suite
+(identity re-write of an already-NOP'd site) and even standalone is a 3-byte NOP
+at the entry of a function the suite is not calling during the test window. No
+foot-gun. Both fixtures stay PERMANENT — the live-apply assertion is the
+STRONGEST regression (guards the actual write path end-to-end, the never-applied
+defect class). NOT an exempt.
+
+**The future-TD live-byte-write item is DROPPED** — that proof now exists (this
+is it). Nothing to defer.
+
 ## What this report does NOT do
 
 - Does not propose a fix.
