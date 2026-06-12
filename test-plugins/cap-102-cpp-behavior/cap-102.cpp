@@ -23,21 +23,28 @@
 //     - the EARLY-STOP OUT-OF-WINDOW row: attempt a plugin-tier Set HERE (early
 //       stop) — it must FAIL loud with the out-of-window teaching error. This
 //       re-issues step-4's thin-C-harness fixture through the REAL interface.
-//   kcdxPlugin_PostGameLoad (MAIN stop, post-apply-boundary):
-//     - Set + Get + List on the C++ behaviors (the four verbs at main stops).
-//     - the coercion-mismatch row (AsInt64 on a table value).
-//     - the stale-handle row (Get a handle, Set to replace the value, the old
-//       handle accessor → generation-checked Stale).
-//     - the off-thread post-load QUERY row (best-effort — see the finding note).
-//     - the wave-end gate ORDER row (CppWaveEnded() is true on the main thread —
-//       the signal preceded adoption; the engine-log line order is the backstop).
-//     - the cross-language rows: read cpp_crosslang's value (set from Lua) +
-//       set the Lua-declared behavior from C++.
+//   kcdxPlugin_PostGameLoad (MAIN stop, PRE-apply-boundary):
+//     - the four verbs whose assertions are synchronous records, not applied
+//       state: List, the table-value default read, the coercion mismatch, the
+//       stale-handle generation check (Get→replace→old-handle-Stale), the
+//       early-stop out-of-window verdict, and the C++→Lua cross-language set
+//       (set + read-back, a record).
+//     The apply boundary fires the implementations AFTER this stop (between
+//     PostGameLoad and InputLoaded — see the OffThreadResult note below), so any
+//     row reading an APPLIED value (an impl-fire flag, an applied/coerced value
+//     a set produced) is reported at InputLoaded (post-boundary), NOT here.
+//   InputLoaded handler (POST-apply-boundary):
+//     - the boundary-dependent rows: declare-set-get (cpp_scalar's impl fired
+//       with the Lua-set value + AsBool reads the applied true), the Lua-sets-C++
+//       cross-language row (cpp_crosslang's impl fired with 42), the wave-end gate
+//       order (cpp_scalar's impl fired = the C++ wave reached the live VM).
+//     - the stale-handle-on-raise row + the off-thread QUERY thread-wall row
+//       (both need BoundaryCompleted()/PostLoad() true).
 //
 // Every row reads ACTUAL state (the coerced handle value, the actual error text
-// via GetLastError, the boot order) — never a value the row itself set, so a row
-// can genuinely fail. An InputLoaded backstop reports loud FAIL for any row
-// PostGameLoad never reached.
+// via GetLastError, the engine-written impl-fire flags, the boot order) — never a
+// value the row itself set, so a row can genuinely fail. An InputLoaded backstop
+// reports loud FAIL for any row PostGameLoad/InputLoaded never reached.
 
 #include <windows.h>
 
@@ -107,10 +114,12 @@ void Report(const char* row, bool pass, const char* reason) {
 }
 
 // All this plugin's row IDs — used by the InputLoaded backstop to FAIL any row
-// that never got reported because kcdxPlugin_PostGameLoad did not fire. The two
-// InputLoaded-reported rows (stale-handle-on-raise + offthread-query-wall) ALSO
-// run only when g_post_ran is true (the handler returns early otherwise), so the
-// backstop covers them on the PostGameLoad-never-fired path too.
+// that never got reported because kcdxPlugin_PostGameLoad did not fire. The
+// InputLoaded-reported rows (the three boundary-dependent rows — declare-set-get,
+// crosslang-lua-sets-cpp, wave-end-gate-order — plus stale-handle-on-raise +
+// offthread-query-wall) ALSO run only when g_post_ran is true (the handler
+// returns early otherwise), so the backstop covers them on the
+// PostGameLoad-never-fired path too.
 const char* kRows[] = {
     "CAP-102-cpp-declare-set-get",
     "CAP-102-cpp-list",
@@ -280,6 +289,100 @@ void OnMessage(kcdxMessage* msg) {
         g_api->ReportTestResult(g_self, "CAP-102-cpp-offthread-query-wall",
                                 pass ? 1 : 0, reason);
     }
+
+    // --- Row: declare + set + get round-trip on cpp_scalar (the four verbs) ---
+    // cpp_scalar was set FROM LUA at the main stop (the sibling sets it true).
+    // Reported HERE (post-boundary), NOT at PostGameLoad: the boundary fires
+    // CppScalarImpl AFTER PostGameLoad, so the impl-fire flags + the APPLIED
+    // AsBool value are only readable now. We assert (a) get()'s applied value
+    // reflects the recorded true, and (b) the C++ implementation fired at the
+    // boundary with that value. Both reads are engine-written state — get()'s
+    // applied value and the impl-fire flags the engine set when it invoked the
+    // declarer's code — never a value this row set, so it can genuinely FAIL.
+    {
+        kcdxBehaviorValue h = 0;
+        bool got = g_beh->Get("cpp_scalar", &h, g_self);
+        bool val = false;
+        kcdxBehaviorAccess a = got ? g_beh->AsBool(h, &val)
+                                   : kcdxBehaviorAccess_BadHandle;
+        // The Lua sibling sets cpp_scalar = true at the main stop; the boundary
+        // invokes CppScalarImpl(true). PASS: get()==true AND impl ran with true.
+        const bool pass = got && a == kcdxBehaviorAccess_Ok && val == true &&
+                          g_cpp_scalar_impl_ran && g_cpp_scalar_impl_value == true;
+        char reason[400];
+        snprintf(reason, sizeof(reason),
+            "%s — Get(cpp_scalar)=%d AsBool=%d value=%d; impl ran=%d impl saw=%d "
+            "(PASS: the Lua sibling set cpp_scalar=true at its main stop, the C++ "
+            "implementation fired at the boundary with true, get() reflects it — "
+            "ONE registry across both languages, no value marshalled out; read "
+            "post-boundary at InputLoaded where the applied value + impl flags "
+            "exist)",
+            pass ? "C++ behavior declare/set/get round-trip ok"
+                 : "round-trip WRONG",
+            got ? 1 : 0, static_cast<int>(a), val ? 1 : 0,
+            g_cpp_scalar_impl_ran ? 1 : 0, g_cpp_scalar_impl_value ? 1 : 0);
+        g_api->ReportTestResult(g_self, "CAP-102-cpp-declare-set-get",
+                                pass ? 1 : 0, reason);
+    }
+
+    // --- Row: crosslang — Lua set a C++-declared behavior --------------------
+    // cpp_crosslang was declared in C++; the Lua sibling sets it to 42 at its
+    // main stop. The C++ implementation fired at the boundary with 42. Reported
+    // HERE (post-boundary), NOT at PostGameLoad: the impl-fire flags are only
+    // written once the boundary invokes CppCrosslangImpl, after PostGameLoad.
+    {
+        kcdxBehaviorValue h = 0;
+        bool got = g_beh->Get("cpp_crosslang", &h, g_self);
+        int64_t val = -1;
+        kcdxBehaviorAccess a = got ? g_beh->AsInt64(h, &val)
+                                   : kcdxBehaviorAccess_BadHandle;
+        const bool pass = got && a == kcdxBehaviorAccess_Ok && val == 42 &&
+                          g_cpp_crosslang_impl_ran &&
+                          g_cpp_crosslang_impl_value == 42;
+        char reason[400];
+        snprintf(reason, sizeof(reason),
+            "%s — Get(cpp_crosslang)=%lld (access=%d); impl ran=%d impl saw=%lld "
+            "(PASS: a C++-DECLARED behavior SET FROM LUA — the Lua sibling set "
+            "cpp_crosslang=42 at its main stop, the C++ implementation fired with "
+            "42 at the boundary; the ONE registry serves both languages; read "
+            "post-boundary at InputLoaded where the impl flags exist)",
+            pass ? "Lua-sets-C++-declared ok" : "Lua-sets-C++-declared WRONG",
+            static_cast<long long>(val), static_cast<int>(a),
+            g_cpp_crosslang_impl_ran ? 1 : 0,
+            static_cast<long long>(g_cpp_crosslang_impl_value));
+        g_api->ReportTestResult(g_self, "CAP-102-crosslang-lua-sets-cpp",
+                                pass ? 1 : 0, reason);
+    }
+
+    // --- Row: wave-end gate ORDER — the C++-wave-end signal preceded adoption --
+    // The intercept WAITS on the C++-wave-end gate before adopting the VM.
+    // Reported HERE (post-boundary), NOT at PostGameLoad: the proof is
+    // cpp_scalar's impl having fired, which the boundary records after
+    // PostGameLoad. The engine-log line order (LUA_VM_BUILD wave_end_gate_signaled
+    // BEFORE engine_adopted_kcdx_state) is the backstop the agent greps.
+    {
+        // The interface does not expose CppWaveEnded to plugins; the engine-log
+        // ORDER is the falsifiable signal. We assert what a plugin CAN observe:
+        // the C++ wave reached the live VM under the gated guarantee — proven
+        // transitively by cpp_scalar's impl having fired with the Lua-set value
+        // (the boundary read the VM the C++ wave used). If the gate were inverted
+        // (adoption before wave end), the C++ wave's VM access would have raced
+        // the engine's VM overwrite and the round-trip would be wrong.
+        const bool pass = g_cpp_scalar_impl_ran;  // the wave used the live VM
+        char reason[400];
+        snprintf(reason, sizeof(reason),
+            "%s — the VM-adoption wave-end gate held the engine off the VM until "
+            "the C++ wave finished: cpp_scalar's implementation fired at the "
+            "boundary (impl ran=%d), proving the C++ wave reached the live VM "
+            "under the gated guarantee. The falsifiable BOOT-ORDER backstop the "
+            "agent greps: LUA_VM_BUILD 'wave_end_gate_signaled' MUST precede "
+            "'engine_adopted_kcdx_state' in the engine log (signal-before-adopt). "
+            "An inversion would race the engine's VM overwrite",
+            pass ? "wave-end gate order ok" : "wave-end gate order WRONG",
+            g_cpp_scalar_impl_ran ? 1 : 0);
+        g_api->ReportTestResult(g_self, "CAP-102-cpp-wave-end-gate-order",
+                                pass ? 1 : 0, reason);
+    }
 }
 
 // === Stash between Load and PostGameLoad ===
@@ -385,32 +488,12 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     Report("CAP-102-cpp-early-stop-out-of-window", g_early_stop_walled,
            g_early_stop_text);
 
-    // --- Row: declare + set + get round-trip on cpp_scalar (the four verbs) ---
-    // cpp_scalar was set FROM LUA at the main stop (the sibling sets it true).
-    // We assert (a) get() reflects the recorded value, and (b) the C++
-    // implementation fired at the boundary with that value.
-    {
-        kcdxBehaviorValue h = 0;
-        bool got = g_beh->Get("cpp_scalar", &h, g_self);
-        bool val = false;
-        kcdxBehaviorAccess a = got ? g_beh->AsBool(h, &val)
-                                   : kcdxBehaviorAccess_BadHandle;
-        // The Lua sibling sets cpp_scalar = true at the main stop; the boundary
-        // invokes CppScalarImpl(true). PASS: get()==true AND impl ran with true.
-        const bool pass = got && a == kcdxBehaviorAccess_Ok && val == true &&
-                          g_cpp_scalar_impl_ran && g_cpp_scalar_impl_value == true;
-        char reason[400];
-        snprintf(reason, sizeof(reason),
-            "%s — Get(cpp_scalar)=%d AsBool=%d value=%d; impl ran=%d impl saw=%d "
-            "(PASS: the Lua sibling set cpp_scalar=true at its main stop, the C++ "
-            "implementation fired at the boundary with true, get() reflects it — "
-            "ONE registry across both languages, no value marshalled out)",
-            pass ? "C++ behavior declare/set/get round-trip ok"
-                 : "round-trip WRONG",
-            got ? 1 : 0, static_cast<int>(a), val ? 1 : 0,
-            g_cpp_scalar_impl_ran ? 1 : 0, g_cpp_scalar_impl_value ? 1 : 0);
-        Report("CAP-102-cpp-declare-set-get", pass, reason);
-    }
+    // NOTE: CAP-102-cpp-declare-set-get runs in the InputLoaded handler, NOT
+    // here. It reads cpp_scalar's APPLIED value (AsBool) + the impl-fire flags,
+    // both written by the apply boundary — which fires AFTER PostGameLoad. At
+    // PostGameLoad the Lua-set value is RECORDED (Get sees it) but not yet
+    // APPLIED (AsBool/the impl have not run), so reading it here is one stop too
+    // early. See OnMessage.
 
     // --- Row: List(prefix) enumerates the C++ behaviors -----------------------
     {
@@ -528,59 +611,13 @@ bool kcdxPlugin_PostGameLoad(const kcdxInterface* api) {
     // (which raises) — at PostGameLoad the boundary has not yet run, so a Set is
     // a load-window record (no impl invocation, the impl-raise path untested).
 
-    // --- Row: wave-end gate ORDER — the C++-wave-end signal preceded adoption --
-    // The intercept WAITS on the C++-wave-end gate before adopting the VM. By the
-    // time this (PostGameLoad, game main thread, post-adoption) runs, the gate
-    // MUST be signaled. CppWaveEnded() reads the gate's signaled state on the main
-    // thread. The engine-log line order (LUA_VM_BUILD wave_end_gate_signaled
-    // BEFORE engine_adopted_kcdx_state) is the backstop the agent greps.
-    {
-        // The interface does not expose CppWaveEnded to plugins; the engine-log
-        // ORDER is the falsifiable signal. We assert what a plugin CAN observe:
-        // the C++ wave reached the live VM under the gated guarantee — proven
-        // transitively by cpp_scalar's impl having fired with the Lua-set value
-        // (the boundary read the VM the C++ wave used). If the gate were inverted
-        // (adoption before wave end), the C++ wave's VM access would have raced
-        // the engine's VM overwrite and the round-trip above would be wrong.
-        const bool pass = g_cpp_scalar_impl_ran;  // the wave used the live VM
-        char reason[400];
-        snprintf(reason, sizeof(reason),
-            "%s — the VM-adoption wave-end gate held the engine off the VM until "
-            "the C++ wave finished: cpp_scalar's implementation fired at the "
-            "boundary (impl ran=%d), proving the C++ wave reached the live VM "
-            "under the gated guarantee. The falsifiable BOOT-ORDER backstop the "
-            "agent greps: LUA_VM_BUILD 'wave_end_gate_signaled' MUST precede "
-            "'engine_adopted_kcdx_state' in the engine log (signal-before-adopt). "
-            "An inversion would race the engine's VM overwrite",
-            pass ? "wave-end gate order ok" : "wave-end gate order WRONG",
-            g_cpp_scalar_impl_ran ? 1 : 0);
-        Report("CAP-102-cpp-wave-end-gate-order", pass, reason);
-    }
-
-    // --- Row: crosslang — Lua set a C++-declared behavior --------------------
-    // cpp_crosslang was declared in C++; the Lua sibling sets it to 42 at its
-    // main stop. The C++ implementation fired at the boundary with 42.
-    {
-        kcdxBehaviorValue h = 0;
-        bool got = g_beh->Get("cpp_crosslang", &h, g_self);
-        int64_t val = -1;
-        kcdxBehaviorAccess a = got ? g_beh->AsInt64(h, &val)
-                                   : kcdxBehaviorAccess_BadHandle;
-        const bool pass = got && a == kcdxBehaviorAccess_Ok && val == 42 &&
-                          g_cpp_crosslang_impl_ran &&
-                          g_cpp_crosslang_impl_value == 42;
-        char reason[400];
-        snprintf(reason, sizeof(reason),
-            "%s — Get(cpp_crosslang)=%lld (access=%d); impl ran=%d impl saw=%lld "
-            "(PASS: a C++-DECLARED behavior SET FROM LUA — the Lua sibling set "
-            "cpp_crosslang=42 at its main stop, the C++ implementation fired with "
-            "42 at the boundary; the ONE registry serves both languages)",
-            pass ? "Lua-sets-C++-declared ok" : "Lua-sets-C++-declared WRONG",
-            static_cast<long long>(val), static_cast<int>(a),
-            g_cpp_crosslang_impl_ran ? 1 : 0,
-            static_cast<long long>(g_cpp_crosslang_impl_value));
-        Report("CAP-102-crosslang-lua-sets-cpp", pass, reason);
-    }
+    // NOTE: CAP-102-cpp-wave-end-gate-order + CAP-102-crosslang-lua-sets-cpp run
+    // in the InputLoaded handler, NOT here. Both assert an impl-fire flag
+    // (cpp_scalar's / cpp_crosslang's), an APPLIED-state observation the apply
+    // boundary writes AFTER PostGameLoad. The wave-end-order row uses cpp_scalar's
+    // impl-fire as transitive proof the C++ wave reached the live VM; the
+    // crosslang row asserts cpp_crosslang's impl fired with the Lua-set 42. Both
+    // are post-boundary reads — see OnMessage.
 
     // --- Row: crosslang — C++ sets a Lua-declared behavior -------------------
     // The Lua sibling declares lua_consumed (default int 0); C++ sets it to 99

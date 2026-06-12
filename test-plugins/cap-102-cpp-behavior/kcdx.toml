@@ -13,18 +13,24 @@
 # (cap-102-cpp-behavior-lua/) for the two cross-language rows. The ONE registry
 # serves both surfaces.
 #
-# The 11 rows (all boot-only; auto-pass; C++ main-stop rows report from
-# kcdxPlugin_PostGameLoad; two POST-BOUNDARY rows — stale-handle-on-raise +
-# offthread-query-wall — report from the InputLoaded handler (the only point
-# BoundaryCompleted()/PostLoad() is true); an InputLoaded backstop FAILs any
-# unreached row):
+# The 11 rows (all boot-only; auto-pass). The synchronous-record C++ rows (List,
+# table-value, coercion-mismatch, stale-handle, early-stop, C++-sets-Lua) report
+# from kcdxPlugin_PostGameLoad. The BOUNDARY-DEPENDENT rows — those reading an
+# impl-fire flag or an applied/coerced value the apply boundary writes AFTER
+# PostGameLoad — report from the InputLoaded handler (post-boundary, the only
+# point BoundaryCompleted()/PostLoad() is true): declare-set-get,
+# crosslang-lua-sets-cpp, wave-end-gate-order, stale-handle-on-raise,
+# offthread-query-wall. An InputLoaded backstop FAILs any unreached row:
 #
-#   * CAP-102-cpp-declare-set-get
+#   * CAP-102-cpp-declare-set-get  (reported at InputLoaded, post-boundary)
 #       cpp_scalar (C++-declared bool) is SET FROM LUA (the sibling sets it true
 #       at its main stop); the C++ implementation fires at the apply boundary
-#       with true; Get(cpp_scalar) reads true. PASS requires get()==true AND the
-#       impl fired with true. FAILS if the cross-language set never reached the
-#       implementation or get() does not reflect it.
+#       with true; the applied Get(cpp_scalar) reads true. PASS requires
+#       get()==true AND the impl fired with true. Reported at InputLoaded because
+#       the impl-fire flags + the applied value exist only post-boundary (at
+#       PostGameLoad the Lua-set value is RECORDED but not yet APPLIED). FAILS if
+#       the cross-language set never reached the implementation or get() does not
+#       reflect it.
 #
 #   * CAP-102-cpp-list
 #       List("ts.cap_102_cpp_behavior.") enumerates >= 2 entries including
@@ -80,19 +86,21 @@
 #       re-issues step-4's thin-C-harness fixture through the REAL interface.
 #       FAILS if the early-stop Set succeeds or the error does not name the wall.
 #
-#   * CAP-102-cpp-wave-end-gate-order
+#   * CAP-102-cpp-wave-end-gate-order  (reported at InputLoaded, post-boundary)
 #       the VM-adoption wave-end gate held the engine off the VM until the C++
 #       wave finished — proven transitively (cpp_scalar's impl fired with the
 #       Lua-set value, so the boundary read the VM the C++ wave used; an inverted
-#       gate would have raced the engine's VM overwrite). The falsifiable
-#       BOOT-ORDER backstop the agent greps: in the engine log, LUA_VM_BUILD
-#       'wave_end_gate_signaled' MUST precede 'engine_adopted_kcdx_state'.
+#       gate would have raced the engine's VM overwrite). Reported at InputLoaded
+#       because the proof is cpp_scalar's impl-fire flag, written post-boundary.
+#       The falsifiable BOOT-ORDER backstop the agent greps: in the engine log,
+#       LUA_VM_BUILD 'wave_end_gate_signaled' MUST precede 'engine_adopted_kcdx_state'.
 #
-#   * CAP-102-crosslang-lua-sets-cpp
+#   * CAP-102-crosslang-lua-sets-cpp  (reported at InputLoaded, post-boundary)
 #       a C++-DECLARED behavior (cpp_crosslang) SET FROM LUA — the sibling sets it
 #       42 at its main stop; the C++ implementation fires with 42 at the boundary;
-#       Get reads 42. The ONE registry serves both languages. FAILS if the value
-#       did not cross the language boundary.
+#       Get reads 42. The ONE registry serves both languages. Reported at
+#       InputLoaded because the impl-fire flags exist only post-boundary. FAILS if
+#       the value did not cross the language boundary.
 #
 #   * CAP-102-crosslang-cpp-sets-lua
 #       a LUA-DECLARED behavior (lua_consumed) SET FROM C++ — the C++ plugin sets
