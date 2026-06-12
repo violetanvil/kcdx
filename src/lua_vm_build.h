@@ -76,4 +76,45 @@ lua_State* BuiltState();
 // executed, not merely that the build succeeded.
 bool InterceptFired();
 
+// === The VM-adoption wave-end GATE (behavior design §8, ruling 2026-06-11) ===
+//
+// CROSS-THREAD HAPPENS-BEFORE, NEVER TIMED. The intercept (Intercept_lua_newstate)
+// runs on the GAME MAIN thread when CScriptSystem::Init calls lua_newstate; the
+// C++ plugin wave (every kcdxPlugin_Load) runs on the WORKER thread inside
+// kcdx::plugins::DiscoverAndLoad. The behavior C++ value-handle QUERY contract
+// requires the live VM to be reachable from a C++ plugin's load-wave code under a
+// GATED guarantee — so the intercept must not return kcdx's state (handing the VM
+// to the engine to overwrite-and-adopt) until the C++ wave has finished using it.
+//
+// The gate is a manual-reset Win32 EVENT (the same mechanism the ctor bracket's
+// g_kcdxReadyEvent uses — an explicit signal + wait, never a wall-clock margin):
+//   - CreateCppWaveEndGate() — worker, called inside BuildAndAdoptVM BEFORE the
+//     intercept is armed, so the wait gate is a non-null handle the moment the
+//     intercept can fire (the game thread reaches Init ~2s later).
+//   - SignalCppWaveEnd()     — worker, called at the END of DiscoverAndLoad
+//     (the C++ wave is complete). SetEvent; the manual-reset event stays signaled.
+//   - The intercept WAITS on it (WaitForSingleObject, INFINITE) before returning
+//     kcdx's state — so the engine adopts the VM only after the C++ wave is done.
+//
+// Boot-only, one-shot. The OBSERVED margin is ~5.6 s (the worker finishes the C++
+// wave well before the game thread reaches Init on a populated tree), so the
+// typical wait is ZERO — the event is already signaled by the time the intercept
+// fires. INFINITE is correct: the worker WILL signal unless it hangs entirely (in
+// which case the game cannot init regardless).
+
+// Create the C++-wave-end gate event (manual-reset, initially unsignaled). Worker
+// thread, BEFORE the intercept arms. Idempotent — a second call is a no-op.
+void CreateCppWaveEndGate();
+
+// Signal C++-wave end — SetEvent on the gate. Worker thread, at DiscoverAndLoad
+// end. Idempotent (manual-reset stays signaled). A null handle (CreateCppWaveEndGate
+// never ran) logs loud and no-ops.
+void SignalCppWaveEnd();
+
+// True iff the C++-wave-end gate has been signaled (the C++ wave completed before
+// this read). The cap self-test's wave-end ORDER assertion reads this on the game
+// main thread to confirm the signal preceded adoption. Acquire-loads the worker's
+// SetEvent observability (the underlying handle is published with release/acquire).
+bool CppWaveEnded();
+
 }  // namespace kcdx::lua_vm_build

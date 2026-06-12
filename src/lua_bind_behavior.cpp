@@ -804,6 +804,11 @@ int Lua_Set(lua_State* L) {
     b->recordedRef  = newRef;
     b->setterAuthor = owner.author;
     b->setterPlugin = owner.plugin;
+    // Bump the value generation — the value get() answers changed, so any
+    // outstanding C++ value handle on this behavior goes stale (design §8). The
+    // C++ surface and the Lua surface share the ONE registry, so a Lua-side set
+    // must invalidate a C++ handle just as a C++-side set does.
+    ++b->valueGeneration;
 
     // The engine-tracked set-edge: consumer plugin -> the behavior it set
     // (in-memory; feeds the ordering errors + persistence of later steps).

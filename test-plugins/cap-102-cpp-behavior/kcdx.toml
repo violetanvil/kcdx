@@ -1,0 +1,143 @@
+# CAP-102 — kcdxBehaviorInterface (C++ mirror of kcdx.behavior.*) end-to-end.
+#
+# The verification plugin that proves kcdxBehaviorInterface v1 works for a real
+# C++ DLL author: the four verbs (Declare/Set/Get/List) over the engine-owned
+# value-handle model (values NEVER marshalled out of the one VM), the C++-side
+# value builders, generation-checked staleness (incl. the impl-RAISE toggle
+# clear), the coercion accessors, the table-traversal accessors, the QUERY
+# thread-wall (now exercised via an off-thread worker fixture), the window law,
+# and the VM-adoption wave-end gate. Invoke (calling a callable value) + the
+# off-thread queued SET are a LATER step — NOT exercised here.
+#
+# Shape: NATIVE C++ DLL plugin + a sibling Lua plugin
+# (cap-102-cpp-behavior-lua/) for the two cross-language rows. The ONE registry
+# serves both surfaces.
+#
+# The 11 rows (all boot-only; auto-pass; C++ main-stop rows report from
+# kcdxPlugin_PostGameLoad; two POST-BOUNDARY rows — stale-handle-on-raise +
+# offthread-query-wall — report from the InputLoaded handler (the only point
+# BoundaryCompleted()/PostLoad() is true); an InputLoaded backstop FAILs any
+# unreached row):
+#
+#   * CAP-102-cpp-declare-set-get
+#       cpp_scalar (C++-declared bool) is SET FROM LUA (the sibling sets it true
+#       at its main stop); the C++ implementation fires at the apply boundary
+#       with true; Get(cpp_scalar) reads true. PASS requires get()==true AND the
+#       impl fired with true. FAILS if the cross-language set never reached the
+#       implementation or get() does not reflect it.
+#
+#   * CAP-102-cpp-list
+#       List("ts.cap_102_cpp_behavior.") enumerates >= 2 entries including
+#       cpp_scalar + cpp_table with their stamped full names. FAILS if either is
+#       missing from the enumeration.
+#
+#   * CAP-102-cpp-table-value
+#       never-set cpp_table answers its default { 7 }: TypeOf==table, Length==1,
+#       Index(1)==7 (traversed ON the VM via the table accessors, no value
+#       marshalled out); the implementation did NOT fire (default is a get()
+#       answer, not an applied state). FAILS if the type/length/element is wrong
+#       or the impl fired on a never-set behavior.
+#
+#   * CAP-102-cpp-coercion-mismatch
+#       AsInt64 on a table value returns kcdxBehaviorAccess_TypeError, the
+#       out-param is UNTOUCHED (still 999), GetLastError names the actual type
+#       'table'. FAILS if a table is silently coerced or the out-param is written.
+#
+#   * CAP-102-cpp-stale-handle
+#       Get a handle on lua_togglable, toggle the value (post-load main-thread
+#       set on a revert declarer — replaces the value, bumps the generation), the
+#       OLD handle's accessor now returns kcdxBehaviorAccess_Stale with a
+#       "stale"-naming teaching error. FAILS if the old handle still reads (a
+#       dangle into the replaced ref) or does not report Stale.
+#
+#   * CAP-102-cpp-stale-handle-on-raise  (reported at InputLoaded, post-boundary)
+#       The impl-RAISE counterpart of the stale-handle row: Get a handle on
+#       lua_raiser (a revert declarer applied at the boundary with false), toggle
+#       it to true — the toggle's implementation RAISES, so the registry clears
+#       the record to unset AND must bump the generation. The C++ Set returns true
+#       at the consumer (a declarer-code raise is logged against the declarer, not
+#       re-surfaced); the OBSERVABLE proof the raise ran is the OLD handle's
+#       accessor now returning kcdxBehaviorAccess_Stale. FAILS if the old handle
+#       reads Ok (the missed generation bump = a silent wrong value — a fresh read
+#       into the cleared/default ref). Runs at InputLoaded because the toggle path
+#       (which invokes the impl) needs BoundaryCompleted()==true.
+#
+#   * CAP-102-cpp-offthread-query-wall  (reported at InputLoaded, post-boundary)
+#       The QUERY thread-wall regression: from a transient worker std::thread
+#       spawned at a POST-LOAD point (the InputLoaded handler — PostLoad() is true
+#       only post-boundary), call Get(cpp_scalar). PASS iff the off-thread call is
+#       REJECTED (Get returns false) with kcdxBehaviorAccess_Thread and the error
+#       names BOTH sanctioned patterns (capture-in-impl + copy-out-on-main), and
+#       no crash. FAILS if the off-thread call SUCCEEDED (a silent off-thread VM
+#       touch — the race the wall prevents), returned the wrong verdict, or
+#       crashed. The thread is JOINED before the report (no dangling handle); the
+#       wall returns before any VM deref, so the off-thread call cannot crash.
+#
+#   * CAP-102-cpp-early-stop-out-of-window
+#       a plugin-tier Set from kcdxPlugin_Load (the EARLY worker stop) on
+#       cpp_scalar is REJECTED (Set returns false) with an out-of-window /
+#       main-stop teaching error — plugin behaviors resolve at the main stop. This
+#       re-issues step-4's thin-C-harness fixture through the REAL interface.
+#       FAILS if the early-stop Set succeeds or the error does not name the wall.
+#
+#   * CAP-102-cpp-wave-end-gate-order
+#       the VM-adoption wave-end gate held the engine off the VM until the C++
+#       wave finished — proven transitively (cpp_scalar's impl fired with the
+#       Lua-set value, so the boundary read the VM the C++ wave used; an inverted
+#       gate would have raced the engine's VM overwrite). The falsifiable
+#       BOOT-ORDER backstop the agent greps: in the engine log, LUA_VM_BUILD
+#       'wave_end_gate_signaled' MUST precede 'engine_adopted_kcdx_state'.
+#
+#   * CAP-102-crosslang-lua-sets-cpp
+#       a C++-DECLARED behavior (cpp_crosslang) SET FROM LUA — the sibling sets it
+#       42 at its main stop; the C++ implementation fires with 42 at the boundary;
+#       Get reads 42. The ONE registry serves both languages. FAILS if the value
+#       did not cross the language boundary.
+#
+#   * CAP-102-crosslang-cpp-sets-lua
+#       a LUA-DECLARED behavior (lua_consumed) SET FROM C++ — the C++ plugin sets
+#       it 99 at its main stop (a post-load main-thread toggle on the Lua
+#       declarer's revert behavior); Get reads 99 back. FAILS if the C++ set did
+#       not resolve/record onto the Lua-declared behavior.
+#
+# (The off-thread post-load QUERY now HAS a regression fixture —
+# CAP-102-cpp-offthread-query-wall, above. The seam: a transient worker
+# std::thread spawned from the InputLoaded handler (a post-boundary point where
+# PostLoad() is true) drives a deliberately-off-thread Get(), so
+# PostLoad() && !IsGameMainThread() holds and the wall fires. The thread is
+# joined before the report; the wall returns before any VM deref, so the
+# off-thread call is crash-safe.)
+#
+# Test mode: boot-only. Load order: the C++ plugin runs at priority 30, the Lua
+# sibling at 70 (the C++ declares exist before the Lua sets; the Lua declares
+# exist before the C++ PostGameLoad sets — both also guaranteed by the
+# early/main/after phase ordering).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_102_cpp_behavior"
+display_name        = "CAP-102 kcdxBehaviorInterface (C++)"
+author              = "ts"
+description         = "C++ DLL exercising kcdxBehaviorInterface v1: declare/set/get/list, value builders, the engine-owned value-handle model (coercion + table-traversal accessors, generation-checked staleness), the query thread-wall, the window law, the VM-adoption wave-end gate, and cross-language declare/set with the sibling Lua plugin."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-102-cpp-declare-set-get",
+                       "CAP-102-cpp-list",
+                       "CAP-102-cpp-table-value",
+                       "CAP-102-cpp-coercion-mismatch",
+                       "CAP-102-cpp-stale-handle",
+                       "CAP-102-cpp-stale-handle-on-raise",
+                       "CAP-102-cpp-offthread-query-wall",
+                       "CAP-102-cpp-early-stop-out-of-window",
+                       "CAP-102-cpp-wave-end-gate-order",
+                       "CAP-102-crosslang-lua-sets-cpp",
+                       "CAP-102-crosslang-cpp-sets-lua"]
+
+[load_order]
+priority = 30
+
+[entrypoints]
+dll = "cap-102.dll"

@@ -4,6 +4,8 @@
 
 #include "lua_vm_build.h"
 
+#include <windows.h>  // the C++-wave-end gate event (CreateEventW / SetEvent / Wait)
+
 #include <atomic>
 #include <cstdint>
 
@@ -43,6 +45,22 @@ std::atomic<bool> g_done{false};
 // cap-81 self-test's adoption-path-executed signal. Game-thread write,
 // game-thread + test read.
 std::atomic<bool> g_interceptFired{false};
+
+// === The C++-wave-end GATE (behavior design §8) — a manual-reset Win32 event the
+// intercept WAITS on before returning kcdx's state, so the engine adopts the VM
+// only after the C++ plugin wave (DiscoverAndLoad) has finished using it. The
+// SAME signal+wait mechanism the ctor bracket's g_kcdxReadyEvent uses — an
+// explicit cross-thread happens-before edge, NEVER a wall-clock margin.
+//
+// Created on the worker (CreateCppWaveEndGate, inside BuildAndAdoptVM BEFORE the
+// intercept arms); SetEvented on the worker at DiscoverAndLoad end
+// (SignalCppWaveEnd); waited on by the intercept on the game main thread. The
+// handle crosses worker->game, so the storage is atomic with release/acquire.
+std::atomic<HANDLE> g_cppWaveEndEvent{nullptr};
+
+// One-shot latch for CreateCppWaveEndGate (a second call no-ops; the handle is
+// owned process-lifetime by this TU, never closed — boot-only).
+std::atomic<bool> g_cppWaveGateCreated{false};
 
 // === The lua_newstate-callee INTERCEPT (engine adoption) ===
 //
@@ -86,13 +104,49 @@ extern "C" lua_State* Intercept_lua_newstate(lua_Alloc /*f*/, void* /*ud*/) {
                 "wrong state."));
         return nullptr;
     }
+    // === THE WAVE-END GATE WAIT (behavior design §8) ===
+    // Block until the C++ plugin wave (DiscoverAndLoad on the worker) signals it
+    // is done. The engine adopts kcdx's VM only AFTER the C++ wave finished using
+    // it, so a C++ plugin's load-wave behavior QUERY (Get + every value-handle
+    // accessor) reaches the live VM under the gated guarantee. The handle was
+    // created on the worker BEFORE this intercept armed (CreateCppWaveEndGate in
+    // BuildAndAdoptVM), so the acquire-load below observes a non-null handle the
+    // moment the intercept can fire. INFINITE is correct: the worker WILL signal
+    // unless it hangs entirely. OBSERVED margin ~5.6 s — the worker finishes the
+    // wave well before the game thread reaches Init, so the typical wait is ZERO
+    // (the event is already signaled). One-shot, boot-only — NEVER a hot path.
+    HANDLE waveGate = g_cppWaveEndEvent.load(std::memory_order_acquire);
+    if (waveGate) {
+        const DWORD waitStatus = WaitForSingleObject(waveGate, INFINITE);
+        if (waitStatus != WAIT_OBJECT_0) {
+            LOG_WARN_KV(kCategory, "wave_end_gate_wait_anomaly",
+                ::kcdx::log::KV("wait_status",
+                    static_cast<long long>(waitStatus)),
+                ::kcdx::log::KV("detail",
+                    "WaitForSingleObject on the C++-wave-end gate returned a "
+                    "non-WAIT_OBJECT_0 status — proceeding to adopt the state "
+                    "anyway (the engine cannot init without a VM); a query from "
+                    "a C++ plugin's load wave may observe an incomplete VM."));
+        }
+    } else {
+        LOG_ERROR_KV(kCategory, "wave_end_gate_missing",
+            ::kcdx::log::KV("detail",
+                "the C++-wave-end gate event is null at intercept fire — "
+                "CreateCppWaveEndGate did not run before the intercept armed "
+                "(an ordering bug), or its CreateEventW failed (logged loud). "
+                "Adopting the state WITHOUT the wave-end wait; a C++ load-wave "
+                "behavior query may race the engine's overwrite of the VM."));
+    }
+
     g_interceptFired.store(true, std::memory_order_release);
     LOG_INFO_KV(kCategory, "engine_adopted_kcdx_state",
         ::kcdx::log::KV("L", reinterpret_cast<const void*>(L)),
         ::kcdx::log::KV("detail",
             "CScriptSystem::Init called lua_newstate; the intercept returned "
             "kcdx's pre-built state (the engine adopts it; the original "
-            "lua_newstate never ran — no second VM)."));
+            "lua_newstate never ran — no second VM). The C++-wave-end gate was "
+            "signaled before this return (queries during the C++ load wave "
+            "reached the live VM under the gated guarantee)."));
     return L;
 }
 
@@ -104,6 +158,74 @@ lua_State* BuiltState() {
 
 bool InterceptFired() {
     return g_interceptFired.load(std::memory_order_acquire);
+}
+
+void CreateCppWaveEndGate() {
+    bool expected = false;
+    if (!g_cppWaveGateCreated.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel)) {
+        return;  // already created — idempotent
+    }
+    // Manual-reset, initially UNSIGNALED. Manual-reset so once the worker
+    // SetEvents it (DiscoverAndLoad end), it stays signaled — an intercept fire
+    // that arrives after the signal returns from its wait immediately.
+    HANDLE h = CreateEventW(nullptr, /*bManualReset=*/TRUE,
+                            /*bInitialState=*/FALSE, nullptr);
+    if (!h) {
+        LOG_ERROR_KV(kCategory, "wave_end_gate_create_failed",
+            ::kcdx::log::KV("gle", static_cast<long long>(GetLastError())),
+            ::kcdx::log::KV("detail",
+                "CreateEventW for the C++-wave-end gate returned null — the "
+                "intercept will adopt the VM WITHOUT waiting for the C++ wave "
+                "(a C++ load-wave behavior query may race the engine's VM "
+                "overwrite). Leaving the handle null; the intercept's "
+                "null-handle path logs loud and proceeds."));
+        g_cppWaveGateCreated.store(false, std::memory_order_release);  // allow retry
+        return;
+    }
+    g_cppWaveEndEvent.store(h, std::memory_order_release);
+    LOG_DEBUG_KV(kCategory, "wave_end_gate_created",
+        ::kcdx::log::KV("detail",
+            "C++-wave-end gate created (manual-reset, unsignaled) on the worker "
+            "before the intercept armed; SignalCppWaveEnd sets it at "
+            "DiscoverAndLoad end, the intercept waits on it before adopting."));
+}
+
+void SignalCppWaveEnd() {
+    HANDLE h = g_cppWaveEndEvent.load(std::memory_order_acquire);
+    if (!h) {
+        LOG_ERROR_KV(kCategory, "wave_end_gate_signal_no_handle",
+            ::kcdx::log::KV("detail",
+                "SignalCppWaveEnd ran but the gate handle is null — "
+                "CreateCppWaveEndGate was not called before DiscoverAndLoad "
+                "finished, or its CreateEventW failed (logged loud). The "
+                "intercept's null-handle path adopts the VM without waiting."));
+        return;
+    }
+    if (SetEvent(h)) {
+        LOG_DEBUG_KV(kCategory, "wave_end_gate_signaled",
+            ::kcdx::log::KV("detail",
+                "C++ plugin wave finished (DiscoverAndLoad returned); the "
+                "wave-end gate is SetEvented. The VM-adoption intercept may now "
+                "return kcdx's state — queries during the C++ wave reached the "
+                "live VM under the gated guarantee."));
+    } else {
+        LOG_ERROR_KV(kCategory, "wave_end_gate_signal_failed",
+            ::kcdx::log::KV("gle", static_cast<long long>(GetLastError())),
+            ::kcdx::log::KV("detail",
+                "SetEvent on the C++-wave-end gate failed — the intercept may "
+                "block INFINITE on the unsignaled event (the engine cannot "
+                "init). This is a hard worker-side fault."));
+    }
+}
+
+bool CppWaveEnded() {
+    HANDLE h = g_cppWaveEndEvent.load(std::memory_order_acquire);
+    if (!h) return false;
+    // A zero-timeout wait reports the signaled state WITHOUT blocking — the
+    // game-thread order-assertion reads it to confirm the signal preceded the
+    // adoption read.
+    return WaitForSingleObject(h, 0) == WAIT_OBJECT_0;
 }
 
 bool BuildAndAdoptVM() {
@@ -200,6 +322,14 @@ bool BuildAndAdoptVM() {
                 "its own. kcdx's state is now authoritative; the lua_pcall guard "
                 "flags any future divergent L."));
     }
+
+    // --- 4b. Create the C++-wave-end gate (behavior design §8) BEFORE the
+    //         intercept arms. The intercept (step 5) waits on this gate before
+    //         returning kcdx's state; creating it here guarantees the gate is a
+    //         non-null handle the moment the intercept can fire on the game
+    //         thread (~2s later). SignalCppWaveEnd is called at DiscoverAndLoad
+    //         end (dllmain). An explicit signal+wait — never a wall-clock margin. ---
+    CreateCppWaveEndGate();
 
     // --- 5. Install the lua_newstate-callee INTERCEPT (engine adoption). An
     //         engine-stamped Mode::Replace chain entry on the resolved

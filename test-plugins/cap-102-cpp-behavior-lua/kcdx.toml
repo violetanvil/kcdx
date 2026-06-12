@@ -1,0 +1,54 @@
+# CAP-102 sibling Lua plugin — the cross-language half of the C++
+# kcdxBehaviorInterface test (cap-102-cpp-behavior/). The ONE behavior registry
+# serves both languages; this plugin (at its main stop, plugin.lua):
+#
+#   - DECLARES lua_togglable (bool, default false, WITH a revert) — the C++
+#     plugin Gets a handle, toggles it post-load, and asserts the old handle is
+#     generation-checked Stale.
+#   - DECLARES lua_consumed (int, default 0, WITH a revert) — the C++ plugin
+#     SETs it to 99 at its main stop (a Lua-declared behavior set from C++); its
+#     implementation records the value it received so the input_loaded row can
+#     assert the C++ Set drove it.
+#   - DECLARES lua_raiser (bool, default false, WITH a revert; impl RAISES on the
+#     toggle to true) + load-sets it false (so it is applied at the boundary) —
+#     the C++ plugin Gets a handle, toggles it to true at InputLoaded (impl
+#     raises), and asserts the old handle is generation-checked Stale (the
+#     impl-RAISE clear path bumps the generation).
+#   - SETS cpp_scalar = true + cpp_crosslang = 42 (the C++ plugin's tier — a
+#     C++-declared behavior set FROM LUA).
+#
+# It reports TWO rows:
+#   - CAP-102-lua-sibling-crosslang (at ready): its declares + sets executed
+#     without error. FAILS if any declare/set RAISED.
+#   - CAP-102-crosslang-cpp-sets-lua-impl-fired (at input_loaded): the C++
+#     plugin's Set(lua_consumed=99) DROVE this Lua-declared behavior's
+#     implementation — the impl fired with 99 (the value-effect half of C++→Lua
+#     parity; the C++ plugin's CAP-102-crosslang-cpp-sets-lua proves the Set
+#     resolved+recorded, this proves it fired the Lua implementation). FAILS if
+#     the impl never ran or ran with a value other than 99.
+# The OTHER value-effect assertions (did the C++ implementations fire with the
+# Lua-set values) are the C++ plugin's — it owns its own boundary observation.
+#
+# Engine-derived stamp prefix: ts.cap_102_cpp_behavior_lua.
+#
+# Test mode: boot-only. Load order priority 70 (after the C++ plugin at 30).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_102_cpp_behavior_lua"
+display_name        = "CAP-102 behavior cross-language (Lua sibling)"
+author              = "ts"
+description         = "Lua sibling for the C++ kcdxBehaviorInterface test: declares two togglable behaviors the C++ plugin consumes and sets two C++-declared behaviors from Lua — proving the ONE registry serves both languages."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["CAP-102-lua-sibling-crosslang",
+                       "CAP-102-crosslang-cpp-sets-lua-impl-fired"]
+
+[load_order]
+priority = 70
+
+[entrypoints]
+lua = "plugin.lua"

@@ -117,6 +117,16 @@ struct Behavior {
     // drain's invocation order (design §5.3). Assigned at declare.
     uint64_t declareSeq = 0;
 
+    // Value generation — bumped EVERY time the value a get() would answer
+    // changes (the load-window set, the post-load toggle success, the
+    // boundary-raise clear). The C++ value-handle model (design §8) reads it:
+    // a handle minted by Get() captures (fullName, generation); an accessor
+    // whose behavior's generation has since advanced is STALE — a
+    // generation-checked teaching error, never a dangle into a replaced ref.
+    // Monotonic, never reset; starts at 1 so a never-minted 0 handle is always
+    // stale-by-construction.
+    uint64_t valueGeneration = 1;
+
     // "author.plugin" for the plugin tier; "kcdx" for the engine catalog.
     std::string DeclarerLabel() const;
 };
@@ -276,5 +286,44 @@ bool ApplyPostLoadToggle(lua_State* L,
                          Behavior* b,
                          int newValueRef,
                          std::string& errOut);
+
+// === The C++ value-handle seam (behavior design §8) ===
+//
+// The C++ interface (src/behavior_interface.cpp) calls INTO these. The Lua
+// binder is the main-stop surface that owns its own record path inline; the
+// C++ interface routes its load-window record + its value reads through the
+// registry so the value model (refs on the one VM, the generation counter) has
+// ONE owner. None of these MARSHALS a value out — the C++ side derefs the ref
+// returned here ON the live VM (main thread), the registry never copies a value.
+
+// Record a load-window set from the C++ surface (last-wins), the registry-owned
+// mirror of the binder's inline load record. `newValueRef` is a real ref the
+// caller pinned (nil rejected upstream); the registry releases the OLD recorded
+// ref it replaces, stores the new one (transferring ownership), records the
+// setter identity, and BUMPS valueGeneration (so any outstanding C++ value
+// handle on this behavior goes stale). The caller has already resolved the
+// window law + the post-load/boundary gate (a load-window set only). Records no
+// edge — the caller records the consumer->declarer edge (it owns the consumer
+// identity).
+void RecordLoadSet(lua_State* L,
+                   Behavior* b,
+                   int newValueRef,
+                   const std::string& setterAuthor,
+                   const std::string& setterPlugin);
+
+// The ref a get() would answer for `b` right now — the recorded value if set,
+// else the declarer's default. NEVER kNoRef (default is always a real ref). The
+// C++ Get path mints a handle against (b->fullName, b->valueGeneration) + this
+// ref; the accessor re-reads the generation to detect staleness, then
+// lua_rawgeti's this ref on the live VM. A pure read — no mutation, no generation
+// bump.
+int CurrentValueRef(const Behavior* b);
+
+// True once the apply boundary completed AND we are past the load waves — the
+// C++ query thread-wall's "post-load" determinant (design §8). The C++ interface
+// pairs this with the live-VM + main-thread checks to decide whether an
+// off-thread query is the out-of-window teaching-error case. Mirror of
+// BoundaryCompleted() (named for the query-wall caller's intent).
+inline bool PostLoad() { return BoundaryCompleted(); }
 
 }  // namespace kcdx::behavior_registry

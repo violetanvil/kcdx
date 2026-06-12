@@ -172,6 +172,7 @@ enum kcdxInterfaceID {
     kcdxInterface_Functions      = 12, // C++ kcdx.functions.* mirror (function references)
     kcdxInterface_Dll            = 13, // C++ kcdx.dll.declare mirror (declare own DLL fns)
     kcdxInterface_Statement      = 14, // C++ kcdx.statement.* mirror (static-bytes modification)
+    kcdxInterface_Behavior       = 15, // C++ kcdx.behavior.* mirror (named behaviors + value handles)
 };
 
 // Log levels passed to kcdxInterface::Log. Match the severities the engine
@@ -2934,6 +2935,303 @@ typedef struct kcdxStatementInterface {
     // against an older version reads the prefix members at their original
     // offsets, so appending cannot shift them (append-only ABI).
 } kcdxStatementInterface;
+
+// -----------------------------------------------------------------------------
+// kcdxBehaviorInterface — C++ mirror of the Lua kcdx.behavior.* surface
+// -----------------------------------------------------------------------------
+//
+// Fetched via kcdxInterface::QueryInterface(kcdxInterface_Behavior,
+// kcdxBehaviorInterface_Version). C++ DLLs declare, set, get, and list NAMED
+// BEHAVIORS through this interface; the surface is feature-parity with the Lua
+// kcdx.behavior.* verbs (ONE model, two languages, full parity at all times).
+//
+// A *behavior* is a named, settable unit of intent: a value plus the declarer's
+// implementation that reconfigures the game to match it, under the engine's
+// apply contract. Two tiers register through ONE runtime registry shared by
+// both languages — plugin-declared `<author>.<plugin>.<bare>` (the engine
+// derives the prefix from your manifest; you write the BARE name) and
+// engine-catalog `kcdx.behavior.<bare>`. A behavior declared in C++ is settable
+// and listable from Lua and vice versa; the registry is the same.
+//
+// VALUE MODEL — an engine-owned HANDLE into the one VM; values are NEVER
+// marshalled out. Behavior values (default, recorded) live in the engine-owned
+// Lua VM (the one VM kcdx builds — there is no second VM). C++ never receives a
+// copy of a value; Get() returns an OPAQUE value handle valid while that value
+// is the behavior's recorded (or default) value. Read it through the coercion
+// accessors (AsBool / AsInt64 / AsDouble / AsString) for scalars, or the
+// table-traversal accessors for table values. INVALIDATION: when the recorded
+// value is replaced (any set/toggle on that behavior, from either language), an
+// outstanding handle goes STALE — every accessor on a stale handle returns a
+// generation-checked teaching error through the error channel; a handle never
+// dangles into a replaced ref. One uniform concept for EVERY Lua type, no barred
+// type.
+//
+// C++-side value CONSTRUCTION (for Set and Declare's default) uses typed builders
+// (NewBool / NewInt64 / NewDouble / NewString / table builders) + a callable-value
+// builder (a C function pointer + context registers AS a value). A value is built,
+// passed to Set/Declare, and the engine pins it on the VM — the author writes
+// typed values, never hex, never a raw VM pointer.
+//
+// THREAD CONTRACT — one law, two halves (design §8):
+//   - QUERIES (Get + every value-handle accessor) need the live VM: legal during
+//     the load waves under the VM-adoption WAVE-END GATE guarantee (the loader
+//     signals C++-wave end; the engine's VM-adoption intercept waits on that
+//     signal — so a C++ plugin's load-wave query reaches the live VM), and
+//     post-load ONLY on the game main thread. An off-thread post-load query
+//     returns a teaching error naming the two sanctioned patterns (capture the
+//     value in your implementation at apply, or copy it out on the main thread).
+//     No query hides a blocking marshal.
+//   - COMMANDS (Set) — the MAIN-THREAD path is built today: a load-window Set
+//     records, a post-load main-thread Set executes the revert toggle inline. The
+//     OFF-THREAD queued Set (a post-load Set from a non-main thread queues and
+//     executes on the main thread at the next apply point) is a LATER step — for
+//     now an off-thread post-load Set returns a teaching error naming the
+//     queued-path-lands-later status. (Invoke — calling a callable value — is
+//     also the later step.)
+//
+// The disassembler test — the engine does the heavy lifting; the author declares
+// intent. The C++ author writes NAMES + TYPED VALUES; the value handle carries
+// all the VM mechanics. Zero hex, zero ABI, zero raw VM pointer.
+
+// Version 1: the four verbs (Declare/Set/Get/List), the engine-owned value-handle
+// model (coercion + table-traversal accessors, generation-checked staleness), the
+// C++-side value builders, the query thread wall, and the VM-adoption wave-end
+// gate. Invoke (calling a callable value) and the off-thread queued Set are NOT in
+// v1 — they land in a later step and append after the v1 markers (append-only ABI).
+#define kcdxBehaviorInterface_Version 1u
+
+// Opaque value handle returned by Get(). The engine maps it to a behavior's
+// recorded (or default) value on the one VM + a generation counter; an accessor
+// dereferences the value ON the VM (main thread) and coerces. 0 = an invalid /
+// never-minted handle (Get failed, or a default-constructed handle) — every
+// accessor on it returns a teaching error, never a dangle. A handle goes STALE
+// when the recorded value is replaced (generation advanced); a stale accessor
+// returns the generation-checked teaching error. Stable to copy by value; valid
+// only while the value it names is the behavior's recorded value. NEVER a raw VM
+// pointer — the value stays in the engine-owned VM.
+typedef uint64_t kcdxBehaviorValue;
+
+// Result of a value accessor — a tri-state so a coercion / staleness / thread
+// failure is LOUD (never a silently-wrong value). On kcdxBehaviorAccess_Ok the
+// out-param carries the coerced value; on a non-Ok result the out-param is
+// untouched and GetLastError() carries the teaching text.
+typedef enum kcdxBehaviorAccess {
+    kcdxBehaviorAccess_Ok        = 0,  // out-param valid
+    kcdxBehaviorAccess_Stale     = 1,  // the recorded value was replaced (generation advanced)
+    kcdxBehaviorAccess_TypeError = 2,  // coercion mismatch (e.g. AsInt64 on a table)
+    kcdxBehaviorAccess_Thread    = 3,  // off-thread post-load query (out-of-window)
+    kcdxBehaviorAccess_BadHandle = 4,  // unknown / never-minted handle (0 or a Set-error handle)
+} kcdxBehaviorAccess;
+
+// The Lua type tag a value handle currently carries — read it via TypeOf to
+// branch before coercing (e.g. take the table-traversal path on a table). Mirrors
+// the LUA_T* tags the everyday author cares about; an off-thread/stale query on
+// TypeOf returns kcdxBehaviorType_Invalid (and GetLastError carries the reason).
+typedef enum kcdxBehaviorType {
+    kcdxBehaviorType_Invalid  = 0,  // stale / off-thread / bad handle (see GetLastError)
+    kcdxBehaviorType_Nil      = 1,  // never a behavior value (nil is the unset sentinel) — defensive
+    kcdxBehaviorType_Bool     = 2,
+    kcdxBehaviorType_Number   = 3,
+    kcdxBehaviorType_String   = 4,
+    kcdxBehaviorType_Table    = 5,
+    kcdxBehaviorType_Function = 6,  // a callable value (Invoke is a later step)
+} kcdxBehaviorType;
+
+// A C++ behavior implementation / revert is a C function pointer + context. The
+// engine invokes it at the SAME apply-boundary / toggle points as a Lua one,
+// handing it the behavior's current value handle (read it with the accessors).
+// `userCtx` is the opaque context you passed to Declare — your per-behavior
+// state. Mirrors the Lua `function(value)` implementation / `function(old_value)`
+// revert.
+typedef void (*kcdxBehaviorImplFn)  (kcdxBehaviorValue value,    void* userCtx);
+typedef void (*kcdxBehaviorRevertFn)(kcdxBehaviorValue oldValue, void* userCtx);
+
+// List() per-entry callback — invoked once per enumerated behavior, in
+// stamped-name order. The strings (name / description / declarer) are owned by
+// the engine and valid for the process lifetime; `current` is a value handle for
+// this entry's current value (recorded if set, else default), valid for the
+// duration of the callback. `userCtx` is the opaque context you passed to List.
+typedef struct kcdxBehaviorListEntry {
+    const char*       name;         // the stamped full name (<author>.<plugin>.<bare> or kcdx.behavior.<bare>)
+    const char*       description;  // the declarer's one human line
+    const char*       declarer;     // "author.plugin" (plugin tier) or "kcdx" (catalog tier)
+    kcdxBehaviorValue current;      // value handle for the current value (callback-scoped)
+} kcdxBehaviorListEntry;
+typedef void (*kcdxBehaviorListCb)(const kcdxBehaviorListEntry* entry, void* userCtx);
+
+typedef struct kcdxBehaviorInterface {
+    // ------------------------------------------------------------------
+    // The four verbs — Declare / Set / Get / List (kcdx.behavior.declare /
+    // .set / .get / .list one-to-one). Each routes into the ONE behavior
+    // registry both languages share.
+    // ------------------------------------------------------------------
+
+    // Declare a behavior. `name` is the BARE name — the engine stamps
+    // <author>.<plugin>.<bare> from `owningPlugin`'s manifest (you never type
+    // your own prefix). `defaultValue` is a value handle you built (NewBool /
+    // NewInt64 / NewString / a table / a callable) — what Get() answers while
+    // the behavior was never set; it must NOT be a nil/invalid handle (nil is
+    // the unset sentinel). `impl` is invoked once at the apply boundary with the
+    // final settled value; `revert` (nullable) makes the behavior
+    // runtime-togglable (its presence allows a post-load Set). `userCtx` is your
+    // opaque per-behavior state, handed back to impl/revert.
+    //
+    // Returns true on success. Returns false + a teaching error (read via
+    // GetLastError) on: a duplicate stamped full name (the FIRST declaration
+    // stands), a missing required arg (name/defaultValue/impl), an invalid
+    // default handle, a post-load declare (declares are a load-time act), or an
+    // unknown owningPlugin. The teaching error is also logged (engine + plugin
+    // logs).
+    bool (*Declare)(const char* name,
+                    const char* description,
+                    kcdxBehaviorValue defaultValue,
+                    kcdxBehaviorImplFn impl,
+                    kcdxBehaviorRevertFn revert /* nullable */,
+                    void* userCtx,
+                    kcdxPluginHandle owningPlugin);
+
+    // Set a behavior's value. `name` resolves self > engine > other for
+    // `owningPlugin` (a bare name) or is the explicit <author>.<plugin>.<bare> /
+    // kcdx.behavior.<bare> form. `value` is a value handle you built; it must NOT
+    // be a nil/invalid handle (nil is the unset sentinel — to leave a behavior
+    // unset, don't set it).
+    //
+    // LOAD WINDOW (main-stop): records the value (last-wins); the implementation
+    // runs once at the apply boundary with the final recorded value. POST-LOAD
+    // (main thread): executes the revert toggle inline (revert(old) +
+    // implementation(new)) for a `revert` declarer, or a teaching error for a
+    // revert-less behavior. An EARLY-stop Set on a plugin-tier behavior (a
+    // kcdxPlugin_Load call, before the declaring plugin's main entry ran) is
+    // OUT-OF-WINDOW — a loud teaching error (set plugin behaviors from
+    // kcdxPlugin_PostGameLoad, the C++ main stop; catalog kcdx.behavior.* names
+    // are settable from any stop). An OFF-THREAD post-load Set is the queued path
+    // — NOT in v1; it returns a teaching error naming the later-step status.
+    //
+    // Returns true on success. Returns false + a teaching error (GetLastError) on
+    // any of the above failure modes; the discriminating §6 resolution errors
+    // (reorder / failed-load / disabled / rejected / absent / typo / bare-name)
+    // mirror the Lua surface (the wall is keyed on the early-vs-main stop, not the
+    // language).
+    bool (*Set)(const char* name,
+                kcdxBehaviorValue value,
+                kcdxPluginHandle owningPlugin);
+
+    // Get a behavior's current value as a value handle (the QUERY path). On
+    // success writes the handle to *outValue and returns true; the handle is read
+    // through the coercion / table-traversal accessors. Resolution + the query
+    // thread-wall apply: legal during the load waves (under the wave-end gate) and
+    // post-load on the game main thread only; an off-thread post-load Get returns
+    // false + the thread-contract teaching error (GetLastError). A name that does
+    // not resolve returns false + the teaching error. *outValue is untouched on
+    // any false return.
+    bool (*Get)(const char* name,
+                kcdxBehaviorValue* outValue,
+                kcdxPluginHandle owningPlugin);
+
+    // List behaviors (both tiers, one registry) whose stamped full name starts
+    // with `prefix` (null or "" = all), in stamped-name order. Invokes `callback`
+    // once per entry with a kcdxBehaviorListEntry (name / description / declarer /
+    // a current-value handle). Returns the number of entries enumerated.
+    uint32_t (*List)(const char* prefix,
+                     kcdxBehaviorListCb callback,
+                     void* userCtx);
+
+    // ------------------------------------------------------------------
+    // Value handle accessors — read a value handle ON the VM (main thread),
+    // coerce to a C type. Every accessor is generation-checked (a stale handle
+    // returns kcdxBehaviorAccess_Stale) and thread-checked (an off-thread
+    // post-load read returns kcdxBehaviorAccess_Thread). On a non-Ok result the
+    // out-param is untouched and GetLastError() carries the teaching text.
+    // ------------------------------------------------------------------
+
+    // The current Lua type of `value` (branch before coercing). Returns
+    // kcdxBehaviorType_Invalid for a stale / off-thread / bad handle (GetLastError
+    // carries the reason).
+    kcdxBehaviorType (*TypeOf)(kcdxBehaviorValue value);
+
+    // Coercion accessors — one call for the common scalar case. AsString writes a
+    // pointer to an engine-owned, callback-/call-scoped UTF-8 buffer (valid until
+    // the next accessor call on any handle; copy it if you need to keep it) + its
+    // length. A coercion mismatch (e.g. AsInt64 on a table) returns
+    // kcdxBehaviorAccess_TypeError; GetLastError names the actual type.
+    kcdxBehaviorAccess (*AsBool)  (kcdxBehaviorValue value, bool*    out);
+    kcdxBehaviorAccess (*AsInt64) (kcdxBehaviorValue value, int64_t* out);
+    kcdxBehaviorAccess (*AsDouble)(kcdxBehaviorValue value, double*  out);
+    kcdxBehaviorAccess (*AsString)(kcdxBehaviorValue value,
+                                   const char** outStr, size_t* outLen);
+
+    // Table-traversal accessors — for a value whose type is
+    // kcdxBehaviorType_Table. Length() writes the array-part length (the Lua #
+    // operator) to *outLen. Field accessors fetch a child value HANDLE by integer
+    // index (1-based, the array part) or by string key; the child handle inherits
+    // the parent's generation (it goes stale with the parent) and is read with the
+    // same accessors (tables nest). A non-table parent returns
+    // kcdxBehaviorAccess_TypeError; a missing index/key writes a nil-typed child
+    // handle (TypeOf == kcdxBehaviorType_Nil) and returns Ok.
+    kcdxBehaviorAccess (*Length)  (kcdxBehaviorValue table, size_t* outLen);
+    kcdxBehaviorAccess (*Index)   (kcdxBehaviorValue table, int64_t index,
+                                   kcdxBehaviorValue* outChild);
+    kcdxBehaviorAccess (*Field)   (kcdxBehaviorValue table, const char* key,
+                                   kcdxBehaviorValue* outChild);
+
+    // ------------------------------------------------------------------
+    // C++-side value CONSTRUCTION — typed builders. Each pins a value on the one
+    // VM (main thread) and returns a value handle you pass to Set / Declare's
+    // default. The handle is valid until consumed by Set/Declare (which take
+    // ownership of the pinned value). A builder called off-thread post-load
+    // returns 0 (an invalid handle) + a teaching error (GetLastError) — value
+    // construction needs the live VM on the main thread, same as a query.
+    // ------------------------------------------------------------------
+
+    kcdxBehaviorValue (*NewBool)  (bool v);
+    kcdxBehaviorValue (*NewInt64) (int64_t v);
+    kcdxBehaviorValue (*NewDouble)(double v);
+    kcdxBehaviorValue (*NewString)(const char* s, size_t len /* 0 = strlen */);
+
+    // Table builders — NewTable() mints an empty table value handle; SetIndex /
+    // SetField write a child value handle into it (by 1-based array index or
+    // string key). The child handle is consumed (its pinned value is moved into
+    // the table). Returns kcdxBehaviorAccess_Ok / a teaching result. Build a table
+    // by NewTable() then a sequence of SetIndex/SetField, then pass the table
+    // handle to Set/Declare.
+    kcdxBehaviorValue  (*NewTable)(void);
+    kcdxBehaviorAccess (*SetIndex)(kcdxBehaviorValue table, int64_t index,
+                                   kcdxBehaviorValue child);
+    kcdxBehaviorAccess (*SetField)(kcdxBehaviorValue table, const char* key,
+                                   kcdxBehaviorValue child);
+
+    // A C function pointer + context registers AS a callable value (for a C++
+    // default/impl that must BE a callable, or a callable behavior value). The
+    // ACCESSOR that CALLS such a value (Invoke) is a LATER step — this builder
+    // mints the value now so a callable default/value is representable (full
+    // parity: no value type is Lua-only), and Invoke appends after the v1 markers
+    // when it lands. Returns 0 + a teaching error off-thread/post-load (needs the
+    // live VM).
+    kcdxBehaviorValue (*NewCallable)(kcdxBehaviorImplFn fn, void* userCtx);
+
+    // ------------------------------------------------------------------
+    // Error channel — the teaching text for the LAST failed call on THIS thread.
+    // ------------------------------------------------------------------
+
+    // The teaching-error string for the most recent failing Declare/Set/Get/List
+    // or non-Ok accessor/builder call on the CALLING thread (thread-local). Null
+    // when the last such call succeeded. Owned by the engine, valid until the next
+    // failing call on this thread (copy it if you need to keep it). The same text
+    // is also logged (engine + plugin logs) at the failure site.
+    const char* (*GetLastError)(void);
+
+    // --- APPEND-ONLY BELOW (kcdxBehaviorInterface_Version >= 2) -----------
+    // New members go HERE, at the END, never mid-struct: a plugin DLL built
+    // against an older version reads the prefix members at their original
+    // offsets, so appending cannot shift them (append-only ABI).
+    //
+    // The LATER-STEP additions append here when they land:
+    //   - Invoke(value, args…) — call a callable value (the C++→Lua call
+    //     machinery: the pcall harness reuses, the argument-marshal layer is new).
+    //   - the off-thread queued Set acknowledgement surface (a post-load
+    //     off-thread Set queues + executes on the main thread at the next apply
+    //     point); v1 returns the teaching error naming this later-step status.
+} kcdxBehaviorInterface;
 
 // -----------------------------------------------------------------------------
 // Plugin entry points (you export these from your DLL)

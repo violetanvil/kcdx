@@ -307,6 +307,17 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // accepted by lua_registry::Append.
     kcdx::plugins::DiscoverAndLoad(kcdx::paths::PluginsDir());
 
+    // Signal C++-wave end (behavior design §8): the C++ plugin wave is complete
+    // (every kcdxPlugin_Load ran). The VM-adoption intercept (Intercept_lua_newstate,
+    // game main thread, fires later inside CScriptSystem::Init) WAITS on this
+    // signal before returning kcdx's state — so the engine adopts the VM only
+    // AFTER the C++ wave finished using it, and a C++ plugin's load-wave behavior
+    // QUERY reaches the live VM under the gated guarantee. An explicit signal+wait
+    // (the same mechanism as g_kcdxReadyEvent), never a wall-clock margin. The
+    // observed margin is ~5.6 s (the worker finishes here well before the game
+    // thread reaches Init), so the intercept's typical wait is zero.
+    kcdx::lua_vm_build::SignalCppWaveEnd();
+
     // STEP 8 (ctx B): PluginsLoaded — DiscoverAndLoad finished;
     // Plugin_Preload/Plugin_Load have fired for every plugin. By the time the
     // SELECT detour FIRES (later, inside CSystem::Init on the main thread),

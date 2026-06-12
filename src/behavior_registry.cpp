@@ -357,6 +357,7 @@ void RunApplyBoundary(lua_State* L) {
                 b->applied = false;
                 b->setterAuthor.clear();
                 b->setterPlugin.clear();
+                ++b->valueGeneration;  // get()-answered value changed → stale C++ handles
                 ++raisedCount;
                 continue;
             }
@@ -384,6 +385,7 @@ void RunApplyBoundary(lua_State* L) {
             b.recordedRef = kNoRef;
             b.setterAuthor.clear();
             b.setterPlugin.clear();
+            ++b.valueGeneration;  // get()-answered value changed → stale C++ handles
         }
     }
 
@@ -491,6 +493,7 @@ bool ApplyPostLoadToggle(lua_State* L,
         b->applied = false;
         b->setterAuthor.clear();
         b->setterPlugin.clear();
+        ++b->valueGeneration;  // get()-answered value changed → stale C++ handles
         LOG_ERROR_KV("BEHAVIOR", "toggle_implementation_raised",
             ::kcdx::log::KV("behavior", b->fullName),
             ::kcdx::log::KV("declarer", b->DeclarerLabel()),
@@ -512,11 +515,40 @@ bool ApplyPostLoadToggle(lua_State* L,
     }
     b->recordedRef = newValueRef;
     b->applied = true;
+    // The value get() answers changed → bump the generation so any outstanding
+    // C++ value handle on this behavior goes stale (design §8).
+    ++b->valueGeneration;
     LOG_INFO_KV("BEHAVIOR", "post_load_toggle_applied",
         ::kcdx::log::KV("behavior", b->fullName),
         ::kcdx::log::KV("declarer", b->DeclarerLabel()),
         ::kcdx::log::KV("revert_ran", revertRan ? "yes" : "no"));
     return true;
+}
+
+void RecordLoadSet(lua_State* L,
+                   Behavior* b,
+                   int newValueRef,
+                   const std::string& setterAuthor,
+                   const std::string& setterPlugin) {
+    // Last-wins record, the registry-owned mirror of the binder's inline load
+    // record (lua_bind_behavior.cpp). Release the OLD record it replaces, store
+    // the new ref (ownership transferred from the caller), record the setter,
+    // BUMP the generation (a get()-answered value change → outstanding C++
+    // handles go stale, design §8).
+    if (b->recordedRef != kNoRef) {
+        luaL_unref(L, LUA_REGISTRYINDEX, b->recordedRef);
+    }
+    b->recordedRef  = newValueRef;
+    b->setterAuthor = setterAuthor;
+    b->setterPlugin = setterPlugin;
+    ++b->valueGeneration;
+}
+
+int CurrentValueRef(const Behavior* b) {
+    // The ref a get() answers: the recorded value if set, else the default.
+    // Default is always a real ref, so this never returns kNoRef. A pure read
+    // — no mutation, no generation bump.
+    return (b->recordedRef != kNoRef) ? b->recordedRef : b->defaultRef;
 }
 
 }  // namespace kcdx::behavior_registry

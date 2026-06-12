@@ -189,7 +189,7 @@ the planned C++ mirror of a built Lua surface (no interface in the header yet).
 | `kcdxConsoleInterface::GetCVarInt` / `GetCVarBool` / `GetCVarFloat` (read a game CVar by name; Version 3) | Built | `kcdx.cvar.*` | [cvar.md](cvar.md) |
 | `kcdxInterface::ReportTestResult` | Built | `kcdx.test.*` | [test.md](test.md) |
 | `kcdxSerializationInterface` (per-save plugin data; `OpenRecordNamed`/`GetRecordTagName`, Version 2) | Built (name-derived UID **NYI**) | `kcdx.cosave.*` | [cosave.md](cosave.md) |
-| `kcdxBehaviorInterface` (named behaviors — declare/set/get/list over the one cross-language registry + the engine-owned value-handle model) | **NYI** | `kcdx.behavior.*` (`declare`/`get`/`list` built; `set` pending) | [behavior.md](behavior.md) |
+| `kcdxBehaviorInterface` (named behaviors — declare/set/get/list over the one cross-language registry + the engine-owned value-handle model; Version 1) | Built (`Invoke` + off-thread queued `Set` **NYI**) | `kcdx.behavior.*` | [behavior.md](behavior.md) |
 | `kcdxPluginInfoInterface` (plugin introspection — is another plugin rejected) | **NYI** | `kcdx.plugin.*` | [plugin.md](plugin.md) |
 | dev-mode introspection | **NYI** | `kcdx.dev.*` | [dev.md](dev.md) |
 | `kcdxScriptingInterface` (Lua C-API surface; VM interop) | Built | the `kcdx.lua` domain | [lua.md](lua.md) |
