@@ -10,7 +10,7 @@ current version V). No backend, no FE — pure data-core, tested by the data-cor
 | Step | Status | Commit |
 |---|---|---|
 | [1.1 — Close-intervals already-done skip + reconciliation classification](step-1-close-skip-reconciliation.md) | DONE | 07fcf70 — close-intervals emits no edit-spec when the target is already closed to its last_verified (the D41 fact-2 symmetric skip); the no-op confirm gap closed. test_reverify_resolver 11/11 ACCEPT, mutation-confirmed falsifiable. |
-| [1.2 — The lifecycle-completeness detection query](step-2-lifecycle-detection-query.md) | DONE | (landed) — new read-only `lifecycle_audit.py`: the needs-action set at V (uncovered-orphan / never-verified / broken-ref), reusing `_interval_containing_row`. test_lifecycle_audit 10/10 ACCEPT, mutation-confirmed; full data-core 183 passed. |
+| [1.2 — The lifecycle-completeness detection query](step-2-lifecycle-detection-query.md) | DONE | e7f7e88 — new read-only `lifecycle_audit.py`: the needs-action set at V (uncovered-orphan / never-verified / broken-ref), reusing `_interval_containing_row`. test_lifecycle_audit 10/10 ACCEPT, mutation-confirmed; full data-core 183 passed. |
 
 ## Phase verification gate
 
