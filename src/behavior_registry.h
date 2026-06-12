@@ -22,10 +22,12 @@
 // (self > engine > other precedence, dot-semantic — the shared-namespace
 // model), prefix-filtered enumeration, the recorded-value slot, the applied
 // flag, the in-memory set-edges (consumer plugin -> behavior, feeding the
-// ordering errors + persistence of later steps), and the APPLY-BOUNDARY pass
+// ordering errors + persistence of later steps), the APPLY-BOUNDARY pass
 // (RunApplyBoundary — the one worklist drain that invokes each set
-// behavior's implementation once with the final recorded value). The
-// post-load toggle path (revert) lands on this same unit in a later step.
+// behavior's implementation once with the final recorded value), and the
+// POST-LOAD TOGGLE path (ApplyPostLoadToggle — the revert/implementation
+// dispatch for a `revert` declarer, main-thread inline; the off-thread
+// command queue is a later step).
 //
 // VALUE MODEL: behavior values (default, recorded, implementation, revert)
 // live in the engine-owned Lua VM as registry references (luaL_ref into
@@ -33,9 +35,13 @@
 // sentinel (the dual-Lua sentinel hazard). This unit stores the integer refs
 // + metadata; storage never dereferences a ref. Callers (the Lua binder
 // now; the C++ interface later) create and dereference the refs on the VM —
-// with ONE exception: RunApplyBoundary takes the caller's lua_State to
+// with TWO exceptions: RunApplyBoundary takes the caller's lua_State to
 // invoke each implementation ref (the boundary pass is this unit's job),
-// and on a boundary raise it releases the cleared recorded ref. kNoRef
+// and on a boundary raise it releases the cleared recorded ref; and
+// ApplyPostLoadToggle takes both the caller's lua_State and a caller-pinned
+// new-value ref to pcall the revert/implementation refs, releases the OLD
+// recorded ref it replaces, and on a clearing failure disposition releases
+// the cleared ref (the toggle path is this unit's job too). kNoRef
 // marks an absent ref (no revert; recorded value unset — nil is the
 // engine's unset sentinel and is never stored as a value).
 //
@@ -197,8 +203,8 @@ const std::vector<SetEdge>& Edges();
 
 // True once the apply boundary has completed. The binder's set window gate:
 // a set after this point — like a set on an already-applied behavior during
-// the drain — follows the post-load rules (this step: the teaching-error
-// placeholder; the revert toggle contract is a later step).
+// the drain — follows the post-load rules (ApplyPostLoadToggle: a `revert`
+// declarer toggles; a revert-less behavior gets the teaching error).
 bool BoundaryCompleted();
 
 // The APPLY BOUNDARY — the one worklist drain, run ONCE per session from the
@@ -228,5 +234,47 @@ bool BoundaryCompleted();
 // Completion emits one lifecycle info line (applied/raised counts) and
 // flips BoundaryCompleted().
 void RunApplyBoundary(lua_State* L);
+
+// The POST-LOAD TOGGLE — a `set` that arrives AFTER the apply boundary (or on
+// an already-applied behavior mid-drain) on the GAME MAIN THREAD. The binder
+// resolves + validates the name, rejects nil, then pins the NEW value into a
+// registry ref and hands it here; this unit owns the revert/implementation
+// dispatch + the record update. `newValueRef` is a real ref the binder created
+// (never kNoRef — nil was rejected upstream); on EVERY return path this unit
+// either records it (success) or releases it (a failure that does not record),
+// so the binder transfers ownership of the ref and never releases it itself.
+//
+// Returns true on a successful toggle (recorded value now == the new value,
+// applied flag stays true). Returns false on a teaching-error disposition (a
+// revert-less behavior — the recorded value is UNCHANGED, the new ref
+// released, `errOut` carries the teaching text the binder raises) OR a
+// declarer-code raise (the record cleared or kept per the two failure rules
+// below, the error logged HERE attributed to the declarer, `errOut` empty —
+// the binder does not re-raise a declarer-code failure at the consumer's
+// call site, mirroring the boundary-raise's attribute-to-declarer rule).
+// The binder distinguishes the two false cases by `errOut`: non-empty = raise
+// it at the set site; empty = the declarer-code failure already logged, the
+// set returns without raising.
+//
+//   - `revert` declarer + behavior WAS applied → revert(old_value) then
+//     implementation(new_value), then record the new value (get() tracks).
+//   - `revert` declarer + behavior NEVER applied (applied == false: nothing
+//     set it at load, so the boundary skipped it) → SKIP revert, call
+//     implementation(new_value) only, then record. revert is never handed a
+//     state the implementation did not create.
+//   - NO `revert` declarer (revertRef == kNoRef) → a teaching error; the
+//     recorded value does NOT change (get() never lies). `errOut` carries it.
+//
+// Failure dispositions (logged HERE, attributed to the DECLARER):
+//   - revert(old) succeeds, implementation(new) raises → recorded value AND
+//     applied flag cleared to unset (the world is in the reverted state, get()
+//     returns the default — truthful), the OLD ref released.
+//   - revert(old) ITSELF raises → recorded value and applied state stay AS
+//     THEY WERE (the engine cannot know how far a failed revert got, so the
+//     standing record is the least-lying one); the NEW ref released.
+bool ApplyPostLoadToggle(lua_State* L,
+                         Behavior* b,
+                         int newValueRef,
+                         std::string& errOut);
 
 }  // namespace kcdx::behavior_registry

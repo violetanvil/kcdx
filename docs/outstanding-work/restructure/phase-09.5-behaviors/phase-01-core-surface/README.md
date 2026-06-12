@@ -12,7 +12,7 @@ edges, and the auto-order method. Design: [`../behavior-design.md`](../behavior-
 | [2 — behavior_registry + declare/get/list](step-2-registry-declare.md) | DONE | 7080dd0 |
 | [3 — set + the apply boundary (worklist drain)](step-3-set-boundary.md) | DONE | 08e2f2a |
 | [4 — window law + resolution errors + in-memory edges](step-4-window-law-errors.md) | DONE | 5295397 |
-| [5 — revert / post-load toggle contract](step-5-toggle-revert.md) | NOT STARTED | — |
+| [5 — revert / post-load toggle contract](step-5-toggle-revert.md) | DONE | (landed) |
 | [6 — edge persistence + launch-time recognition](step-6-edge-persistence.md) | NOT STARTED | — |
 | [7 — the auto-order method](step-7-auto-order.md) | NOT STARTED | — |
 

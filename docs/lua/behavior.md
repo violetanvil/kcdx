@@ -13,15 +13,16 @@ Two tiers register through one model and one code path:
   `<author>.<plugin>.<bare>` from the declaring plugin's manifest. You write
   the bare name; the engine stamps the prefix. You never type your own prefix.
 
-This page covers the four verbs — `declare`, `set`, `get`, `list` — and the
-**apply-boundary model** that makes `set` work. Runtime (post-load) toggling
-is not built yet: a `set` after load raises a teaching error; it arrives with
-the declare spec's `revert` contract.
+This page covers the four verbs — `declare`, `set`, `get`, `list` — the
+**apply-boundary model** that makes a load-time `set` work, and the **post-load
+toggle** a `set` performs after load on a behavior whose declarer shipped a
+`revert`. A post-load `set` on a behavior *without* a `revert` raises a teaching
+error (it applies once at load; it cannot change mid-session).
 
 | Call | Args | Returns |
 |---|---|---|
 | `kcdx.behavior.declare(name, spec)` | bare name string; spec table (`description`, `default`, `implementation`, optional `revert`) | nothing on success; **raises** a teaching error on a bad spec, a duplicate name, or a post-load call. |
-| `kcdx.behavior.set(name, value)` | behavior name (bare or full); any non-`nil` value | nothing on success (the value is **recorded**; the implementation runs once at the apply boundary); **raises** a teaching error on an unknown name, a `nil` value, or a post-load call. |
+| `kcdx.behavior.set(name, value)` | behavior name (bare or full); any non-`nil` value | nothing on success. At **load** the value is **recorded** and the implementation runs once at the apply boundary; **post-load** on a `revert` declarer it **toggles** (revert-then-implementation, recorded). **Raises** a teaching error on an unknown name, a `nil` value, or a post-load set on a behavior with no `revert`. |
 | `kcdx.behavior.get(name)` | behavior name (bare or full) | the behavior's current value — the recorded value once one exists, else the spec's `default`; **raises** a teaching error on an unknown name. |
 | `kcdx.behavior.list([prefix])` | optional stamped-name prefix string | an array of entry tables `{ name, description, default, current, declarer }`. |
 
@@ -53,7 +54,7 @@ kcdx.behavior.declare("hardcore_combat", {
 | `spec.description` | string, required | One human line; surfaced by `list()`. |
 | `spec.default` | any non-`nil` value, required | What `get()` returns while the behavior was never set. Any Lua type (bool, number, string, table, function) EXCEPT `nil` — `nil` is the engine's unset sentinel, never a value. |
 | `spec.implementation` | function, required | `function(value)` — invoked once at the apply boundary with the final settled value. |
-| `spec.revert` | function, optional | `function(old_value)` — its presence will make the behavior runtime-togglable after load (the post-load toggle contract is not built yet; today a post-load set raises a teaching error regardless). |
+| `spec.revert` | function, optional | `function(old_value)` — its presence makes the behavior **runtime-togglable** after load. A post-load `set` then calls `revert(old_value)` to undo the prior applied state, then `implementation(new_value)` to apply the new one (see [The post-load toggle](#the-post-load-toggle--runtime-change-on-revert-declarers)). Omit it and the behavior applies once at load; a post-load `set` raises a teaching error. |
 
 **Returns:** nothing. The behavior is registered and immediately resolvable by
 `get`/`list`.
@@ -73,11 +74,13 @@ kcdx.behavior.declare("hardcore_combat", {
 
 ## `kcdx.behavior.set(name, value)` — set a behavior's value
 
-Records a value for a declared behavior. Setting is a **load-time act**: call
-it from your `plugin.lua` (or `lua_after`) body. The value is recorded
-immediately (`get` reads it back at once); the behavior's `implementation`
-runs **once, at the apply boundary** (below), with the final recorded value —
-never at the `set` call site.
+Sets a value for a declared behavior. At **load** (your `plugin.lua` /
+`lua_after` body) the value is recorded immediately (`get` reads it back at
+once) and the behavior's `implementation` runs **once, at the apply boundary**
+(below) with the final recorded value — never at the `set` call site.
+**After load**, a `set` is a runtime **toggle** — but only for a behavior whose
+declarer shipped a `revert` (see [The post-load toggle](#the-post-load-toggle--runtime-change-on-revert-declarers));
+on a behavior without a `revert` a post-load `set` raises a teaching error.
 
 ```lua
 -- your whole plugin can be these two lines:
@@ -103,10 +106,11 @@ own value, or a second plugin recording an equal value, records silently.
   errors" below) that tells you the exact fix — reorder, install, enable, or a
   name typo — never a bare "not found";
 - `set(name, nil)` — nil is the unset sentinel, not a value;
-- a post-load set — after the apply boundary has run (or on a behavior the
-  boundary already applied), a set raises a teaching error: behaviors apply
-  once per session today. Runtime (post-load) toggling is not built yet — it
-  arrives with the declare spec's `revert` contract.
+- a post-load set on a behavior **with no `revert`** — after the apply boundary
+  has run (or on a behavior the boundary already applied), a set on a behavior
+  whose declarer shipped no `revert` raises a teaching error ("applies at load;
+  it cannot change mid-session"). A behavior **with** a `revert` toggles instead
+  — see [The post-load toggle](#the-post-load-toggle--runtime-change-on-revert-declarers).
 
 ## Resolution errors — when a `set` can't find the behavior
 
@@ -184,6 +188,53 @@ implementation did not deliver), and the remaining behaviors still apply.
 An implementation may register intent (`kcdx.hook.*`, `kcdx.bytes`,
 `kcdx.statement.*`) like any load-time code: registrations made at the
 boundary are installed before `input_loaded` fires.
+
+## The post-load toggle — runtime change on `revert` declarers
+
+After the apply boundary, a behavior is settled for the session **unless its
+declarer shipped a `revert`**. A `revert` makes the behavior **runtime-togglable**:
+a post-load `set` re-runs the declarer's code to move from the old value to the
+new one.
+
+```lua
+kcdx.behavior.declare("hud_scale", {
+    description    = "HUD scale multiplier",
+    default        = 1.0,
+    implementation = function(value) apply_hud_scale(value) end,
+    revert         = function(old_value) clear_hud_scale(old_value) end,
+})
+-- … later, after load (e.g. from a settings handler):
+kcdx.behavior.set("redmoon.ui.hud_scale", 1.5)   -- toggles: revert(old) → implementation(1.5)
+```
+
+A post-load `set` on a `revert` declarer:
+
+1. **Was the behavior applied at load?** If the behavior **was** applied (a
+   load-time set ran its implementation at the boundary), the engine calls
+   `revert(old_value)` first — undoing the applied state — then
+   `implementation(new_value)`, then records the new value. `get` now answers it.
+2. **Never applied?** If nothing set it at load (the boundary skipped it), the
+   engine **skips `revert`** and calls `implementation(new_value)` only — `revert`
+   is never handed a state the implementation did not create — then records.
+
+**`get` stays truthful, even on a failure.** If a toggle's declarer code raises,
+the record reflects what actually happened — never a value that was not applied:
+
+| The toggle | What the engine does | What `get` reads after |
+|---|---|---|
+| `revert(old)` succeeds, `implementation(new)` **raises** | the record **and** applied flag clear to unset; the world is in the reverted state | the spec's `default` (the new state was not created) |
+| `revert(old)` **itself raises** | the record and applied state are kept **unchanged** (the engine cannot know how far the failed revert got — the standing record is the least-lying one) | the prior value (unchanged) |
+
+A declarer-code raise (in `revert` or `implementation`) is logged against the
+**declaring** plugin — not the plugin that called `set` — and the `set` does
+**not** raise at your call site (the failure is the declarer's, surfaced in the
+log). A behavior **without** a `revert` raises a teaching error on a post-load
+`set` ("applies at load; it cannot change mid-session") and its record is
+untouched.
+
+**Thread + queue (today):** a post-load `set` runs **inline on the game main
+thread**. Off-thread post-load sets — queued and executed on the main thread at
+the next apply point — arrive with the C++ command-queue step.
 
 ## `kcdx.behavior.get(name)` — read a behavior's current value
 

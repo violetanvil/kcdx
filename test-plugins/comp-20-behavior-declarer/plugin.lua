@@ -138,8 +138,9 @@ kcdx.behavior.declare("raise_behavior", {
 
 -- 6. drain_setter — the mid-drain actor: a plain set on the not-yet-applied
 -- drain_target (pending update), a plain set on the never-set late_pend
--- (late pend), and a pcall set on the already-applied boundary_first (the
--- post-load placeholder error this step).
+-- (late pend), and a pcall set on the already-applied REVERT-LESS
+-- boundary_first (the §5.4 post-load toggle's revert-less teaching error —
+-- an applied behavior with no `revert` cannot change mid-session).
 kcdx.behavior.declare("drain_setter", {
     description    = "comp-20 mid-drain setter fixture",
     default        = false,
@@ -397,11 +398,15 @@ kcdx.on("input_loaded", function()
     end
 
     -- comp-20-drain-already-applied — drain_setter's pcall set on the
-    -- ALREADY-applied boundary_first raised the post-load placeholder
-    -- teaching error, and boundary_first stayed applied-once.
-    -- FALSIFIABLE: the set succeeded (an applied behavior re-recorded), the
-    -- error does not name the apply-boundary rule, or boundary_first fired
-    -- twice -> FAIL.
+    -- ALREADY-applied boundary_first (a REVERT-LESS declarer) raised the §5.4
+    -- post-load toggle's revert-less teaching error ("applies at load; it
+    -- cannot change mid-session"), and boundary_first stayed applied-once.
+    -- (Once a behavior applied, a further set follows the post-load toggle
+    -- rules: a `revert` declarer would TOGGLE; boundary_first has no `revert`,
+    -- so it raises. The post-load toggle contract is built in 9.5 P1 s5.)
+    -- FALSIFIABLE: the set succeeded (an applied revert-less behavior
+    -- re-recorded / toggled with no revert), the error does not teach the
+    -- applies-at-load / revert rule, or boundary_first fired twice -> FAIL.
     do
         local row = "comp-20-drain-already-applied"
         local o = obs.drain_setter
@@ -412,23 +417,28 @@ kcdx.on("input_loaded", function()
         elseif o.set_applied_ok ~= false then
             report(row, false, "the mid-drain set on the ALREADY-applied "
                 .. "boundary_first SUCCEEDED — once a behavior applied, a "
-                .. "further set follows the post-load rules (this step: "
-                .. "the placeholder teaching error)")
+                .. "further set follows the post-load toggle rules; "
+                .. "boundary_first has no `revert`, so it must raise the "
+                .. "applies-at-load teaching error, never silently re-record")
         elseif type(o.set_applied_err) ~= "string"
-            or not string.find(o.set_applied_err, "apply boundary", 1, true)
+            or not string.find(o.set_applied_err, "applies at load", 1, true)
+            or not string.find(o.set_applied_err, "revert", 1, true)
         then
             report(row, false, "the mid-drain set on boundary_first raised "
-                .. "but the error does not name the apply-boundary rule "
-                .. "(got: " .. tostring(o.set_applied_err) .. ")")
+                .. "but the error does not teach the applies-at-load / "
+                .. "`revert` rule (expected 'applies at load ... cannot change "
+                .. "mid-session' naming the `revert` fix; got: "
+                .. tostring(o.set_applied_err) .. ")")
         elseif obs.boundary_first.fires ~= 1 then
             report(row, false, "boundary_first fired "
                 .. obs.boundary_first.fires
                 .. " times (expected once — at most once per boundary)")
         else
             report(row, true, "the mid-drain set on the already-applied "
-                .. "boundary_first raised the post-load placeholder "
-                .. "teaching error (names the apply-boundary rule) and "
-                .. "boundary_first stayed applied exactly once")
+                .. "revert-less boundary_first raised the §5.4 revert-less "
+                .. "teaching error ('applies at load; it cannot change "
+                .. "mid-session' naming the `revert` fix) and boundary_first "
+                .. "stayed applied exactly once")
         end
     end
 

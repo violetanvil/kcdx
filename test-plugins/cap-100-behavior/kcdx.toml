@@ -12,10 +12,16 @@
 # else the spec's default; a load-time set RECORDS immediately and the apply
 # boundary (post-RunPostGameLoad, pre-InputLoaded) invokes the implementation
 # EXACTLY ONCE with the final value; set(name, nil) raises the unset-sentinel
-# teaching error; a post-load set raises the placeholder teaching error
-# (runtime toggling arrives with the revert contract); list([prefix]) returns
-# the registered behaviors with name/description/default/current/declarer and
-# the prefix filter scopes to this plugin's own entries.
+# teaching error; the §5.4 post-load TOGGLE contract — a post-load set on a
+# `revert` declarer calls revert(old)+implementation(new) and records (the
+# never-applied gate skips revert; the two declarer-code failure dispositions
+# clear-or-keep the record, attributed to the declarer), while a revert-less
+# behavior raises the applies-at-load teaching error and a post-load declare
+# raises the load-time-act error (the post-load-DECLARE wall gates on the
+# apply-boundary state — BoundaryCompleted — symmetric with the post-load SET
+# gate, so a declare from the input_loaded handler trips it); list([prefix])
+# returns the registered behaviors with name/description/default/current/
+# declarer and the prefix filter scopes to this plugin's own entries.
 #
 # What it proves (all boot-only, auto-pass; declares + sets + fixture pcalls
 # run at load; load-observable rows report at ready, boundary-dependent rows
@@ -75,13 +81,46 @@
 #      FALSIFIABLE: the set raises, the record isn't visible, the
 #      implementation fires 0 or 2+ times, receives a different value, or
 #      the post-boundary get drifts -> FAIL.
-#   9. cap-100-post-load-set-error — a set from the input_loaded handler
-#      (after the boundary) RAISES the placeholder teaching error naming
-#      the apply-boundary rule; the applied record is untouched.
+#   9. cap-100-post-load-set-error — a post-load set on a REVERT-LESS behavior
+#      ('counted', no revert) RAISES the applies-at-load teaching error
+#      (naming the `revert` fix); the applied record is untouched.
 #      FALSIFIABLE: the post-load set succeeds (get would lie), the error
-#      doesn't name the rule, or the record changed -> FAIL.
+#      doesn't teach the applies-at-load/revert rule, or the record changed
+#      -> FAIL.
+#  10. cap-100-toggle-revert-order — US-5: a post-load set on an APPLIED
+#      `revert` declarer calls revert(old) THEN implementation(new) in that
+#      order (observed via a shared call log) and records the new value.
+#      FALSIFIABLE: the toggle raises, the calls are out of order/missing,
+#      revert/impl receive the wrong old/new value, or get doesn't track the
+#      new value -> FAIL.
+#  11. cap-100-toggle-never-applied — the never-applied gate: a post-load set
+#      on a `revert` declarer NEVER set at load calls implementation(new)
+#      ONLY (revert skipped) and records.
+#      FALSIFIABLE: the toggle raises, revert FIRES, impl gets the wrong
+#      value, or get doesn't track the new value -> FAIL.
+#  12. cap-100-toggle-impl-raises — revert succeeds, implementation RAISES:
+#      the record + applied flag clear to unset (get returns the default —
+#      the world is reverted), logged against the declarer, the set does NOT
+#      re-raise at the consumer call site.
+#      FALSIFIABLE: the set re-raises at the consumer, or get doesn't return
+#      the default after the cleared record -> FAIL.
+#  13. cap-100-toggle-revert-raises — revert ITSELF raises: the record +
+#      applied state stay AS THEY WERE (get still reads the loaded value),
+#      logged against the declarer, the set does NOT re-raise at the consumer.
+#      FALSIFIABLE: the set re-raises at the consumer, or get no longer reads
+#      the loaded value -> FAIL.
+#  14. cap-100-post-load-declare-error — the post-load DECLARE wall (§5.4:
+#      declares are a load-time act). A declare from the input_loaded handler
+#      (post-boundary, BoundaryCompleted()==true) RAISES the load-time-act
+#      teaching error and registers nothing. The declare-window gate is
+#      re-grounded on the apply-boundary state (BoundaryCompleted), symmetric
+#      with the post-load SET gate — so this is boot-exercisable from
+#      input_loaded.
+#      FALSIFIABLE: the post-load declare succeeds (the wall did not trip),
+#      the error does not teach the load-time-act rule, or the attempted name
+#      appears in list() afterward (it registered despite the error) -> FAIL.
 #
-# Test mode: boot-only (launch-to-menu confirms all nine rows; no player
+# Test mode: boot-only (launch-to-menu confirms all fourteen rows; no player
 # input).
 
 [kcdx]
@@ -91,7 +130,7 @@ test_suite_only = true
 name                = "cap_100_behavior"
 display_name        = "CAP-100 kcdx.behavior declare/set/get/list"
 author              = "ts"
-description         = "Pure-Lua self-test of the kcdx.behavior single-plugin surface: declare stamps + registers, missing-field specs raise teaching errors, a duplicate declare errors on the second while the first stands, get answers the recorded value once set else the spec's default (bare + full-name resolution; unknown names raise), a load-time set records immediately and the apply boundary invokes the implementation exactly once with the final value, set(name, nil) and a post-load set each raise their teaching error, and list's prefix filter scopes to the plugin's own entries."
+description         = "Pure-Lua self-test of the kcdx.behavior single-plugin surface: declare stamps + registers, missing-field specs raise teaching errors, a duplicate declare errors on the second while the first stands, get answers the recorded value once set else the spec's default (bare + full-name resolution; unknown names raise), a load-time set records immediately and the apply boundary invokes the implementation exactly once with the final value, set(name, nil) raises the unset-sentinel error, the §5.4 post-load toggle contract holds (a `revert` declarer toggles revert-then-impl and records; the never-applied gate skips revert; the impl-raises and revert-raises failure dispositions clear-or-keep the record attributed to the declarer; a revert-less behavior raises its applies-at-load teaching error; a post-load declare from input_loaded raises the load-time-act teaching error and registers nothing — the declare wall gates on the apply-boundary state, symmetric with the post-load set gate), and list's prefix filter scopes to the plugin's own entries."
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
@@ -108,6 +147,11 @@ test_names          = [
     "cap-100-set-owner-absent",
     "cap-100-set-records-and-applies",
     "cap-100-post-load-set-error",
+    "cap-100-toggle-revert-order",
+    "cap-100-toggle-never-applied",
+    "cap-100-toggle-impl-raises",
+    "cap-100-toggle-revert-raises",
+    "cap-100-post-load-declare-error",
 ]
 
 [entrypoints]

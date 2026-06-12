@@ -27,9 +27,12 @@
 // (before the main Lua wave) is OUT-OF-WINDOW (the window-law wall — built
 // for the C++ early-stop caller in P2 + the deferred lua_before in P11; the
 // Lua binder is itself a main-stop caller, so it never trips it). A post-load
-// set — after the boundary completed, or on an already-applied behavior
-// during the drain — raises a teaching error THIS step (the placeholder); the
-// revert-gated runtime toggle contract is a later step.
+// set (after the boundary completed, or on an already-applied behavior during
+// the drain) dispatches the revert TOGGLE (design §5.4, main-thread inline):
+// the binder pins the new value, the registry's ApplyPostLoadToggle runs
+// revert(old)+implementation(new) for a `revert` declarer (skipping revert on
+// a never-applied behavior), records the new value, and raises the revert-less
+// teaching error otherwise. The off-thread command queue is a later step.
 //
 // Error contract: a wrong declare/set/get/list call RAISES a normal Lua
 // error at the call site (luaL_error) with a teaching text — the calling
@@ -38,13 +41,17 @@
 // the cause.
 //
 // Declare window: declares are a LOAD-TIME act. The post-load check gates on
-// the init-phase model — the last load-wave phase (AfterGameApply, advanced
-// at the end of the first-update-tick load block). The SET window gates on
-// the registry's boundary state instead (BoundaryCompleted / the per-
-// behavior applied flag) — the boundary runs BEFORE InputLoaded, earlier
-// than the AfterGameApply advance, so the init phase would miss a
-// post-boundary set from an InputLoaded handler. The window-law step
-// refines the declare gate.
+// the registry's apply-boundary state (BoundaryCompleted) — the declare
+// window closes at the apply boundary, SYMMETRIC with the SET window's
+// post-load gate (both read BoundaryCompleted), NOT the init phase. The
+// boundary completes BEFORE InputLoaded fires, so a declare self-fired from
+// an InputLoaded handler — or issued mid-drain during the boundary — sees
+// BoundaryCompleted()==true and trips the wall (raises the load-time-act
+// teaching error), exactly the way the post-load set path works. (The SET
+// window also reads the per-behavior `applied` flag for the mid-drain
+// already-applied case; a declare has no such per-behavior state — no
+// behavior exists yet at declare time — so the declare gate is the boundary
+// flag alone.)
 //
 // Values: the spec's default / implementation / revert and the recorded
 // value live in the engine-owned Lua VM as registry refs (luaL_ref into
@@ -64,7 +71,7 @@ extern "C" {
 }
 
 #include "behavior_registry.h"
-#include "init_phase.h"        // init::Current — the declare-window check
+#include "init_phase.h"        // init::Current — the set out-of-window (too-early) check
 #include "load_order.h"        // IsPluginEnabled / RunsBefore — branch a/c discrimination
 #include "log.h"               // LOG_ERROR_KV, ::kcdx::log::KV
 #include "lua_bind_helpers.h"  // FindUnknownKey
@@ -149,7 +156,15 @@ int Lua_Declare(lua_State* L) {
     }
 
     // --- the declare window: declares are a load-time act ---
-    if (kcdx::init::Current() >= kcdx::init::InitPhase::AfterGameApply) {
+    // Gates on the registry's apply-boundary state (BoundaryCompleted),
+    // symmetric with the SET window's post-load gate (Lua_Set, below) — the
+    // declare window closes at the apply boundary, not at an init phase. The
+    // boundary completes BEFORE kcdxMessage_InputLoaded fires, so a declare
+    // self-fired from an `input_loaded` handler sees BoundaryCompleted()==true
+    // and trips this wall, exactly as a post-load set does. A declare issued
+    // DURING the boundary drain (mid-drain, by an implementation) is likewise
+    // post-load — consistent with §5.4 "declares are a load-time act".
+    if (kcdx::behavior_registry::BoundaryCompleted()) {
         return RejectDeclare(L, owner.author, owner.plugin, bareName,
             "post_load_declare",
             "kcdx.behavior.declare('" + bareName + "'): declares are a "
@@ -586,9 +601,11 @@ int RaiseSetResolution(lua_State* L, const std::string& nameArg,
 // outcome + order, a bare name points at the full-name form; the failed set
 // records the consumer→declarer edge. The window-law wall rejects a
 // plugin-tier set from an early stop (catalog-tier passes from any stop). A
-// post-load set — the boundary completed, or the behavior already applied
-// mid-drain — raises the placeholder teaching error; the revert-gated runtime
-// toggle is a later step.
+// post-load set (the boundary completed, or the behavior already applied
+// mid-drain) dispatches the revert TOGGLE — revert(old)+implementation(new)
+// for a `revert` declarer (skipping revert on a never-applied behavior),
+// recording the new value; a revert-less behavior raises the teaching error.
+// Main-thread inline; the off-thread command queue is a later step.
 int Lua_Set(lua_State* L) {
     if (lua_type(L, 1) != LUA_TSTRING) {
         const char* detail =
@@ -674,24 +691,39 @@ int Lua_Set(lua_State* L) {
         return luaL_error(L, "%s", detail.c_str());
     }
 
-    // The set window: load-time only this step. After the boundary
-    // completed — or on a behavior the boundary already applied (a
-    // mid-drain set from another implementation) — the post-load rules
-    // apply; this step's placeholder is the teaching error below. The
-    // revert-gated runtime toggle replaces it in a later step.
+    // The set window. After the boundary completed — or on a behavior the
+    // boundary already applied (a mid-drain set from another implementation)
+    // — this is a POST-LOAD set, the revert toggle contract (design §5.4),
+    // main-thread inline (the Lua binder runs on the game main thread; the
+    // off-thread command queue is a later step). The registry owns the
+    // revert/implementation dispatch + the record update; the binder pins
+    // the new value into a ref and hands it over (nil was already rejected
+    // above, so this is always a real ref). The registry consumes the ref on
+    // EVERY path — records it on success, releases it on any failure — so the
+    // binder never releases it here.
     if (kcdx::behavior_registry::BoundaryCompleted() || b->applied) {
-        const std::string detail =
-            "kcdx.behavior.set('" + nameArg + "'): this behavior's value is "
-            "settled for the session — sets are recorded during plugin load "
-            "and applied ONCE at the apply boundary (after every plugin has "
-            "loaded), and that boundary has already run for '" +
-            b->fullName + "'. Runtime (post-load) toggling is not built "
-            "yet; it arrives with the declare spec's `revert` contract. Set "
-            "from your plugin's load entry (plugin.lua / lua_after).";
-        LOG_ERROR_KV(kCat, "set_post_load",
-            ::kcdx::log::KV("name", b->fullName),
-            ::kcdx::log::KV("detail", detail));
-        return luaL_error(L, "%s", detail.c_str());
+        lua_pushvalue(L, 2);
+        const int newValueRef = luaL_ref(L, LUA_REGISTRYINDEX);
+        std::string toggleErr;
+        const bool ok = kcdx::behavior_registry::ApplyPostLoadToggle(
+            L, b, newValueRef, toggleErr);
+        if (ok) {
+            return 0;  // toggled: revert(old)+implementation(new), recorded.
+        }
+        if (!toggleErr.empty()) {
+            // A teaching-error disposition (a revert-less behavior): the
+            // registry left the record untouched + released the new ref. Log
+            // + raise at the author's set site (the consumer-misuse case).
+            LOG_ERROR_KV(kCat, "set_post_load_no_revert",
+                ::kcdx::log::KV("name", b->fullName),
+                ::kcdx::log::KV("detail", toggleErr));
+            return luaL_error(L, "%s", toggleErr.c_str());
+        }
+        // A declarer-code raise (revert/implementation): the registry already
+        // logged it attributed to the DECLARER (not the setting consumer) and
+        // applied the disposition. The set does not re-raise at the consumer's
+        // call site — the failure is the declarer's, surfaced in the log.
+        return 0;
     }
 
     // (caller identity `owner` was resolved above, before resolution.)

@@ -64,7 +64,7 @@ design doc, not a step doc's prose, is what an executor builds to
 | §4 rule-4 reconciliation note | P1 s2 | shape as designed |
 | §4 engine-tracked state (declarer/value/edges/applied) | P1 s2–s4 | registry core s2; edges s4 |
 | §5.1–.3 record, last-wins+warn, worklist boundary, never-applied, at-most-once, boundary-drain sets, boundary-raise disposition | P1 s3 | |
-| §5.4 toggle paths + both failure dispositions + post-load declare error | P1 s5 | |
+| §5.4 toggle paths + both failure dispositions + post-load declare WALL | P1 s5 | wall built s5, gated on `BoundaryCompleted` (symmetric with the post-load set gate); the post-load-declare fixture (`cap-100-post-load-declare-error`) is boot-exercisable from `input_loaded` and covered in cap-100 |
 | §5.4 command semantics (queued off-thread Set, FIFO, attribution, staging) | P2 s2 | |
 | §5/§6/§7/§8 marked assumptions (4) + §9 enforcement-site read + pump boundedness | P1 s1 | probe + static evidence |
 | §6 window law (plugin-tier main-stop; catalog any-stop) | P1 s4 | C++ early-stop fixture P2 s2 |
@@ -76,7 +76,7 @@ design doc, not a step doc's prose, is what an executor builds to
 | §8 interface verbs + handle model + generation + accessors + builders + query thread wall | P2 s1 | |
 | §8 `Invoke` (callables) + off-thread construction staging | P2 s2 | |
 | §9 version story (consumer none; declarer call-site enforcement) | P1 s1 (read) + P1 s3 (consumer fixture) | |
-| §10 error catalog (19 rows) | each row ships with its mechanism's step | s2: declare errors; s3: nil/conflict/boundary-raise; s4: 5 branches + out-of-window + stale-edge warn (s6); s5: toggle errors + post-load declare; P2: query wall, coercion, stale handle, queued attribution; P3: malformed file |
+| §10 error catalog (19 rows) | each row ships with its mechanism's step | s2: declare errors; s3: nil/conflict/boundary-raise; s4: 5 branches + out-of-window + stale-edge warn (s6); s5: toggle errors (revert-less set; both declarer-code raises) + the post-load-declare WALL (gated on `BoundaryCompleted`, fixture `cap-100-post-load-declare-error` boot-exercisable from `input_loaded`); P2: query wall, coercion, stale handle, queued attribution; P3: malformed file |
 | §11 `behavior_registry` unit + reference doc | P1 s2 | |
 | §11 `lua_bind_behavior` binder | P1 s2 | |
 | §11 `behavior_interface` + Interfaces.h append | P2 s1 | |
@@ -90,5 +90,6 @@ design doc, not a step doc's prose, is what an executor builds to
 | US-4 wrong order + auto-order | P1 s4 + s7 | |
 | US-5 runtime toggle | P1 s5 | |
 | US-6 C++ plugin all verbs + symmetric wall | P2 s1–s2 | Lua early leg: user-approved trigger deferral |
-| Lua early-stop fixture leg | DEFERRED | named trigger: P11 P5 `lua_before` (user-approved) |
+| Lua early-stop fixture leg | DEFERRED | named trigger: P11 P5 `lua_before` (user-approved) — TD-0013 |
+| Post-load-declare fixture leg | P1 s5 | COVERED by `cap-100-post-load-declare-error` — the declare wall re-grounded on `BoundaryCompleted` (symmetric with the post-load set gate) is boot-exercisable from the `input_loaded` handler (post-boundary); no deferral |
 | §13 out-of-scope set | OUT-OF-SCOPE | user-approved at design |

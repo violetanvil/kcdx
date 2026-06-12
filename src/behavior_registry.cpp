@@ -396,4 +396,127 @@ void RunApplyBoundary(lua_State* L) {
         ::kcdx::log::KV("declared", store.size()));
 }
 
+namespace {
+
+// pcall a single-arg declarer ref (`fnRef`) with the VALUE at `valueRef`,
+// the same mechanism RunApplyBoundary uses to invoke an implementation:
+// push the function ref, push the value ref, lua_pcall(L, 1, 0, 0). On a
+// raise, copies the Lua error message into `errMsgOut` (so the caller can
+// log it AFTER the stack is restored). Restores the stack to its entry top
+// on EVERY path (a stack-balanced call, like the boundary's). Returns the
+// lua_pcall status (0 == success).
+int PcallRef1(lua_State* L, int fnRef, int valueRef, std::string& errMsgOut) {
+    const int top0 = lua_gettop(L);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, fnRef);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, valueRef);
+    const int status = lua_pcall(L, 1, 0, 0);
+    if (status != 0) {
+        const char* msg = lua_tostring(L, -1);
+        errMsgOut = msg ? msg : "<non-string error>";
+    }
+    lua_settop(L, top0);
+    return status;
+}
+
+}  // namespace
+
+bool ApplyPostLoadToggle(lua_State* L,
+                         Behavior* b,
+                         int newValueRef,
+                         std::string& errOut) {
+    errOut.clear();
+
+    // No `revert` declarer → a teaching error; the recorded value does NOT
+    // change (get() never lies). The binder raises errOut at the set site.
+    // Release the new ref the binder pinned — this disposition never records.
+    if (b->revertRef == kNoRef) {
+        luaL_unref(L, LUA_REGISTRYINDEX, newValueRef);
+        errOut = "'" + b->fullName + "' applies at load; it cannot change "
+                 "mid-session. This behavior's declarer ships no `revert`, so "
+                 "the engine cannot undo its applied state to re-apply a new "
+                 "value — its value is settled for the session. (A declarer "
+                 "makes a behavior runtime-togglable by adding a `revert = "
+                 "function(old_value) ... end` to its declare spec.)";
+        return false;
+    }
+
+    // The never-applied gate (design §5.4): if the implementation never ran
+    // (nothing set it at load, so the boundary skipped it), SKIP revert — it
+    // is never handed a state the implementation did not create. The applied
+    // flag is the gate; when true, revert(old) runs first.
+    const bool revertRan = b->applied;
+    if (b->applied) {
+        // revert(old_value) — the OLD recorded value is what the world is in.
+        std::string revertErr;
+        const int rstatus = PcallRef1(L, b->revertRef, b->recordedRef, revertErr);
+        if (rstatus != 0) {
+            // revert ITSELF raised → recorded value and applied state stay AS
+            // THEY WERE (the engine cannot know how far a failed revert got,
+            // so the standing record is the least-lying one). Release the NEW
+            // ref (it never becomes the record); keep the OLD record + applied.
+            // Logged HERE, attributed to the declarer (errOut empty — the
+            // binder does not re-raise a declarer-code failure at the consumer
+            // call site).
+            luaL_unref(L, LUA_REGISTRYINDEX, newValueRef);
+            LOG_ERROR_KV("BEHAVIOR", "revert_raised",
+                ::kcdx::log::KV("behavior", b->fullName),
+                ::kcdx::log::KV("declarer", b->DeclarerLabel()),
+                ::kcdx::log::KV("error", revertErr),
+                ::kcdx::log::KV("disposition",
+                    "revert(old_value) raised during a post-load toggle; the "
+                    "recorded value and applied state are kept UNCHANGED (the "
+                    "engine cannot know how far the failed revert got) — get() "
+                    "still returns the prior value"));
+            return false;
+        }
+    }
+
+    // implementation(new_value) — for BOTH the applied (post-revert) and the
+    // never-applied (revert-skipped) paths.
+    std::string implErr;
+    const int istatus = PcallRef1(L, b->implementationRef, newValueRef, implErr);
+    if (istatus != 0) {
+        // implementation raised. If revert ran (applied path), the world is in
+        // the REVERTED state; if it did not (never-applied path), the world is
+        // in the behavior's UNCREATED/default state — either way the
+        // implementation did NOT create the new state, so the truthful record
+        // is unset. Clear the recorded value AND the applied flag to unset
+        // (get() returns the default), release BOTH the old record (if any)
+        // and the new ref. Logged HERE, attributed to the declarer.
+        luaL_unref(L, LUA_REGISTRYINDEX, newValueRef);
+        if (b->recordedRef != kNoRef) {
+            luaL_unref(L, LUA_REGISTRYINDEX, b->recordedRef);
+            b->recordedRef = kNoRef;
+        }
+        b->applied = false;
+        b->setterAuthor.clear();
+        b->setterPlugin.clear();
+        LOG_ERROR_KV("BEHAVIOR", "toggle_implementation_raised",
+            ::kcdx::log::KV("behavior", b->fullName),
+            ::kcdx::log::KV("declarer", b->DeclarerLabel()),
+            ::kcdx::log::KV("error", implErr),
+            ::kcdx::log::KV("disposition",
+                "implementation(new_value) raised during a post-load toggle; "
+                "the recorded value AND applied flag are cleared to unset "
+                "(the world is in the reverted/default state, get() returns "
+                "the default — truthful: the implementation did not create the "
+                "new state)"));
+        return false;
+    }
+
+    // Success — record the new value. Release the OLD record it replaces (if
+    // any), store the new ref, keep applied == true (the implementation ran
+    // for this value). get() now tracks the new value.
+    if (b->recordedRef != kNoRef) {
+        luaL_unref(L, LUA_REGISTRYINDEX, b->recordedRef);
+    }
+    b->recordedRef = newValueRef;
+    b->applied = true;
+    LOG_INFO_KV("BEHAVIOR", "post_load_toggle_applied",
+        ::kcdx::log::KV("behavior", b->fullName),
+        ::kcdx::log::KV("declarer", b->DeclarerLabel()),
+        ::kcdx::log::KV("revert_ran", revertRan ? "yes" : "no"));
+    return true;
+}
+
 }  // namespace kcdx::behavior_registry
