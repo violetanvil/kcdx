@@ -165,8 +165,11 @@ void RunEdgePersistSelfTestOnce() {
     // ========================================================================
     {
         const std::string emptyText = SerializeBehaviorEdgesToml({});
+        // Check for the EMITTED table form ("\n[[edge]]\n", the exact string the
+        // serializer writes per edge) — NOT a bare "[[edge]]" substring, which
+        // the managed-file header comment legitimately contains.
         const bool noEdgeTable =
-            emptyText.find("[[edge]]") == std::string::npos;
+            emptyText.find("\n[[edge]]\n") == std::string::npos;
         bool pf = false;
         const std::vector<BehaviorEdge> back =
             ParseBehaviorEdgesToml(emptyText, &pf);

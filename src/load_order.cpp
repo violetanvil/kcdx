@@ -466,7 +466,7 @@ bool DeclarerFromBehaviorName(const std::string& fullName,
 std::string SerializeBehaviorEdgesToml(const std::vector<BehaviorEdge>& edges) {
     std::string out =
         "# managed by kcdx — behavior dependency edges (consumer -> behavior).\n"
-        "# Each [[edge]] records that a plugin SET a named behavior. kcdx\n"
+        "# Each edge entry records that a plugin SET a named behavior. kcdx\n"
         "# re-checks these at the next launch BEFORE plugins run: a consumer\n"
         "# that now loads before its declarer is reported up front. The store\n"
         "# is rebuilt from each launch's observed sets — do not hand-edit; an\n"
