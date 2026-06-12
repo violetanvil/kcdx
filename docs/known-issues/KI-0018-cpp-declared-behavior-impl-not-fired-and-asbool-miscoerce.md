@@ -69,6 +69,38 @@ cap-102-cpp-behavior-lua deployed, dev mode):
   invocation in `src/behavior_registry.cpp` `RunApplyBoundary` (does it invoke a
   C++-declared behavior's stored impl ref the same way it invokes a Lua one?).
 
+## Investigation plan (probe ledger — flip each as it lands)
+
+| # | Probe | Status |
+|---|---|---|
+| A | Static read: how the C++ `Declare` stores impl/default refs vs how the Lua binder does; what `RunApplyBoundary` walks; the `AsBool` coercion path | DONE |
+| B | Live read-only: record the boundary VM pointer + per-behavior recordedRef/implRef/implRef_type | DONE |
+| C | Live read-only inside `CImplClosure`: did the trampoline fire, with which fn + arg type? | DONE |
+
+## Trail
+
+| Probe | Action | Result |
+|---|---|---|
+| A | PROBE A: static read of the C++ Declare ref-storage + boundary walk + AsBool | DONE. Declare stores implRef = BuildCImplTrampoline(L,...) via DeclarePlugin (same slot a Lua impl uses); the trampoline closure forwards arg-1 value to the C fn correctly; both Declare and the accessors use hooks::CurrentLuaState(). So the impl ref IS stored and the boundary should pcall it — the break is NOT a missing ref. Remaining unknown: VM-pointer IDENTITY across early-Declare vs boundary vs AsBool (a dual-VM hazard the static read cannot settle). |
+| B | PROBE B: boundary records VM ptr + per-behavior implRef/recordedRef/implRef_type | DONE. cpp_scalar + cpp_crosslang ENTER the boundary pass on the SAME boundary_vm as all 16 behaviors (no VM-identity mismatch); implRef_type="function" (the ref resolves to a callable). VM-mismatch hypothesis KILLED. BUT the C++ refs are implRef=1 and 5 vs every other behavior's 2000s — refs built when the registry was nearly empty (the early kcdxPlugin_Load stop). implRef_type="function" only proves slot 1/5 holds *a* function in the boundary VM, NOT that it is the trampoline closure — a low ref may alias a DIFFERENT object. |
+| C | PROBE C: log inside CImplClosure — did the trampoline fire, with which fn + arg type | DONE. EXACTLY 2 cimpl_closure_fired firings — fn=…136 isRevert=0 arg1_type="boolean" (cpp_scalar=true) + fn=…072 isRevert=0 arg1_type="number" (cpp_crosslang=42). Real bundle+fn ptrs, correct value types. The trampoline FIRED, called the right C fn with the right value. THE ENGINE WORKS. The break is a TEST-PLUGIN observation bug — cap-102 reads g_cpp_scalar_impl_ran at kcdxPlugin_PostGameLoad, which runs BEFORE the apply boundary fires the impl (the fixture's own line 136-138 states PostLoad/the boundary runs AFTER PostGameLoad, contradicting its line 26 "post-apply-boundary" claim). |
+
+## Facts (verified)
+
+- The boundary reaches cpp_scalar + cpp_crosslang on the same VM as all 16 behaviors; their implRef resolves to a function in the boundary VM (PROBE B).
+- The C-impl trampoline `CImplClosure` FIRES exactly twice at the boundary — once for cpp_scalar (`arg1_type="boolean"`) and once for cpp_crosslang (`arg1_type="number"`) — with real bundle+fn pointers and the correct value types (PROBE C).
+- Therefore the engine's C++-declared-behavior impl-fire path works end-to-end: a Lua set records the value, the boundary pcalls the trampoline, the trampoline calls the C `kcdxBehaviorImplFn` with the value handle (PROBE C).
+- cap-102's `cpp-declare-set-get` + `crosslang-lua-sets-cpp` rows read `g_cpp_scalar_impl_ran` / `g_cpp_crosslang_impl_*` at `kcdxPlugin_PostGameLoad`, which runs BEFORE `RunApplyBoundary` (the boundary that fires the impl). The fixture's own line 136-138 documents `PostLoad()`/the boundary running AFTER PostGameLoad; its line 26 wrongly calls PostGameLoad "post-apply-boundary" (PROBE A static read + the cap-102 source).
+
+## Reframe
+
+KI-0018 is NOT an engine defect — it is a **cap-102 fixture timing bug**. The C++ behavior interface (the trampoline, the boundary invocation, the value forwarding) is correct. The three failing rows observe a boundary effect (`impl ran`, the applied/coerced value) at `kcdxPlugin_PostGameLoad`, which is too early — the apply boundary fires the impl AFTER PostGameLoad, before `InputLoaded`. The same timing the s5/s6 fixtures handle by reporting boundary-dependent rows at `InputLoaded`. The `AsBool=0`-while-`Get=1` is the same artifact: at PostGameLoad the value is recorded (Get sees it) but not yet applied, and the accessor reads a not-yet-applied state. The fix: move the three rows' boundary-dependent assertions to the `InputLoaded` handler (post-boundary), matching cap-100/the s5/s6 pattern.
+
+## Open questions
+
+- Causal claim (NOT verified): the C++ `Declare` runs at the early `kcdxPlugin_Load` stop and builds the trampoline/default refs into `hooks::CurrentLuaState()` AT THAT MOMENT; if the VM pointer that `CurrentLuaState()` returns at the early stop differs from the one `RunApplyBoundary` (game main thread, later) and `AsBool` use, the boundary pcalls a ref that doesn't exist in its VM (impl never fires) and `AsBool` reads a ref from the wrong VM (mis-coerce). The header asserts `BuildAndAdoptVM` published the one VM before `DiscoverAndLoad` — a design-asserted runtime mechanism that PROBE B must observe, not assume.
+- Causal claim (NOT verified): alternatively the boundary may not pcall a C++-declared behavior's implRef for a value SET FROM LUA (a Lua set on a C++-declared behavior records the value but the boundary's impl walk may key off the declaring tier / a flag the C++ Declare doesn't set). PROBE B's boundary-pcall observation discriminates this from the VM-identity cause.
+
 ## Hypothesis (NOT verified)
 
 - Hypothesis only — not verified: the apply-boundary implementation-invocation
