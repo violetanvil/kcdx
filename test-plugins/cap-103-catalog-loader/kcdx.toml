@@ -1,0 +1,73 @@
+# CAP-103 — the engine behavior-catalog loader path (Phase 9.5 P3 s1).
+#
+# A real Lua plugin that asserts, from its OWN load window (plugin.lua top
+# level + a ready handler), that the engine behavior-catalog pack
+# (<kcdx-engine>/behavior-catalog/*.lua) loaded AHEAD of this user plugin and
+# registered its proving entry under the reserved kcdx.behavior.<bare> root via
+# the engine identity (declarer "kcdx"), NOT a <author>.<plugin>.<bare> plugin
+# stamp. The catalog is a builtin pack loaded by the engine BEFORE any user
+# plugin's plugin.lua runs (the call-site pin in hooks.cpp, strictly before
+# RunAll), so every kcdx.behavior.* name is already present when this plugin's
+# load-time code runs.
+#
+# Proving entry under test: kcdx.behavior.log_texture_streaming — a benign
+# engine-value behavior whose implementation reads the verified r_TexturesStreaming
+# CVar through kcdx.cvar.get_int (already-verified surface; no new RE, no DB row).
+#
+# Rows (all boot-only, auto-pass; the catalog declare happened at engine load,
+# BEFORE this plugin — so a present-at-load assertion proves the pin-ahead order):
+#   1. cap-103-catalog-loaded-ahead — at THIS plugin's load window, the catalog
+#      name kcdx.behavior.log_texture_streaming already resolves (get answers its
+#      default) — the catalog pack ran before this user plugin's code.
+#      FALSIFIABLE: get("kcdx.behavior.log_texture_streaming") RAISES "no declared
+#      behavior" at load (the catalog did not run ahead, or did not register) -> FAIL.
+#   2. cap-103-catalog-stamp-reserved-root — the entry appears in
+#      list("kcdx.behavior.") with name == "kcdx.behavior.log_texture_streaming"
+#      and declarer == "kcdx" (the engine-identity stamp), NOT an <author>.<plugin>
+#      prefix.
+#      FALSIFIABLE: the entry is absent from the kcdx.behavior. filter, its name
+#      lacks the reserved root, or its declarer is not "kcdx" -> FAIL.
+#   3. cap-103-catalog-list-filter — list("kcdx.behavior.") returns the catalog
+#      tier (>=1 entry, every returned name under the reserved root) and the
+#      catalog entry is NOT present in this plugin's own
+#      list("ts.cap_103_catalog_loader.") prefix (tier separation).
+#      FALSIFIABLE: the kcdx.behavior. filter is empty / leaks a non-catalog name,
+#      or the catalog entry shows under this plugin's prefix -> FAIL.
+#   4. cap-103-catalog-set-main-stop — a main-stop set on the catalog entry
+#      (settable from any stop, §5/§6 window law) RECORDS, and the apply boundary
+#      invokes its implementation once with the set value (asserted at
+#      input_loaded, post-boundary; get tracks the recorded value).
+#      FALSIFIABLE: the set RAISES (a catalog name must resolve + be settable from
+#      the main stop), or get does not track the recorded value post-boundary -> FAIL.
+#
+# Surfaced item (NOT shipped as a boot-breaking file): a malformed catalog file
+# would be a boot-time builtin-pack error. Shipping a malformed .lua INTO the
+# live catalog dir would surface the loud error but the entry would not register
+# (and a parse-broken file in the shipped pack is itself a QA defect). The loud
+# error PATH is exercised in code review of behavior_catalog_loader.cpp's
+# file_error / file_faulted branches (LOG_ERROR_KV, never a silent skip) — a
+# self-test cannot assert it without breaking the boot it tests. See the cap-103
+# matrix Notes.
+#
+# Test mode: boot-only (launch-to-menu confirms all four rows; no player input).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name             = "cap_103_catalog_loader"
+display_name     = "CAP-103 engine behavior-catalog loader"
+author           = "ts"
+description      = "Pure-Lua self-test of the engine behavior-catalog loader path: the catalog pack (data/behavior-catalog/*.lua, deployed under kcdx-engine/) loads AHEAD of every user plugin and registers its proving entry kcdx.behavior.log_texture_streaming under the reserved kcdx.behavior.<bare> root via the engine identity (declarer 'kcdx', not <author>.<plugin>). Asserts: the catalog name already resolves at this plugin's load window (pin-ahead order); list('kcdx.behavior.') returns the catalog tier with the entry stamped under the reserved root + declarer 'kcdx'; the catalog entry is absent from this plugin's own prefix (tier separation); a main-stop set on the catalog entry records and the apply boundary invokes its implementation once with the set value."
+version          = "0.1.0"
+kcdx_min_version = "0.1.0"
+log_level        = "info"
+test_names       = [
+    "cap-103-catalog-loaded-ahead",
+    "cap-103-catalog-stamp-reserved-root",
+    "cap-103-catalog-list-filter",
+    "cap-103-catalog-set-main-stop",
+]
+
+[entrypoints]
+lua = "plugin.lua"

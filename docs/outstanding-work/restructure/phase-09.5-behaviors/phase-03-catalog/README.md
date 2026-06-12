@@ -8,7 +8,7 @@ catalog-aware loader path, then the shipped entries. Design:
 
 | Step | Status | Commit |
 |---|---|---|
-| [1 — the catalog loader path](step-1-catalog-loader.md) | NOT STARTED | — |
+| [1 — the catalog loader path](step-1-catalog-loader.md) | DONE | (landed) |
 | [2 — the shipped entries (5–10)](step-2-shipped-entries.md) | NOT STARTED | — |
 
 ## Phase verification gate

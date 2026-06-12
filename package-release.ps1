@@ -126,6 +126,22 @@ if (Test-Path $LoadOrderSrc) {
     Copy-Item $LoadOrderSrc "$Staging/kcdx-engine/load_order.toml"
 }
 
+# Engine behavior catalog (data/behavior-catalog/*.lua + README.md). Engine-owned
+# data asset: the engine reads it at runtime from <kcdx-engine>/behavior-catalog/,
+# so it ships under kcdx-engine/ in the zip (source lives at data/behavior-catalog/).
+$CatalogSrc = Join-Path $RepoRoot "data/behavior-catalog"
+$CatalogEntries = @()
+if (Test-Path $CatalogSrc) {
+    Write-Host "Copying kcdx-engine/behavior-catalog/..." -ForegroundColor Cyan
+    $CatalogDst = "$Staging/kcdx-engine/behavior-catalog"
+    New-Item -ItemType Directory -Path $CatalogDst -Force | Out-Null
+    Get-ChildItem -Path $CatalogSrc -File | ForEach-Object {
+        Copy-Item $_.FullName "$CatalogDst/$($_.Name)"
+        $CatalogEntries += "kcdx-engine/behavior-catalog/$($_.Name)"
+        Write-Host "  + $($_.Name)" -ForegroundColor Cyan
+    }
+}
+
 # Build the zip.
 $ZipName = "kcdx-$Version.zip"
 $ZipPath = Join-Path $RepoRoot "release-staging/$ZipName"
@@ -154,7 +170,7 @@ $ExpectedRoot = @(
 if (Test-Path "$Staging/kcdx-engine/load_order.toml") {
     $ExpectedRoot += "kcdx-engine/load_order.toml"
 }
-$ExpectedEntries = $ExpectedRoot + $BuiltinFixes
+$ExpectedEntries = $ExpectedRoot + $BuiltinFixes + $CatalogEntries
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)

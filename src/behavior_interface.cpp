@@ -281,9 +281,9 @@ std::string ResolutionMissError(const std::string& nameArg, const Owner& caller)
                           !segs[1].empty() && !segs[2].empty();
     if (prefixed && segs[0] == "kcdx" && segs[1] == "behavior") {
         return "the engine catalog declares no behavior 'kcdx.behavior." +
-               segs[2] + "' — browse kcdx.behavior.list(\"kcdx.behavior.\") (it "
-               "is empty until the catalog pack ships; a plugin behavior is set "
-               "by its full <author>.<plugin>.<bare> name).";
+               segs[2] + "' — browse kcdx.behavior.list(\"kcdx.behavior.\") for "
+               "the shipped catalog entries; a plugin behavior is set by its "
+               "full <author>.<plugin>.<bare> name.";
     }
     if (prefixed) {
         const std::string& author = segs[0];

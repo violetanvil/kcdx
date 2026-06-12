@@ -86,6 +86,14 @@ namespace {
 
 constexpr const char* kCat = "BEHAVIOR";
 
+// Engine-catalog declare mode. Set by EngineCatalogScope while a catalog .lua
+// file runs; read by Lua_Declare to route to the engine-identity declare path
+// (DeclareEngine — the reserved kcdx.behavior.<bare> root) instead of the
+// plugin path. Main-thread only (catalog files run in the first-tick block, the
+// same thread as RunAll), so a plain bool is correct — no atomic, consistent
+// with the registry's main-thread threading invariant.
+bool g_engineCatalogDeclareMode = false;
+
 // The spec-table key allowlist (fail loud on a typo'd key, never a silent
 // drop).
 static const char* kSpecKeys[] = {
@@ -174,6 +182,15 @@ int Lua_Declare(lua_State* L) {
     }
 
     // --- the declarer identity (the namespace stamp) ---
+    // Engine-catalog mode (EngineCatalogScope active while a catalog .lua file
+    // runs) routes to the ENGINE identity: the declare stamps the reserved
+    // kcdx.behavior.<bare> root via DeclareEngine, NOT <author>.<plugin>.<bare>.
+    // The catalog has the engine's own identity — there is no owning plugin and
+    // none is required, so the plugin-identity gates below are skipped. All spec
+    // validation above (name/dotted/empty, the post-load wall) and below
+    // (fields) still applies — the catalog author writes the same declare a
+    // plugin would, only the stamping root differs.
+    if (!g_engineCatalogDeclareMode) {
     if (owner.plugin.empty()) {
         // Truly no owning plugin (console / pak Lua / anonymous caller).
         return RejectDeclare(L, owner.author, owner.plugin, bareName,
@@ -197,6 +214,7 @@ int Lua_Declare(lua_State* L) {
             "the author component is missing. Add [plugin].author to your "
             "manifest (kcdx.toml), then declare again.");
     }
+    }  // end !g_engineCatalogDeclareMode (plugin-identity gates)
 
     // --- arg 2: the spec table ---
     if (lua_type(L, 2) != LUA_TTABLE) {
@@ -284,9 +302,14 @@ int Lua_Declare(lua_State* L) {
     }
 
     std::string err;
-    const bool ok = kcdx::behavior_registry::DeclarePlugin(
-        owner.author, owner.plugin, bareName, description,
-        defaultRef, implementationRef, revertRef, err);
+    const bool ok =
+        g_engineCatalogDeclareMode
+            ? kcdx::behavior_registry::DeclareEngine(
+                  bareName, description, defaultRef, implementationRef,
+                  revertRef, err)
+            : kcdx::behavior_registry::DeclarePlugin(
+                  owner.author, owner.plugin, bareName, description,
+                  defaultRef, implementationRef, revertRef, err);
     if (!ok) {
         // Duplicate same-full-name: release the refs, then raise the
         // registry's teaching text (it names the standing declarer) against
@@ -473,9 +496,9 @@ int RaiseSetResolution(lua_State* L, const std::string& nameArg,
         branch = "catalog_miss";
         detail = "kcdx.behavior.set('" + nameArg + "'): the engine catalog "
             "declares no behavior 'kcdx.behavior." + bare + "' — browse the "
-            "catalog with kcdx.behavior.list(\"kcdx.behavior.\") (it is empty "
-            "until the catalog pack ships; a plugin behavior is set by its "
-            "full <author>.<plugin>.<bare> name).";
+            "catalog with kcdx.behavior.list(\"kcdx.behavior.\") to see the "
+            "engine-shipped names (a plugin behavior is set by its full "
+            "<author>.<plugin>.<bare> name).";
         // No edge: a catalog name has no declarer plugin to order against.
     } else if (prefixed) {
         const std::string& author = segs[0];
@@ -883,6 +906,15 @@ void bind(lua_State* L) {
     lua_pushcfunction(L, Lua_List);
     lua_setfield(L, -2, "list");
     lua_setfield(L, kcdx_idx, "behavior");
+}
+
+EngineCatalogScope::EngineCatalogScope()
+    : prior_(g_engineCatalogDeclareMode) {
+    g_engineCatalogDeclareMode = true;
+}
+
+EngineCatalogScope::~EngineCatalogScope() {
+    g_engineCatalogDeclareMode = prior_;
 }
 
 }  // namespace kcdx::lua_bind_behavior

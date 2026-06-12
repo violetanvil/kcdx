@@ -7,8 +7,8 @@ the engine's apply contract. Think of it as a CVar whose setter is mod-authored.
 Two tiers register through one model and one code path:
 
 - **engine catalog** — engine-shipped behaviors under the reserved
-  `kcdx.behavior.<bare>` names (the catalog pack is not shipped yet; until it
-  lands, `list()` shows plugin-declared behaviors only);
+  `kcdx.behavior.<bare>` names, loaded as a builtin pack ahead of every plugin
+  (see [The engine catalog](#the-engine-catalog) below);
 - **plugin-declared** — behaviors a plugin declares, stamped
   `<author>.<plugin>.<bare>` from the declaring plugin's manifest. You write
   the bare name; the engine stamps the prefix. You never type your own prefix.
@@ -332,3 +332,35 @@ verb. The C++ mirror adds [`Invoke`](../cpp/behavior.md#calling-a-callable-value
 because a C++ caller cannot invoke a Lua function value directly — it goes through
 the engine's value-handle. This is a genuine single-surface case (the language
 provides it natively), not a parity gap.
+
+## The engine catalog
+
+Engine-shipped behaviors live under the reserved `kcdx.behavior.<bare>` root.
+The engine ships them as a **catalog pack** — one `.lua` file per behavior,
+each a normal Lua source calling `kcdx.behavior.declare(...)` exactly as a
+plugin would (a bare name + spec, zero hex). The engine loads the whole pack
+**before any user plugin runs**, so every `kcdx.behavior.<bare>` name is
+declared up front and is **settable from any stop** (a catalog name never trips
+the main-stop window law, and a set on one never hits a load-order error).
+
+Browse the catalog with the prefix filter:
+
+```lua
+for _, b in ipairs(kcdx.behavior.list("kcdx.behavior.")) do
+    kcdx.log.info("MYMOD", b.name .. " — " .. b.description)
+end
+```
+
+A catalog entry resolves like any behavior: a bare name resolves an engine
+`kcdx.behavior.<bare>` after your own declaration (self > engine > other), and
+the explicit full form `"kcdx.behavior.<bare>"` is unambiguous from anywhere.
+
+### Promotion = move the file
+
+A plugin behavior that proves broadly useful is **promoted** to the catalog by
+moving its `.lua` file into the catalog pack. The declare code is unchanged —
+the engine stamps the file's declares under `kcdx.behavior.<bare>` instead of
+`<author>.<plugin>.<bare>`, so the only difference is the stamping root. A
+consumer that set the behavior by its old plugin-prefixed name updates to the
+`kcdx.behavior.<bare>` name (or resolves it bare, self > engine > other);
+nothing else changes.

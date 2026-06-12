@@ -25,6 +25,7 @@
 #include "hook_payload.h"
 #include "hook_signature.h"
 #include "lua_bind.h"
+#include "behavior_catalog_loader.h"
 #include "lua_plugin_loader.h"
 #include "lua_registry.h"
 #include "messaging.h"
@@ -376,6 +377,22 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                 kcdx::lua_bind::RegisterKcdxTable(L);
                 kcdx::scripting::set_lua_state(L);
                 kcdx::hook_chain::SetLuaState(L);
+
+                // Load the engine behavior catalog
+                // (<kcdx-engine>/behavior-catalog/*.lua) as a builtin
+                // pack BEFORE any user plugin runs. Each catalog file
+                // declares a behavior under the reserved
+                // kcdx.behavior.<bare> root (the engine-identity declare
+                // path), so every catalog name is registered before a
+                // user plugin's load-time set can reference it — the §6
+                // immediate-error model never false-positives on engine
+                // behaviors. The ordering guarantee is THIS call-site
+                // PLACEMENT (strictly before RunAll), not a priority/zone
+                // mechanism. Needs kcdx.behavior live (RegisterKcdxTable,
+                // above) + the VM bound (set_lua_state, above). Each file
+                // is SEH/pcall-guarded; a malformed file is a loud
+                // builtin-pack boot error, never a silent skip.
+                kcdx::behavior_catalog_loader::RunCatalog(L);
 
                 // Execute each enabled plugin's
                 // [entrypoints].lua now that kcdx.* is live + the VM is
