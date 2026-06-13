@@ -1,0 +1,1240 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (568 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Starting cache cleanup: C:\Users\Michael\AppData\Local\ghidra\fscache2 (FileCacheMaintenanceDaemon)  
+INFO  Finished cache cleanup, estimated storage used: 0 (FileCacheMaintenanceDaemon)  
+INFO  Headless startup complete (1795 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindEventAnchors.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindEventAnchors.java (HeadlessAnalyzer)  
+INFO  FindEventAnchors.java> === event-name string -> referencing functions === (GhidraScript)  
+INFO  FindEventAnchors.java>   AddPerk                  @183d38828  refd-by=FUN_181675cdc@181675cdc, FUN_1808fd090@1808fd090 (GhidraScript)  
+INFO  FindEventAnchors.java>   LearnPerk                @18472c4f8  refd-by=FUN_182cac05c@182cac05c (GhidraScript)  
+INFO  FindEventAnchors.java>   PerkUsed                 @183bbe5e0  refd-by=FUN_18158524c@18158524c (GhidraScript)  
+INFO  FindEventAnchors.java>   ShowPerkUsed             @183a887e0  refd-by=FUN_180ee7fac@180ee7fac, FUN_180ee7fac@180ee7fac, FUN_180c5122c@180c5122c (GhidraScript)  
+INFO  FindEventAnchors.java>   LevelUp                  @183eda6f0  refd-by=FUN_1801707b0@1801707b0, FUN_1801707b0@1801707b0 (GhidraScript)  
+INFO  FindEventAnchors.java>   ShowLevelUp              @183d36d70  refd-by=FUN_180ee7fac@180ee7fac, FUN_180ee7fac@180ee7fac, FUN_181120720@181120720, FUN_181120720@181120720 (GhidraScript)  
+INFO  FindEventAnchors.java>   LastSkillLevelUp         @183e16138  refd-by=FUN_1801f2510@1801f2510, FUN_18005f670@18005f670, FUN_1801acd70@1801acd70, FUN_18019e260@18019e260, FUN_18020cb30@18020cb30 (GhidraScript)  
+INFO  FindEventAnchors.java>   LastStatLevelUp          @183e16150  refd-by=FUN_1801f2540@1801f2540, FUN_18005f6a0@18005f6a0, FUN_1801acda0@1801acda0, FUN_18019e290@18019e290, FUN_18020cb60@18020cb60 (GhidraScript)  
+INFO  FindEventAnchors.java>   QuestStateChanged        @183c384b8  refd-by=FUN_18192dfd8@18192dfd8 (GhidraScript)  
+INFO  FindEventAnchors.java>   QuestObjectiveFinished   @18472c578  refd-by=FUN_182cac640@182cac640 (GhidraScript)  
+INFO  FindEventAnchors.java>   ShowQuestEvent           @183ab07f8  refd-by=FUN_180ee7fac@180ee7fac, FUN_180ee7fac@180ee7fac, FUN_180dcb95c@180dcb95c (GhidraScript)  
+INFO  FindEventAnchors.java>   Dialog:PlayDialog        @183d21c70  refd-by=FUN_1819ea6f8@1819ea6f8 (GhidraScript)  
+INFO  FindEventAnchors.java>   FE_DialogueSpeaking      @183a87278  refd-by=FUN_180c2dcd8@180c2dcd8 (GhidraScript)  
+INFO  FindEventAnchors.java> 
+=== 23 referencing functions (decompiled, capped) === (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_180c5122c @ 180c5122c  size=194 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_180c5122c(longlong param_1,undefined8 param_2,undefined8 param_3)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     bool bVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_res8 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_res20 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_28 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     bVar2 = ((byte)DAT_1855e0c34 & 0x40) != 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (bVar2) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       uVar1 = FUN_1804fd468(local_28,param_3);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       uVar1 = FUN_1803c25bc(local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fd468(local_res20,uVar1);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (bVar2) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fc884(local_28);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fc884(local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(local_res8,"ShowPerkUsed");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180c50cac(param_1 + -0x60,local_res8,param_2,local_res20);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fc884(local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fc884(local_res20);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_181120720 @ 181120720  size=319 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_181120720(longlong param_1,undefined8 param_2,undefined8 param_3,undefined4 param_4)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char cVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong lVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar3;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 *puVar4;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     bool bVar5;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_58 [2];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_50 [2];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_48 [4];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_30;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_58[0] = param_4;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     lVar2 = FUN_18091c138();
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_30 = 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_38 = 0x100000000000;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     cVar1 = (**(code **)(**(longlong **)(lVar2 + 0xd8) + 0x10))
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                       (*(longlong **)(lVar2 + 0xd8),&local_38);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (cVar1 == '\0') {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       bVar5 = ((byte)DAT_1855e0c34 & 0x40) == 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (bVar5) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         uVar3 = FUN_1803c25bc(local_50,param_3);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         uVar3 = FUN_1804fd468(&local_38);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fd468(local_48,uVar3);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (bVar5) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804fc884(local_50);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804fc884(&local_38);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804f692c(local_50,"ShowLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181120860(param_1 + -0x60,local_50,param_2,local_48,local_58,&stack0x00000028,
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                     &stack0x00000030);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fc884(local_50);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       puVar4 = local_48;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       local_48[0] = 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       local_58[0] = 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804f692c(local_50,"ShowLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_182b7e504(param_1 + -0x60,local_50);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       puVar4 = local_50;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fc884(puVar4);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1808fd090 @ 1808fd090  size=117 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_1808fd090(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) + 0x18
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                 ) < DAT_1855e3880) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181c1e988(&DAT_1855e3880);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (DAT_1855e3880 == -1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804f692c(&DAT_1855e3888,"AddPerk");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         atexit((_func_5014 *)&LAB_18217ed50);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         _Init_thread_footer(&DAT_1855e3880);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_1855e3888;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18005f670 @ 18005f670  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18005f670(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185574bb8,"LastSkillLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_182149620);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1801acda0 @ 1801acda0  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_1801acda0(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_1855806b0,"LastStatLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_18217acc0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_182cac640 @ 182cac640  size=115 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_182cac640(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) + 0x18
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                 ) < DAT_18567d190) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181c1e988(&DAT_18567d190);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (DAT_18567d190 == -1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804f692c(&DAT_1855e38f0,"QuestObjectiveFinished");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         atexit((_func_5014 *)&LAB_18217ec10);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         _Init_thread_footer(&DAT_18567d190);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_1855e38f0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18192dfd8 @ 18192dfd8  size=115 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_18192dfd8(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) + 0x18
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                 ) < DAT_1855e38f8) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181c1e988(&DAT_1855e38f8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (DAT_1855e38f8 == -1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804f692c(&DAT_1855e3900,"QuestStateChanged");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         atexit((_func_5014 *)&LAB_18217ec20);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         _Init_thread_footer(&DAT_1855e38f8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_1855e3900;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_181675cdc @ 181675cdc  size=2373 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_181675cdc(longlong param_1)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     ulonglong uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     code *local_res8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_48;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_44;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_34;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_28;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_24;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_18;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_14;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_10;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_38 = (undefined4)param_1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_34 = (undefined4)((ulonglong)param_1 >> 0x20);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = -(ulonglong)(param_1 != 0) & 0x182cf3f00;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_48 = (undefined4)uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_44 = (undefined4)(uVar1 >> 0x20);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_18 = local_38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_14 = uStack_34;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_10 = 0x8041c5dc;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_c = 1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_28 = local_48;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uStack_24 = uStack_44;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180b9c36c(local_48,"GetId",&local_28);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = (code *)&LAB_1817feb38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetState","state",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cfc338;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676b58(param_1);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = (code *)&LAB_182cf66c4;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetStatLevel",&DAT_183b330b0,param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cf66cc;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetStatProgress",&DAT_183b330b0,param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cee3d8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"AdvanceToStatLevel","stat,level",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cee310;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"AddStatXP","stat,xp",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cf5324;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"GetNextLevelStatXP","stat,level",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = (code *)&LAB_180bea834;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetDerivedStat","derivedStat",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_180be9098;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"HaveSkill","skill",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = (code *)&LAB_182cf6394;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetSkillLevel","skill",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cf639c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"GetSkillProgress","skill",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cf6f34;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"HasAbility","ability",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cee320;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"AdvanceToSkillLevel","skill,level",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cee234;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"AddSkillXP","skill,xp",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cf5298;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_181676624(param_1,"GetNextLevelSkillXP","skill,level",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cedd78;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"AddBuff","buff_id",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cfbae8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52ae8(param_1,"RemoveBuff","buff_instance",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cfba38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"RemoveAllBuffsByGuid","buff_guid",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cee04c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"AddPerk","perk_id",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cfbc44;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180a52c20(param_1,"RemovePerk","perk_id",param_1,&local_res8);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8 = FUN_182cedcfc;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   … (127 more lines) (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18019e290 @ 18019e290  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18019e290(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_18557ecf8,"LastStatLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_182177810);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1801acd70 @ 1801acd70  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_1801acd70(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_1855806b8,"LastSkillLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_18217acb0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1801707b0 @ 1801707b0  size=2195 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_1801707b0(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *puVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *plVar3;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong lVar4;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *plVar5;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 *puVar6;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *plVar7;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *plVar8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     int *piVar9;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *plVar10;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 auStack_328 [32];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     code *local_308;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_2f8 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *local_2f0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *local_2e8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_2e0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_2d8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_2c8 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_2b8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong local_2b0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong local_2a8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong *local_2a0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_298 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_288 [48];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_258 [56];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *local_220;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_218 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_208 [176];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_158;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_150;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_148;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_140;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_138;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_130;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_128 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong local_120;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_f8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_f0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_e8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_e0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_d8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_d0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_c8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_c0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_b8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_b0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_a8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_a0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 *local_98;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_90;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_88;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_80;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_78;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_70;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_68;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_60;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_58;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_50;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_48;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_40;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     ulonglong local_38;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_38 = DAT_1848fcfc0 ^ (ulonglong)auStack_328;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     plVar7 = (longlong *)0x0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   … (236 more lines) (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18158524c @ 18158524c  size=117 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_18158524c(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) + 0x18
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                 ) < DAT_1855e3898) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181c1e988(&DAT_1855e3898);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (DAT_1855e3898 == -1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804f692c(&DAT_1855e38a0,"PerkUsed");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         atexit((_func_5014 *)&LAB_18217ee00);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         _Init_thread_footer(&DAT_1855e3898);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_1855e38a0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18020cb30 @ 18020cb30  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18020cb30(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185583488,"LastSkillLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_1821869a0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_182cac05c @ 182cac05c  size=115 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_182cac05c(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) + 0x18
+ (GhidraScript)  
+INFO  FindEventAnchors.java>                 ) < DAT_18567d178) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_181c1e988(&DAT_18567d178);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       if (DAT_18567d178 == -1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         FUN_1804f692c(&DAT_1855e3890,"LearnPerk");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         atexit((_func_5014 *)&LAB_18217edd0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>         _Init_thread_footer(&DAT_18567d178);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_1855e3890;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_180dcb95c @ 180dcb95c  size=275 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_180dcb95c(longlong param_1,undefined8 param_2,int param_3,undefined8 param_4,char param_5)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     bool bVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     bool bVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar3;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong lVar4;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     int local_res8 [2];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_res18 [2];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_38 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_30 [8];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_28 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res8[0] = param_3 + -1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if ((((byte)DAT_1855e0c34 & 0x10) == 0) && (param_5 != '\0')) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       uVar3 = FUN_1803c25bc(local_28,param_4);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       bVar1 = false;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       bVar2 = true;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     else {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       uVar3 = FUN_1804fd468(local_38,param_4);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       bVar2 = false;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       bVar1 = true;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fd468(local_30,uVar3);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (bVar1) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fc884(local_38);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     if (bVar2) {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>       FUN_1804fc884(local_28);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     lVar4 = FUN_180567a2c(*(undefined8 *)(param_1 + -0x50));
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     local_res18[0] = FUN_180dc8520(lVar4 + 0x1108,param_2);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(local_38,"ShowQuestEvent");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180dcc660(param_1 + -0x58,local_38,param_2,local_res8,local_30,&stack0x00000030,local_res18);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fc884(local_38);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804fc884(local_30);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1801f2510 @ 1801f2510  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_1801f2510(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185582e08,"LastSkillLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_1821828b0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_180c2dcd8 @ 180c2dcd8  size=207 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_180c2dcd8(longlong param_1,longlong param_2)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar2 = *(undefined8 *)(param_2 + 0x18);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Default");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 8) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_DialogueIdle");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0xc) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_DialogueSpeaking");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x10) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Ragdoll");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x14) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar2 = *(undefined8 *)(param_2 + 0x10);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"Combat");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x18) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Concentrating");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x1c) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Sleeping");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x20) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Investigating");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x24) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180792888(uVar2,"FE_Clinch");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x28) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     uVar1 = FUN_180790d84(*(undefined8 *)(param_2 + 0x10),"FE_Mood");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     *(undefined4 *)(param_1 + 0x2c) = uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18005f6a0 @ 18005f6a0  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18005f6a0(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185574bb0,"LastStatLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_182149630);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18019e260 @ 18019e260  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18019e260(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_18557ed00,"LastSkillLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_182177800);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1801f2540 @ 1801f2540  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_1801f2540(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185582e00,"LastStatLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_1821828c0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_180ee7fac @ 180ee7fac  size=3277 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_180ee7fac(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uVar1;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     longlong lVar2;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *puVar3;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_res8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_5c8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_5c0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     code *local_5b8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_5b0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *local_5a8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_598 [12];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_58c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_588;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_584;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_580;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_57c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     code *local_578;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_570;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 *local_568;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_558;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_554;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_550;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_54c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_548;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_544;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_540;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_53c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_538;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_534;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_530;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_52c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 local_528;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_524;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_520;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 uStack_51c;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_518;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_510;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 *local_508;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *local_500;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined *local_4f8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     code *local_4e8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_4e0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 *local_4d8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined4 *local_4d0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_4c8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_4c0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_4b8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_4b0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     char *local_4a8;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_490;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_488;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 uStack_480;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_478 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_468 [2];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined8 local_458;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_450 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_440 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_430 [16];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_420 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_3d8 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_390 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_348 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_300 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_2b8 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_270 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_228 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     undefined1 local_1e0 [72];
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   … (346 more lines) (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_1819ea6f8 @ 1819ea6f8  size=60 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   undefined * FUN_1819ea6f8(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_180c015dc(&DAT_18534ebe0,"Dialog:PlayDialog");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     _DAT_18534ebf8 = 0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     _DAT_18534ebe0 = CAutoRegFlowNode<CFlowDialogNode>::vftable;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return &DAT_18534ebe0;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  FindEventAnchors.java> FUNC FUN_18020cb60 @ 18020cb60  size=39 (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   void FUN_18020cb60(void)
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   {
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     FUN_1804f692c(&DAT_185583480,"LastStatLevelUp");
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     atexit((_func_5014 *)&LAB_1821869b0);
+ (GhidraScript)  
+INFO  FindEventAnchors.java>     return;
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   }
+ (GhidraScript)  
+INFO  FindEventAnchors.java>   
+ (GhidraScript)  
+INFO  FindEventAnchors.java> 
+=== done === (GhidraScript)  
