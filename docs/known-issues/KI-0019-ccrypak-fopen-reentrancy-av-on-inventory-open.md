@@ -2,10 +2,17 @@
 id: KI-0019
 reported: 2026-06-13
 status: Open
-area: asset-system / engine.ccrypak_fopen hook re-entrancy (HOOK 2 own-FILE* loose open)
+area: asset-system / HOOK 2 cross-CRT FILE* handed to the engine (FOpenLooseOverlay)
 discovered_by: Phase-10 verification-probe launch (cap-105/106/107) — crash on inventory open, 2026-06-13 11:09:56 run
 commit_at_report: f115640
 ---
+
+> **STATUS: OPEN — NOT FIXED, NOT VERIFIED.** No code has changed; the crash still
+> reproduces (non-deterministically). What exists is a LEADING DIAGNOSIS from the dump +
+> source (cross-CRT `FILE*` `fseek`), with one residual UNCONFIRMED (HOOK 2 hit-vs-miss
+> on the FSR2-init file — see Trail E). The fix is DEFERRED to Phase 11 / FIX A (bundled
+> with KI-0006), not written and not tested. Nothing here is a verified fix; closure
+> requires Phase 11's fix to land AND a launch confirming the crash is gone.
 
 # KI-0019 — ACCESS_VIOLATION on inventory open: runaway re-entrant `engine.ccrypak_fopen` recursion
 
