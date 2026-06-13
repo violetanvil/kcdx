@@ -51,6 +51,28 @@ worklist + s04 editor exist).
 - Independent of 3.4 (both are s08-surface changes touching distinct concerns — order either; landing
   3.4 first keeps the s08 reconciliation coherent before the Fix-flow polish).
 
+## Decisions settled this step (captured — user-approved before build)
+
+Two forks the design left open were surfaced and settled before building (decision-capture):
+
+- **E6 report-survival — KEEP the keep-mounted-and-hide model + add the falsifiable test (NOT the
+  literal frame-lift refactor).** App already preserves the s08 report across a `[Fix ▸]` push→`‹ back`
+  because `VerificationWorklist` stays MOUNTED (toggled by `hidden`), so law 10 / D31 (report intact,
+  no re-import) holds today. 3.5 does NOT refactor the worklist into a controlled frame-state component
+  (the doc's "cleaner model" wording) — that is churn on a green, gated surface for zero UX/Capability
+  gain. 3.5 ADDS the FALSIFIABLE test asserting `‹ back` from a `[Fix ▸]` restores the SAME report
+  (block split + scroll + applied state), no re-import. Rejected: the literal controlled-component
+  frame-lift (effort/churn-risk on working code, no cornerstone win — UX is identical either way).
+- **E5 detail-carry — EXTEND `DeepLinkTarget` with an optional `fixDetail?: {detail: string}` field.**
+  `[Fix ▸]` pushes the s02 frame carrying BOTH `openSection: "verify"` (land on the s04 verify surface,
+  reusing 3.3's deep-link applier) AND `fixDetail: {detail}` (the failing row's divergence reason);
+  EntityDetail's one-shot applier surfaces the detail at the s04 editor so the maintainer sees WHAT
+  diverged without re-checking the worklist (the E5 goal). The routed context rides the SINGLE law-10
+  frame channel (the deep-link), consistent with 3.3. Rejected: a separate detail channel on
+  EntityDetail (re-introduces the intent-drifts-from-the-frame risk 3.3 designed out by carrying
+  everything in one frame-state channel). The step-doc already sanctioned extending the payload "if
+  carrying detail needs a field it lacks" — it does.
+
 ## Seams consumed from 3.2 (user-approved deferrals this step owns)
 
 3.2 (`FE:6aaaeaa`) built the back-stack primitive but deferred two s08/s04-specific seams to HERE,
