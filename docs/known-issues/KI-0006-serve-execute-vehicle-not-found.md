@@ -9,6 +9,8 @@ commit_at_filing: 20873682510339e83f92afac6cf2f6e84fb0382f
 
 **Status:** open — **BUNDLED → Phase 11 (FIX A / the DllMain Lua VM)** (user-approved deferral, 2026-06-05; trigger = Phase 11). The serve-execute confirmation AND the heap-corruption root-cause are re-attempted AFTER Phase 11, not now.
 
+**Sibling: [KI-0019](KI-0019-ccrypak-fopen-reentrancy-av-on-inventory-open.md)** (cross-CRT `fseek`, FSR2/DLSS-init trigger, inventory-open AV 2026-06-13). Same `src/asset_overlay.cpp` HOOK 2 cross-CRT `FILE*` hazard class as this KI's `fclose` finding — different engine consumer of the same foreign handle. Bundled into the SAME Phase-11 / FIX-A fix (user-decided 2026-06-13): the single-runtime collapse retires both the `fclose` and the `fseek` cross-CRT instances. Re-verify both when the trigger fires.
+
 ## Resolution path (settled 2026-06-05) — re-attempt under Phase 11, do NOT root-cause against the pre-Phase-11 architecture
 
 The crash is NOT root-caused (3 theories falsified; the cross-CRT FClose confirmed-real but not the trigger; the crash tracks cap-78's keyed-but-unopened `overlay_entry`, an unexplained shape). Rather than keep probing the current architecture, KI-0006 is bundled into Phase 11 because:

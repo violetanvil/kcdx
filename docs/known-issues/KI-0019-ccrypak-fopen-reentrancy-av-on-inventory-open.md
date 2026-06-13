@@ -47,6 +47,25 @@ inventory-open gesture.
   KI-0012's fix held; this is a DISTINCT re-entrancy on the same hook, at a different
   trigger.
 
+## Resolution routing (user-decided 2026-06-13) — BUNDLED → KI-0006 / Phase 11, stays OPEN
+
+KI-0019 is the **`fseek` sibling of [KI-0006](KI-0006-serve-execute-vehicle-not-found.md)**:
+the SAME `src/asset_overlay.cpp` HOOK 2 cross-CRT `FILE*` ("return kcdx's OWN CRT
+FILE*"), the SAME hazard class. KI-0006 found the cross-CRT **`fclose`** (PROBE D:
+WHGame's `fclose` frees kcdx's `/MT` handle, mod-init trigger); KI-0019 is the cross-CRT
+**`fseek`** (`ucrtbase` `get_osfhandle` rejects kcdx's fd, FSR2/DLSS-init trigger). One
+root cause, two engine consumers of the same foreign `FILE*`.
+
+KI-0006 is BUNDLED → Phase 11 (FIX A drops the static vendored Lua/CRT and routes
+through WHGame's symbols, collapsing the dual-runtime that CREATES the cross-CRT-`FILE*`
+hazard class at the source). KI-0019 rides the same fix: **the user approved bundling it
+into Phase 11 rather than a separate patch** — one structural fix, not two. KI-0019 stays
+**OPEN, Phase-11-gated**; KI-0006 is the durable bundle handle. When Phase 11's single
+runtime lands, both the `fclose` and the `fseek` cross-CRT instances are re-verified
+against the post-FIX-A architecture (the surviving evidence here carries forward). No
+separate fix track; no provisional mask (the mechanism IS root-caused — it is a known
+capability constraint deferred to its structural fix, not an unknown).
+
 ## CORRECTED mechanism (from the minidump — supersedes the "re-entrancy" reframe below)
 
 Read `kcdx_2026-06-13_11-09-56.dmp` with cdb (`.ecxr; !analyze -v; k 40`) — the
