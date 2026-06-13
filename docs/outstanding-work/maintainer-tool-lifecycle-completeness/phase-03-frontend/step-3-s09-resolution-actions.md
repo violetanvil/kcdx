@@ -46,6 +46,21 @@ AT this step (3.1's view + the 3.2 back-stack primitive + the existing s02/s04/s
 - The existing s02/s04/s05 resolve screens + the s05 create-new-version entry (the canonical flows the
   actions route to; they already exist — verified by the s09 soundness gate).
 
+## Decision settled this step — the frame-state deep-link (captured)
+
+The s09 spec routes each action to a DISTINCT sub-surface (`[Verify]`→s04 verify surface,
+`[Author successor]`→s05 create prefilled, lifecycle actions→the s02 lifecycle section), but the 3.2
+push seam only landed on the s02 root. **The user settled (this step) the deep-link mechanism:** the
+pushed entity-detail frame carries `deepLink?: {openSection?: "lifecycle"|"verify", createPrefill?:
+{sourceKcdxId}}`; `EntityDetail` reads it on mount and auto-opens the target sub-surface (expand the
+lifecycle/verify `CollapsibleSection`, or open the create-version overlay prefilled). It is **one-shot**
+— App consumes the frame's `deepLink` (`updateCurrentState`→null) + an applied-marker ref, and the
+Verify/Lifecycle sections are CONTROLLED so a `‹ back` restores the maintainer's OWN toggles, never a
+re-fired auto-open (law 3 / law 10). Rejected alternatives: a second intent channel on EntityDetail
+(risk of the intent drifting from the frame) and keeping the s02-root fallback permanently (a UX
+reduction vs the spec). The mechanism is carried in the law-10 frame state (one channel) and is reused
+by step 3.5's `[Fix ▸]`→s04 (`openSection: "verify"`). Landed `FE:0b64b6d`.
+
 ## Seams consumed from 3.2 (user-approved deferrals this step owns)
 
 3.2 (`FE:6aaaeaa`) built the back-stack primitive + the s04 field-editor dirty source. Two seams it

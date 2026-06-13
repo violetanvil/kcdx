@@ -41,6 +41,12 @@ worklist + s04 editor exist).
 - **3.2** — the back-stack primitive (push, state-carrying frames, `‹ back` restore, the dirty-editor
   guard); `[Fix ▸]` PUSHES onto it and the report-intact return IS the state-restore it provides. Hard
   prerequisite.
+- **3.3** (`FE:0b64b6d`) — the frame-state DEEP-LINK mechanism (`deepLink: {openSection?: "lifecycle"|
+  "verify", createPrefill?}` carried in the pushed frame; EntityDetail auto-opens the target sub-surface
+  ONCE on entry, one-shot). `[Fix ▸]`→s04 REUSES this: the push carries `openSection: "verify"` (land on
+  the s04 verify surface) PLUS the failing row's divergence `detail`. Build to the existing mechanism —
+  do NOT re-invent it. Extend the deep-link payload only if carrying `detail` needs a field it lacks
+  (surface that, don't invent).
 - The existing s08 worklist + the s04 field editor (6.1/6.3).
 - Independent of 3.4 (both are s08-surface changes touching distinct concerns — order either; landing
   3.4 first keeps the s08 reconciliation coherent before the Fix-flow polish).
