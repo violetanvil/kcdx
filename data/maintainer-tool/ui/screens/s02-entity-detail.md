@@ -17,7 +17,8 @@ machinery must not eat the pane):
 
 - **Compact pinned summary** (always visible, top): the entity identity (read-only) + the
   version `Select` + a **one-line verify summary** ("Bin folder linked — `<version>` ✓" / "no
-  folder linked"). On phone it also carries the `‹ back` affordance to s01.
+  folder linked"). It carries the `‹ back` affordance (content-pane on wide / drill-down on phone)
+  when the stack has depth > 1 — returning to the screen that pushed s02 (law 10), not always s01.
 - **Collapsible "Verify against a DLL" section** (`collapsible section`, **collapsed by
   default**): the install-set link surface — the Bin-folder pick + the per-module link rows +
   the link-to-create prompt.
@@ -35,9 +36,9 @@ reflow). The compact summary stays pinned; the work surface scrolls.
 |---|---|---|---|
 | **Compact pinned summary** (always visible, top) | | | |
 | Entity title + identity | `title` text + `field row (read-only)` ×2 | `name` · `kcdx_id` (mono) | — (read-only, never editable, law 7) |
-| Version `Select` | `select / dropdown` | the targeted game version (a `game_versions` tag) | `pick_version(tag)` |
+| Version `Select` | `select / dropdown` | the targeted game version — sourced from `game_versions` tags AND the linked-Bin-resolved version (D43) | `pick_version(tag)` |
+| `‹ back` (content-pane depth > 1; drill-down back on phone) | `back affordance` | the content back-stack | `nav_back()` → the screen that pushed s02 (law 10); at root → navigator (wide) / navigator home (phone) |
 | One-line verify summary | text + glyph (status role) | the install link state ("Bin folder linked — `<version>` ✓" / "no folder linked") | — (status, read-only; glyph+text, law 7) |
-| `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
 | **Verify against a DLL** (`collapsible section`, collapsed by default) | | | |
 | Section header | `collapsible section` header | collapsed/expanded state (chevron + aria-expanded) | `toggle_verify_section()` (user action, law 1) |
 | Link the Bin folder | folder-pick affordance (`<input webkitdirectory>`) | the picked install's directory (read in-page, never uploaded — D15/D26/D30) | `link_bin_folder()` / `relink_bin_folder()` |
@@ -61,10 +62,22 @@ surfaced step when the maintainer authors the first address for it (the AP18 del
 posture, law 8); the link table then shows its `per-module link row`, found by name in the linked
 folder.
 
-**The version & verify surface (the relocated s07 + the verification engine, TRD D24–D31).**
-A **version dropdown** (`Select`, populated from the server-known `game_versions` tags) is the
-default way the maintainer states which version an edit targets; the picked version
-default-selects/marks the matching row.
+**The version & verify surface (the relocated s07 + the verification engine, TRD D24–D31/D43).**
+A **version dropdown** (`Select`) is the default way the maintainer states which version an edit
+targets; the picked version default-selects/marks the matching row. The dropdown sources **two
+origins** (TRD D43): the server-known `game_versions` tags, AND the **linked-Bin-resolved
+version**. When a linked Bin folder resolves (via WHGame.dll's `.rdata` scan, D15/D30) to a version
+the DB does NOT know — a build newer than any `game_versions` tag, with no row covering it — that
+resolved version appears as a **marked entry under a "From your linked Bin" group header** in the
+dropdown, labeled **"`<version>` · new"** (a glyph + text, law 7 — never color-alone), and
+**auto-becomes the selected version** (the maintainer never hand-types it — the maintainer-side
+disassembler-test, `cornerstones.md`). Selecting it is the same gesture as any version: the compact
+summary's one-line verify state then reads *"from your linked Bin: `<version>` · new"*. The
+Bin-resolved-new version is a **first-class selectable that drives authoring** — it is the version a
+new-row action targets, feeding the link-to-create flow below; it is **ephemeral until a row is
+authored at it** (it does not enter `game_versions` until an AP18-confirmed row commits there —
+TRD D43). On a phone / no-install host there is no Bin to link → the `game_versions` dropdown +
+the newest-row default (D10) is the path, unchanged.
 
 Beneath it, the **DLL link surface** — the maintainer **links the game's Bin folder once** (a
 single in-session `<input webkitdirectory>` directory pick — the DLLs read in-page, **never
@@ -99,13 +112,16 @@ Linking a version-matching DLL is what enables the **per-author static verificat
 (the field editor, where the `rva` / `signature` being checked are authored), NOT here. The
 link table is the verification *context*; the per-row verdict lives where the row is authored.
 
-**Link-to-create (TRD D30).** When a linked DLL resolves to a version **not covered** by any of
-the entity's `address_versions` rows (a build newer than the DB knows), the surface shows an
-inline advisory prompt (`warning banner`): *"`<dll>` is `<version>` — this entity has no row for
-it. [Add a version row at `<version>`]"*. The maintainer clicks (a user action, law 3 — never
-auto-opened) → the s05 create-version overlay, **prefilled at the DLL's version**
-(`valid_from_version = <dll version>`) → author `rva`/`signature` → the check runs against the
-linked DLL → on a passing check the audit trio auto-fills (TRD D29) → save (AP18 confirm, law 8).
+**Link-to-create (TRD D30/D43).** When a linked DLL resolves to a version **not covered** by any
+of the entity's `address_versions` rows (a build newer than the DB knows), two things happen: the
+resolved version **auto-becomes the selected version in the top dropdown** (the "From your linked
+Bin · new" entry above), AND the surface shows an inline advisory prompt (`warning banner`):
+*"`<dll>` is `<version>` — this entity has no row for it. [Add a version row at `<version>`]"*. The
+maintainer clicks (a user action, law 3 — never auto-opened) → the s05 create-version overlay,
+**prefilled at the DLL's resolved version** (`valid_from_version = <dll version>`) → author
+`rva`/`signature` → the check runs against the linked DLL → on a passing check the audit trio
+auto-fills (TRD D29) → save (AP18 confirm, law 8) — and only THEN does the new version become a
+persisted `game_versions` tag (ephemeral until the row commits — D43).
 
 **Advisory, never required** (law 4): with just a picked version (or none → newest-row default —
 TRD D10), every flow proceeds; an unresolved/unverified/Changed/Ambiguous state warns and is
@@ -155,6 +171,23 @@ fields together and the validator's verdict inline; a partial pair is a validati
   reserved multi-line space below the top line**, growing downward — the affordance never shifts
   sideways off the row regardless of message length (law 1, the reserved-space structure; this is
   the fix for the prior reflow defect).
+- **Version selector — linked-Bin-new (TRD D43)** — when a linked Bin resolves to a version not in
+  `game_versions`, the version `Select` shows a **"From your linked Bin"** group with a **"`<version>`
+  · new"** entry (glyph + text, law 7), auto-selected; the compact summary's verify line reads "from
+  your linked Bin: `<version>` · new". The maintainer never types the version. Selecting it drives
+  the link-to-create flow (above); the version is ephemeral until an AP18-confirmed row commits at it.
+  When the linked Bin's version IS already known (`game_versions` has it / a row covers it), no "new"
+  marking — it selects like any known version.
+- **Returned via `‹ back` (law 10)** — when the maintainer `‹ back`s into s02 (it was pushed by s08
+  `[Fix ▸]` or an s09 resolve), s02 restores its FULL prior state: the selected version, the expanded
+  collapsible-section toggles (Verify / Lifecycle — exactly as left, not re-collapsed to default),
+  the selected version row, and scroll. The `‹ back` control sits top-left of the content pane,
+  labeled with its destination ("‹ back to the report" / "‹ back to Needs action"), in reserved space
+  (no reflow, law 1); absent when s02 is at the stack root (reached by a navigator selection).
+- **Unsaved-changes guard (law 10)** — navigating away from s02 (a `‹ back`, a navigator
+  entity-switch, a top-level entry) while the s04 inline editor OR the Lifecycle section holds pending
+  edits surfaces the Save / Discard / Cancel confirm (the `overlay surface`) FIRST; nothing saves or
+  is lost without an explicit choice (TRD D44).
 - **Disabled** — lifecycle edits on an already-superseded entity follow `policy.md` (the
   successor chain); the validator gates an illegal transition with an inline error; the
   control is not silently hidden.
@@ -165,10 +198,12 @@ fields together and the validator's verdict inline; a partial pair is a validati
   1); a deprecated/superseded entity shows its state prominently in the compact header.
 
 ## Links in / out
-- **In:** s01 `select_entity` (drill-down on phone).
+- **In:** s01 `select_entity` (RESETS the stack to a fresh s02 root, law 10); OR pushed onto the
+  stack by an s08 `[Fix ▸]` / an s09 resolve-action (law 10 — `‹ back` returns there with state).
 - **Out:** `select_version` → s04; `toggle_history` / `open_compare` → s03; `+ New version`
   → s05; any lifecycle edit → s06 (save-confirm); a new entity arrives here after s05;
-  `back_to_list` (phone) → s01.
+  `nav_back` → the screen that pushed s02 (law 10); at s02's root, `‹ back` → the navigator (wide)
+  / navigator home (phone).
 
 ## Applicable laws
 - **Law 1** — sections + the inline editor never reflow on selection/dirty/error.
@@ -182,6 +217,12 @@ fields together and the validator's verdict inline; a partial pair is a validati
 - **Law 7** — identity fields read-only, non-color affordance.
 - **Law 8** — lifecycle edits are UPDATEs (not approval-gated); only new entity/version are.
 - **Law 9** — tokens only.
+- **Law 10** — the content back-stack: a navigator selection RESETS to a fresh s02 root; an s08
+  `[Fix ▸]` / s09 resolve PUSHES s02 (state-carrying); `‹ back` restores s02's full state (selected
+  version, expanded section toggles, version-row selection, scroll). Navigating away from a dirty
+  s04 inline editor or Lifecycle section surfaces the unsaved-changes guard (Save/Discard/Cancel)
+  first (TRD D44). The `‹ back` affordance is top-left of the content pane (depth > 1), labeled with
+  its destination; absent at root.
 
 ## Responsive behavior
 - **Wide:** the right pane. The compact pinned summary (identity + version `Select` + the
@@ -190,7 +231,8 @@ fields together and the validator's verdict inline; a partial pair is a validati
   of the pane height and scrolling within it (the compact summary + the section headers stay
   pinned).
 - **Phone:** the full-screen drill-down. The same compact summary pins at the top (and carries
-  `‹ back`); the collapsible sections + the work surface get the full viewport width; the work
+  the `‹ back`, which the back-stack drives — law 10: returns to the screen that pushed s02, or the
+  navigator home at root, restoring full state); the collapsible sections + the work surface get the full viewport width; the work
   surface scrolls (the version table scrolls horizontally if needed). The compact-header + collapse
   model holds — the work surface gets the room, Verify/Lifecycle collapsed by default. The folder
   pick (`<input webkitdirectory>`) uses the device's native directory picker (only meaningful where

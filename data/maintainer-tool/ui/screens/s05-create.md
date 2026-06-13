@@ -45,7 +45,12 @@ brand-new unverified row is all-null).
 **Prefill (the decided rule):** a new version prefills **all columns from the source row,
 including the audit trio**. `valid_from_version` is the field the maintainer sets — the one
 column that defines the new game version (prefilled from the version&verify surface's pick
-or the client-DLL-resolved version when checked, s02/D15; editable regardless, law 4).
+or the client-DLL-resolved version when checked, s02/D15; editable regardless, law 4). When this
+flow is reached via the **linked-Bin-resolved-new version** (the s02 link-to-create path, TRD
+D43), `valid_from_version` prefills from **that resolved version** — the maintainer never
+hand-types it (the version was read from the linked folder; the maintainer-side disassembler-test).
+The new version becomes a persisted `game_versions` tag only when THIS row commits (AP18 confirm,
+law 8) — it is ephemeral until then (D43).
 
 **Nothing-changed guard (the decided warning):** if the maintainer tries to save a new
 version with **no field changed from the source** (other than `valid_from_version`), a

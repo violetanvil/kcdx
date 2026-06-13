@@ -21,7 +21,12 @@ path (law 6).
 The main content area (right pane on wide; a drilled-in full view on phone), peer to s02/s08 —
 NOT an overlay (a maintenance-review session is a working surface, not a dim-and-dismiss overlay,
 law 2). Reached from s01's `[Needs action ▸ N]` affordance (a count badge showing the number of
-incomplete entities). The app shell persists around it (law 2); `‹ back` (phone) returns to s01.
+incomplete entities) — a **top-level destination that RESETS the content back-stack** to a fresh
+root at s09 (law 10). The app shell persists around it (law 2). A row's resolve-action **PUSHES**
+the resolve screen (s02/s04/s05) onto the stack (law 10), so `‹ back` from there returns to THIS
+s09 view with its state intact (section toggles + scroll preserved). At s09's own stack root there
+is no `‹ back` (the navigator is the way out on wide; on phone `‹ back` returns to the navigator
+home).
 
 ## Contents
 | Element | Component (Mantine) | Data bound | Intent emitted |
@@ -40,10 +45,11 @@ incomplete entities). The app shell persists around it (law 2); `‹ back` (phon
 | Entity row (broken-ref) | `entity row` | `kcdx_id` · `name` (mono) · the dangling pointer (`<field> → <missing/incomplete target>`) | `select_entity(kcdx_id)` → s02 |
 | Row action `[Fix reference ▸]` | `button` (primary, subtle) | the broken-ref row | `fix_reference(kcdx_id)` → s02 lifecycle editor |
 
-Every per-row action NAVIGATES to the EXISTING canonical resolve flow (s02 / s04 / s05) — s09
-reimplements no editing surface (law 6, the single validator/editor). A `‹ back` returns from the
-resolve flow to s09 (law 2/3, the report/list state preserved). A resolved entity drops off the
-s09 list IN PLACE on return — the view never auto-navigates on a resolution (law 3).
+Every per-row action **PUSHES** the EXISTING canonical resolve flow (s02 / s04 / s05) onto the
+content back-stack (law 10) — s09 reimplements no editing surface (law 6, the single
+validator/editor). A `‹ back` returns from the resolve flow to s09 with its full state restored
+(law 10 — the section toggles + scroll preserved). A resolved entity drops off the s09 list IN
+PLACE on return — the view never auto-navigates on a resolution (law 3).
 
 ## States & variants
 - **Populated** — the header (`Needs action · N entities · at version <V>`) + the three kind
@@ -68,6 +74,12 @@ s09 list IN PLACE on return — the view never auto-navigates on a resolution (l
   when the resolution flow it routes to is unavailable in the current degraded state (e.g. the DB
   read seam is down). A degraded `[Author successor]` is unavailable + noted, never silently
   removed.
+- **Back affordance (law 10)** — when s09 sits at stack depth > 1 (rare for s09, which is usually a
+  reset-to-root top-level destination, but possible if a flow pushed it), a `‹ back to <destination>`
+  control shows top-left of the content pane in reserved space (no reflow, law 1); at s09's root
+  (the common case) there is no `‹ back` (the navigator is the way out). After a resolve-action
+  pushes s02/s04/s05 and the maintainer returns, s09's section toggles + scroll are restored exactly
+  (law 10).
 - **Edge content** — a long entity `name` / a long dangling-pointer detail wraps within its cell
   without pushing siblings (law 1); a very long needs-action list scrolls the content region while
   the header pins (law 1); on phone the view is a full-screen drill-in (a kind section is a
@@ -78,14 +90,20 @@ s09 list IN PLACE on return — the view never auto-navigates on a resolution (l
   reached deliberately from home, law 3).
 - **Out:** a row body `select_entity` → s02 entity detail; `[Author successor]` → s05
   create-new-version (prefilled); `[Deprecate]` / `[Supersede]` / `[Fix reference]` → s02
-  lifecycle editor; `[Verify]` → s04 field editor. Each out-link carries a return path back to
-  s09 (the resolved entity drops off on return — law 2/3); `‹ back` (phone) → s01.
+  lifecycle editor; `[Verify]` → s04 field editor. Each out-link **PUSHES** the resolve screen
+  onto the back-stack (law 10), so `‹ back` returns to s09 with its state intact (the resolved
+  entity drops off on return — law 3). At s09's stack root, `‹ back` → the navigator (the
+  reset-to-s09 entry came from the navigator).
 
 ## Applicable laws
 - **Law 1** — layout stable across state changes: a resolved entity dropping off the list reflows
   content in place; the header pins; no element jumps on a section toggle or a resolution.
 - **Law 2** — the shell persists; s09 is a peer CONTENT screen (not an overlay); a resolve flow
-  it routes to (s02/s04/s05) replaces the content area, and `‹ back` returns to s09.
+  it routes to (s02/s04/s05) replaces the content area via the back-stack.
+- **Law 10** — the content back-stack: opening s09 from s01 RESETS the stack to a fresh s09 root;
+  a row's resolve-action PUSHES the resolve screen (state-carrying frame); `‹ back` returns to s09
+  with its full state restored (section toggles + scroll). The `‹ back` affordance sits top-left of
+  the content pane at stack depth > 1, labeled with its destination; absent at s09's root.
 - **Law 3** — navigation is user-action-driven: the view changes on a maintainer action
   (open / toggle / resolve); a completed resolution updates the list IN PLACE on return — it never
   auto-navigates or drills for the user.
@@ -103,5 +121,6 @@ s09 list IN PLACE on return — the view never auto-navigates on a resolution (l
 ## Responsive behavior
 Wide: the right content pane (peer to s02/s08), the s01 navigator persisting at left. Phone: a
 full-screen drill-in reached from the navigator's `[Needs action ▸ N]`, each kind section a
-full-width collapsible, `‹ back` returning to s01. The header (`Needs action · N · at version
+full-width collapsible; `‹ back` (when present, law 10) returns to the screen that pushed s09, or
+to the navigator home at s09's root. The header (`Needs action · N · at version
 <V>`) pins; the kind sections scroll beneath it (law 1).

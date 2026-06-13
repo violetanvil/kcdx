@@ -62,8 +62,12 @@ DESKTOP / WIDE (≥ the two-pane breakpoint)        PHONE / NARROW (< the breakp
 - **DETAIL** (`s02`–`s04`) — the selected entity's header (identity + lifecycle + the
   **version-pick & verification surface**, formerly the status bar), its version area
   (current row + history + compare), and the field editor. On wide screens it is the right
-  pane; on phone it is a **full-screen drill-down** reached by tapping an entity, with a
-  **‹ back** affordance to the list.
+  pane; on phone it is a **full-screen drill-down** reached by tapping an entity. The content
+  area (DETAIL and its peer content screens s08/s09) is governed by an **in-app back-stack**
+  (law 10): a **‹ back** affordance (top-left of the content pane on wide; the drill-down back
+  on phone) returns to **the screen that pushed the current one**, restoring its full state —
+  not always the list (e.g. `‹ back` from a fix returns to the s08 report it was launched
+  from, intact). At the stack root there is no back (the navigator is the way out).
 - **OVERLAY LAYER** — the confirm-save delta (`s06`), the create form (`s05`), and dialogs
   dim the content and float above it (centered modals on desktop, **full-screen sheets on
   phone**). **Toasts** (`s06` overlay concern) are **top-anchored**, transient, and float
@@ -106,13 +110,18 @@ Numbered, enforceable. A screen cites "law N". Each states what it FORBIDS.
    NOT.) **Forbids:** any element shifting position because another element appeared/changed
    within a layout.
 
-2. **The navigation shell persists; only the overlay layer covers content.** The shell (on
-   wide: both panes; on narrow: the current drill-down view + its back affordance) renders
-   in every data state. Content changes only via navigation (selecting/drilling); nothing
-   covers the content except the overlay layer — a confirm/create/dialog (which dims, never
-   permanently displaces, and dismisses back to the same state) or a transient toast.
-   **Forbids:** a surface that permanently hides the navigation affordance; a data-state
-   change that swaps the whole shell.
+2. **The navigation shell persists; the content area is a back-stack; only the overlay layer
+   covers content.** The shell (on wide: both panes; on narrow: the current view + its back
+   affordance) renders in every data state. The **content area is governed by an in-app
+   back-stack on BOTH breakpoints** (the mechanics are law 10) — content changes only via
+   navigation (a content screen is pushed/popped/reset on the stack, never auto-swapped on a
+   background event, law 3); nothing covers the content except the overlay layer — a
+   confirm/create/dialog (which dims, never permanently displaces, and dismisses back to the
+   same state) or a transient toast. On wide the navigator stays persistently visible (a
+   navigator entity-selection is never a back-stack frame — it resets the content stack, law
+   10); on narrow the back-stack drives the drill-down. **Forbids:** a surface that
+   permanently hides the navigation affordance; a data-state change that swaps the whole
+   shell; a URL router (the back-stack is in-app, no routes — TRD D42).
 
 3. **Navigation is user-action-driven.** The detail content changes only when the user
    selects an entity, selects a version row, drills in/back, or opens a mode (history /
@@ -169,6 +178,40 @@ Numbered, enforceable. A screen cites "law N". Each states what it FORBIDS.
 9. **No raw values at a call site.** Every color/size/spacing/font/radius resolves to a
    semantic token (the Mantine `theme` + CSS variables below) — never a hex, px, or literal
    in a component. **Forbids:** a raw value in a screen spec or at a component call site.
+
+10. **The content area is an in-app back-stack; `‹ back` restores full state; navigation
+    never silently discards unsaved edits (TRD D42/D44).** Navigation between content screens
+    (s02 / s08 / s09) is governed by an **in-app back-stack** (no URL router), on both
+    breakpoints, within the persistent shell (law 2). Its contract:
+    - **A resolve-action PUSHES a state-carrying frame; a top-level destination RESETS the
+      stack.** A context-carrying resolve-action (an s09 row's resolve, an s08 `[Fix ▸]`)
+      pushes a frame, building the fix-flow chain (s09→s02→s04). A deliberate **top-level
+      destination** — a navigator entity-selection, or a top-level entry (`[Needs action]`,
+      `[Import report]`, `[+ New entity]`) — **resets** the stack to a fresh root there. So
+      `‹ back` always walks the way the maintainer reached the CURRENT screen, never a detour
+      through an abandoned task.
+    - **Each frame carries the screen's FULL in-memory state — `‹ back` restores it exactly.**
+      A frame stores the screen AND its live state: s08's ingested report (the parsed
+      worklist + block split + scroll), s09's section toggles + scroll, s02's selected version
+      + expanded collapsible-section toggles + scroll. `‹ back` restores that state — it never
+      re-mounts a fresh copy (the s08 ingested report survives a `[Fix ▸]` excursion with no
+      re-import; the report is client-side only — TRD D31).
+    - **The back affordance** — at stack depth > 1, a **`‹ back` control** (the silhouette
+      below) sits at the **top-left of the content pane** (above the screen's own header),
+      labeled with its destination ("‹ back to Needs action", "‹ back to the report"), in
+      reserved space so its appearance/disappearance never reflows the content (law 1). At
+      stack root there is no back control (the navigator is the way out on wide; the navigator
+      home on phone).
+    - **Navigation away from a dirty editor surfaces the unsaved-changes guard FIRST** — a
+      `‹ back`, a stack-reset, or an entity-switch out of a dirty editor (the s04 field editor
+      or s02 lifecycle with pending edits not yet through the s06 confirm) is **intercepted by
+      a confirm** (the `overlay surface` silhouette: **Save** primary → runs the save spine
+      then navigates / **Discard** outline-danger → drops the edits then navigates / **Cancel**
+      subtle → stays put). Nothing is saved OR lost without an explicit choice (TRD D44).
+    **Forbids:** a URL router or browser-history routing; an identity-only frame that re-mounts
+    a screen fresh on `‹ back` (it loses the s08 report); a `‹ back` that navigates past an
+    abandoned task it didn't push; navigating away from a dirty editor without the guard;
+    auto-saving or silently discarding on navigate-away.
 
 ## Keyboard, focus & touch (whole-app)
 - **Initial focus** lands on the navigator search field (the entry point to finding an
@@ -300,7 +343,13 @@ diff cell) are app components built FROM these.
 - **field row (editable)** → label + `TextInput`/`Select` + dirty marker gutter + reserved
   "was: <old>" line + reserved validation-error line (the layout-stability composite).
 - **select / dropdown** → `Select` — a gated value picker (`evidence_kind` enum, `kind`
-  enum, module picker, supersede-target picker, the **version dropdown**).
+  enum, module picker, supersede-target picker, the **version dropdown**). The **version
+  dropdown** sources TWO origins (TRD D43): the server-known `game_versions` tags AND the
+  **linked-Bin-resolved version** — when a linked Bin resolves to a version the DB does not
+  know, it appears as a marked entry under a **"From your linked Bin"** group header, labeled
+  **"`<version>` · new"** (glyph + text, law 7 — never color-alone); selecting it is the same
+  gesture as any version. The maintainer never hand-types a version (the version is read from
+  the linked folder, not typed — the maintainer-side disassembler-test).
 - **text well** → `TextInput` — a single-line editable field (rva, signature, dates).
 - **button** → `Button` variants (primary / default / subtle / outline-danger) — Review
   changes, Save, Cancel, Revert-field, Deprecate.
@@ -371,7 +420,13 @@ diff cell) are app components built FROM these.
   per-row `field: old → new` deltas (one group per affected row) under one confirm action —
   the bulk-re-verify surface (law 5 at batch scale; the single-row `field-delta list` is its
   one-row case).
-- **drill-down back** → a `‹ back` affordance (phone only) returning to the navigator.
+- **back affordance** → a `‹ back` control (`Button` subtle, with a `‹` glyph + a destination
+  label) governed by the content back-stack (law 10). Shown at the **top-left of the content
+  pane** when the stack has depth > 1, **labeled with where it returns** ("‹ back to Needs
+  action", "‹ back to the report") — never a bare arrow; in reserved space so its
+  presence/absence never reflows the content (law 1). At stack root it is absent (the navigator
+  is the way out on wide; on phone, at the stack root `‹ back` returns to the navigator home
+  view). One affordance, both breakpoints (it replaces the prior phone-only drill-down back).
 
 ---
 
@@ -415,7 +470,7 @@ s01 navigator ── the home view (phone) / left pane (wide); search + filters 
         │  [Show history] ──▶ s03 history list
         │  [Compare versions] ──▶ s03 compare (multi-select ▸ N columns side-by-side)
         │  [+ New version] ──▶ s05 (prefilled from a source row)
-        │  ‹ back (phone) ──▶ s01
+        │  ‹ back (content-pane, depth>1) ──▶ the screen that pushed s02 (law 10); at root, navigator
         │
         ├─ s03 history/compare ── view past versions; a column is editable in place ──▶ s04
         │
@@ -430,16 +485,19 @@ s01 navigator ── the home view (phone) / left pane (wide); search + filters 
 s08 verification worklist ── [Import verification report] (s01) ──▶ pick report.json (File API)
  │   ──▶ ingest progress (N/M rows) ──▶ the worklist (pass/fail split, every row + verdict)
  │   select passing rows ▸ [Re-verify] ──▶ s06 BATCH confirm (per-row delta list, one txn)
- │   a failing row ──▶ s02/s04 to fix (user-action navigation, law 3)
- │   ‹ back (phone) ──▶ s01
+ │   a failing row [Fix ▸] ──▶ PUSHES s02/s04 (law 10, state-carrying); ‹ back ──▶ this worklist, report intact
+ │   ‹ back (content-pane, depth>1) ──▶ the screen that pushed s08 (law 10); at root, navigator
 
 s02 verify surface (the install-set link table, a collapsible section) ── link the game Bin
-     FOLDER once (D30; the per-module rows resolve from that folder); a linked install newer
-     than the entity's rows ──▶ inline "[Add a version row at <v>]" ──▶ s05 create-version,
-     prefilled at the install's version (user-action, law 3; AP18 confirm, law 8). A per-author
-     STATIC check verdict renders inline in s04 (the row being authored).
+     FOLDER once (D30; the per-module rows resolve from that folder). The resolved version
+     becomes a selectable in the top version dropdown — even when NEW (not in game_versions),
+     marked "from your linked Bin · new" (D43); a linked install newer than the entity's rows
+     ──▶ inline "[Add a version row at <v>]" ──▶ s05 create-version, prefilled at the install's
+     version (user-action, law 3; AP18 confirm, law 8). A per-author STATIC check verdict renders
+     inline in s04 (the row being authored).
 
 overlay layer ── confirm/create/dialogs (centered modal on wide, full-screen sheet on phone);
+     the unsaved-changes guard (Save/Discard/Cancel, law 10) on navigate-away from a dirty editor;
      toast (top-anchored, transient: save result + notices). Floats above; never navigates
      (law 3). The version & verify surface (the compact summary: version dropdown + the one-line
      verify state; the collapsible install-set link table + the client checks, D15/D24–D30) lives

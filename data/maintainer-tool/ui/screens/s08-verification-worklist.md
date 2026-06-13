@@ -19,8 +19,14 @@ anything itself — it consumes verdicts the engine already produced.
 ## Region & position
 The main content area (right pane on wide; a drilled-in full view on phone), peer to s02/s03 —
 NOT an overlay (a 157-row review session is a working surface, not a dim-and-dismiss overlay,
-law 2). Reached from s01's `[Import verification report]` affordance. The app shell persists
-around it (law 2); `‹ back` (phone) returns to s01.
+law 2). Reached from s01's `[Import verification report]` affordance — a **top-level destination
+that RESETS the content back-stack** to a fresh root at s08 (law 10). The app shell persists
+around it (law 2). A `[Fix ▸]` **PUSHES** s02/s04 onto the stack as a state-carrying frame (law
+10), so `‹ back` from the fix returns to THIS s08 worklist with **the ingested report intact** —
+the parsed pass/fail rows, the block split, and the scroll position all restored, **no re-import**
+(the report is client-side only — TRD D31 — so the state-carrying frame is what preserves it).
+At s08's own stack root there is no `‹ back` (the navigator is the way out on wide; on phone
+`‹ back` returns to the navigator home).
 
 ## Contents
 | Element | Component (Mantine) | Data bound | Intent emitted |
@@ -37,8 +43,8 @@ around it (law 2); `‹ back` (phone) returns to s01.
 | `[Select all verified]` / `[Select all failing]` | `button` (subtle) | toggles all rows in the block | `select_all_verified()` / `select_all_failing()` |
 | `[Verify N rows]` | `button` (primary, verified block) | the selected verified rows | `bulk_verify(selected)` → s06 batch confirm (TRD D32/D35) |
 | `[Close intervals · N rows]` | `button` (primary, failing block) | the selected failing rows | `bulk_close_intervals(selected)` → s06 batch confirm (TRD D35) |
-| A failing row's `[Fix ▸]` | `button` (subtle) | the failing row + its divergence `detail` (TRD D41) | `select_entity(kcdx_id)` → s02 / s04, CARRYING the row's `detail`; a return path back to the worklist (report intact) |
-| `‹ back` (phone) | `drill-down back` | — | `back_to_list()` → s01 |
+| A failing row's `[Fix ▸]` | `button` (subtle) | the failing row + its divergence `detail` (TRD D41) | `fix_row(kcdx_id)` → PUSHES s02 / s04 onto the back-stack (law 10), CARRYING the row's `detail`; `‹ back` returns to this worklist, report intact |
+| `‹ back` (content-pane, depth > 1) | `back affordance` | the stack | `nav_back()` → the screen that pushed s08 (law 10); at root → navigator |
 
 **The verdict (per row) — the 7-state enum + the proof rank (TRD D36).** The in-game sweep runs
 the strongest APPLICABLE active attempt per row and reports a **7-state verdict** (the v3
@@ -137,15 +143,19 @@ complete separately (author a successor row for the current version, OR mark the
 OR supersede it). The orphan is never silent — the close surfaces it, the maintainer resolves it
 when they choose.
 
-**The Fix flow carries context and returns (TRD D41).** `[Fix ▸]` is a round-trip, context-carrying
-navigation, not a one-way drop: it carries the failing row's divergence `detail` (the engine's
-reason, e.g. *"on-disk body hash mismatch: build diverged from the recorded version"*) to the s04
-field editor so the maintainer sees WHAT diverged without re-checking the worklist; and it preserves
-a **return path** back to the worklist with the imported report intact (the report's client-side
-state survives the Fix excursion — s08 and s02/s04 are peer content screens, so the report is not
-lost on navigate-away). An applied row (after a confirmed close or verify) shows its RESULTING value
-(the new `valid_through`), not only an "applied" marker — the maintainer sees what the action
-produced.
+**The Fix flow carries context and returns (TRD D41/D42).** `[Fix ▸]` is a round-trip,
+context-carrying navigation, not a one-way drop: it carries the failing row's divergence `detail`
+(the engine's reason, e.g. *"on-disk body hash mismatch: build diverged from the recorded
+version"*) to the s04 field editor so the maintainer sees WHAT diverged without re-checking the
+worklist; and it **PUSHES a state-carrying frame onto the content back-stack (law 10)** — the s08
+frame stores the parsed report (the worklist + block split + scroll), so `‹ back` from the fix
+**restores the report exactly, with no re-import** (the report is client-side only — TRD D31 — and
+the state-carrying frame, not a re-fetch, is what preserves it). An applied row (after a confirmed
+close or verify) shows its RESULTING value (the new `valid_through`), not only an "applied"
+marker — the maintainer sees what the action produced. **If a `[Fix ▸]` excursion left the s04
+editor dirty, navigating back (or away) first surfaces the unsaved-changes guard** (Save / Discard
+/ Cancel, law 10) — the fix is never silently lost or silently committed on the way back to the
+report.
 
 **The standing needs-action view (TRD D41).** Lifecycle completeness is a standing, tool-wide
 property, not a per-report afterthought: a **needs-action view/filter** lists every entity whose
@@ -219,6 +229,17 @@ No silent bulk write — the delta is always shown before anything lands.
   tier; a **very long report** (157+ rows) scrolls the worklist table, the summary header + the
   partial banner + the action bar stay fixed (law 1); a long `name` /
   detail wraps within its cell without pushing siblings (law 1).
+- **Returned from a `[Fix ▸]` (law 10)** — after a `[Fix ▸]` pushed s02/s04 and the maintainer
+  `‹ back`s, s08 renders the SAME ingested report it held before — the parsed worklist, the block
+  split, the scroll position, the per-row select state — all restored, **no re-import dialog, no
+  empty state** (the report's client-side state was carried in the frame, not re-fetched, TRD
+  D31/D42). An actioned row (a confirmed fix) shows its updated verdict/value in place (law 3).
+- **Back affordance (law 10)** — at stack depth > 1, a `‹ back to <destination>` control sits
+  top-left of the content pane in reserved space (no reflow, law 1); at s08's root (after the
+  reset-from-s01 import) there is no `‹ back` (the navigator is the way out).
+- **Unsaved-changes guard (law 10)** — if a `[Fix ▸]` excursion left the s04 editor dirty and the
+  maintainer navigates back to s08 (or elsewhere), the Save / Discard / Cancel confirm (the
+  `overlay surface`) fires first; nothing is saved or lost without an explicit choice (TRD D44).
 
 ## Links in / out
 - **In:** s01 `[Import verification report]` (`import_report` → the File API picker → this
@@ -226,9 +247,10 @@ No silent bulk write — the delta is always shown before anything lands.
 - **Out:** `bulk_verify` / `bulk_close_intervals` → s06 (batch confirm overlay) → on confirm, one
   atomic txn → toast *"Verified `N` rows"* / *"Closed intervals on `N` rows"* (or *"blocked —
   Retry"*), returns to the worklist with the actioned rows updated IN PLACE (law 3 — the result
-  updates status in place, never re-navigates); a failing row's `[Fix ▸]` → `select_entity` → s02
+  updates status in place, never re-navigates); a failing row's `[Fix ▸]` → PUSHES s02
   (then s04 to author the corrected `rva` / `signature`, possibly a new/variant version row — AP18
-  per-row); `back_to_list` (phone) → s01.
+  per-row) onto the back-stack (law 10), and `‹ back` → THIS worklist with the report intact; at
+  s08's stack root, `‹ back` → the navigator.
 
 ## Applicable laws
 - **Law 1** — the summary header + action bar never reflow as rows scroll or verdicts update;
@@ -238,6 +260,12 @@ No silent bulk write — the delta is always shown before anything lands.
 - **Law 3** — importing, selecting rows, confirming, and `[Fix ▸]` are all user actions; the
   re-verify result updates the rows' status IN PLACE and never auto-navigates, auto-selects, or
   auto-opens a row.
+- **Law 10** — the content back-stack: `[Import verification report]` from s01 RESETS the stack to
+  a fresh s08 root; `[Fix ▸]` PUSHES s02/s04 as a state-carrying frame; `‹ back` restores THIS s08
+  frame's full state — the ingested report (worklist + block split + scroll) intact, no re-import
+  (the report is client-side only, law 4 / TRD D31). A `[Fix ▸]` that left s04 dirty surfaces the
+  unsaved-changes guard (Save/Discard/Cancel) before navigating back. The `‹ back` affordance sits
+  top-left of the content pane at depth > 1, labeled with its destination; absent at s08's root.
 - **Law 4** — every imported verdict is advisory; a `failed` row (failing block), a no-action row
   (`not_applicable`/`cannot_check`/`skipped`/`error`), and a partial report are all SURFACED, never
   a block; bulk verify/close applies only the maintainer's explicitly selected rows, through the
@@ -254,7 +282,8 @@ No silent bulk write — the delta is always shown before anything lands.
 ## Responsive behavior
 - **Wide (two-pane):** s08 renders in the right pane (the navigator stays in the left); the
   worklist table is full-width within the pane; the s06 batch confirm is a centered modal.
-- **Phone (drill-down):** s08 is a full-screen drilled-in view reached from s01's import action,
-  with `‹ back` to s01; the worklist table scrolls vertically, the summary header + action bar
+- **Phone (drill-down):** s08 is a full-screen drilled-in view reached from s01's import action;
+  the back-stack drives the drill-down `‹ back` (law 10) — at s08's root it returns to the
+  navigator home, and after a `[Fix ▸]` the fix's `‹ back` returns to this worklist, report intact; the worklist table scrolls vertically, the summary header + action bar
   pin; the s06 batch confirm is a full-screen sheet. The per-row detail collapses under the
   badge rather than into a wide column.

@@ -4,6 +4,47 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-12 — navigation redesign: in-app back-stack (law 10) + Bin-version-new selector + unsaved-changes guard (TRD D42/D43/D44)
+The visual + interaction layer for the navigation redesign settled in the TRD (`../changelog.md`
+D42/D43/D44, committed 42867e4). Settled through the `/ui-design` dialogue (each fork the user's call;
+disassembler test does not bear — internal nav chrome).
+- **Layer 1 (`design.md`):** **law 2 rewritten** — the content area is an in-app back-stack on BOTH
+  breakpoints (not phone-only drill-down), still within the persistent shell; **a NEW law 10**
+  (appended, no renumbering) states the back-stack contract: a resolve-action PUSHES a state-carrying
+  frame, a top-level destination RESETS, `‹ back` restores the prior frame's FULL state, and
+  navigation never silently discards unsaved edits (→ the guard). **The `drill-down back` silhouette
+  → `back affordance`** (one affordance, both breakpoints; top-left of the content pane at depth > 1,
+  labeled with its destination, reserved space per law 1). **The `select / dropdown` (version
+  dropdown)** grew a second source — the linked-Bin-resolved version, a marked "From your linked Bin ·
+  `<v>` · new" in-dropdown entry (glyph+text, law 7). The app-shell DETAIL prose + the nav map swept
+  to the back-stack model (deletion-hygiene — the phone-only `‹ back → s01` prescriptions removed).
+- **s09 (extended):** opening from s01 RESETS to a fresh s09 root; a row's resolve-action PUSHES the
+  resolve screen; `‹ back` returns to s09 with section toggles + scroll restored. The content-pane back
+  + the back-affordance state added; the stale phone-only `‹ back → s01` removed.
+- **s08 (extended):** a `[Fix ▸]` PUSHES s02/s04 as a state-carrying frame, so `‹ back` returns to THIS
+  worklist with the **ingested report intact — no re-import** (the report is client-side only, D31; the
+  state-carrying frame, not a re-fetch, preserves it). Law 10 + the "returned from a `[Fix ▸]`" state +
+  the unsaved-guard state added; the phone-only `‹ back → s01` swept.
+- **s02 (extended):** the version `Select` shows the **linked-Bin-resolved-new version** ("From your
+  linked Bin · `<v>` · new", auto-selected, never hand-typed — D43), driving the link-to-create flow
+  (ephemeral until an AP18-confirmed row commits); the content-pane `‹ back`; `‹ back` restores the
+  exact section-toggle + scroll + version-row state; the unsaved-guard on a dirty inline editor /
+  Lifecycle. The redundant phone-only back Contents row folded into the both-breakpoint `back
+  affordance` row.
+- **s04 (extended):** the unsaved-changes guard state — s04 is THE dirty-editor the guard protects;
+  navigating away while dirty surfaces Save/Discard/Cancel (law 10/D44).
+- **s05 (extended):** the new-version `valid_from_version` prefills from the Bin-resolved-new version
+  when reached via the link-to-create path (D43); the version is a persisted `game_versions` tag only
+  when the row commits.
+**Integrated in:** `design.md` (law 2, new law 10, the `back affordance` silhouette, the
+`select / dropdown` version-source note, the app-shell DETAIL prose, the nav map); `screens/s02`,
+`s04`, `s05`, `s08`, `s09` (Contents, States, Links, Laws, Responsive as each applies).
+**Why:** TRD D42/D43/D44 settled the navigation redesign's BEHAVIOR (in-app back-stack with full-state
+frames, the Bin-version auto-select, the unsaved guard) but not its screen specs; this authors the
+visual + interaction layer on it (`.claude/rules/spec-conformance.md` — the screen spec is the build
+authority). Unblocks D41 Phase 3 step 3.2 (s09 resolution actions), which needed the deep-link/back
+model. No TRD gap surfaced (the functional layer was fully settled in the `/design` pass) — §E skipped.
+
 ## 2026-06-12 — s09 Needs-action view authored (the standing lifecycle-completeness surface, TRD D41)
 - NEW screen `screens/s09-needs-action.md` (v1/high): a standing, tool-wide surface listing every
   entity whose lifecycle is INCOMPLETE at the current game version, grouped by KIND into collapsible

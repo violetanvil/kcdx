@@ -188,6 +188,14 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
   kind doesn't use stay (flagged "not used by this kind").
 - **Editing (dirty)** — ≥1 field changed: dirty markers + "was:" lines; `[Review changes
   (N)]` enabled once all dirty fields validate.
+- **Navigate-away while dirty — the unsaved-changes guard (law 10 / TRD D44)** — s04 is THE
+  dirty-editor whose pending edits the guard protects. While ≥1 field is dirty, any navigation that
+  would leave s04 — a `‹ back` (e.g. back to the s08 report a `[Fix ▸]` came from), a navigator
+  entity-switch, or a top-level entry — is **intercepted by a confirm** (the `overlay surface`:
+  **Save** primary → runs the save spine (validate → s06 confirm → atomic txn) then navigates /
+  **Discard** outline-danger → drops the edits then navigates / **Cancel** subtle → stays in s04).
+  Nothing is saved OR lost without the explicit choice. (A clean s04 — no dirty field — navigates
+  away with no guard.)
 - **Validation error** — inline on the offending field; `[Review changes]` disabled; no
   write attempted; the error names the cause (user-caused copy).
 - **Disabled (read-only context)** — viewing a row in a context where editing isn't
@@ -222,6 +230,9 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
 - **Law 6** — every field's validity is the shared validator's verdict (via the API),
   rendered inline.
 - **Law 7** — `valid_from_version` read-only, non-color affordance.
+- **Law 10** — navigating away from s04 while a field is dirty surfaces the unsaved-changes guard
+  (Save/Discard/Cancel) before the navigation; nothing is saved or lost silently (TRD D44). s04 is
+  the dirty-editor the back-stack's guard clause protects.
 - **Law 9** — tokens only (the tooltip affordance, the stray flag, and the kind-conditional grid
   all use theme tokens — no raw hex/px). The `?` help affordance is a focusable button (keyboard +
   screen-reader reachable); the Mantine `Tooltip` wires the aria description.
