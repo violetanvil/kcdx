@@ -47,7 +47,61 @@ inventory-open gesture.
   KI-0012's fix held; this is a DISTINCT re-entrancy on the same hook, at a different
   trigger.
 
-## Reframe (the leading frame, to falsify not confirm)
+## CORRECTED mechanism (from the minidump — supersedes the "re-entrancy" reframe below)
+
+Read `kcdx_2026-06-13_11-09-56.dmp` with cdb (`.ecxr; !analyze -v; k 40`) — the
+deterministic artifact that should have been read FIRST (before any live-launch
+bisection). It overturns the text-log-only reading:
+
+- **The fault is a NULL-POINTER WRITE, not a re-entrancy stack overflow.**
+  `WHGame!CreateGameStartup+0x97932: mov dword ptr [rax],0Dh` with **`rax=0`** —
+  writing `0x0D` (13) to address 0. `!analyze`: `AV.Fault: Write`,
+  `AV.Dereference: NullPtr`, `Failure.Bucket: NULL_POINTER_WRITE_c0000005_WHGame.dll`.
+  My earlier "runaway recursion, seq from 568978" read was the GUARD's hook-fire
+  INVENTORY dump, NOT the fault mechanism — a misread of the text log.
+
+- **`0x0D` = 13 = EACCES.** The faulting frames are the CRT's invalid-parameter path:
+  `fseek` → `common_fseek` → `lseeki64_nolock` → **`get_osfhandle+0x55`** →
+  **`invalid_parameter_noinfo`** → **`invalid_parameter`** → the AV. `ucrtbase`'s
+  `get_osfhandle` was handed an INVALID file descriptor, invoked the invalid-parameter
+  handler, which faulted writing `errno = EACCES (13)` through a null slot.
+
+- **The deepest non-CRT caller is `fseek()` on a `FILE*`** inside WHGame's pak code:
+  the frames `WHGame+0x46200a` / `0x461ba0` / `0x46088c` (the `0x...FE1xxx-FE2xxx`
+  neighborhood) are the SAME region as the logged `engine.ccrypak_fopen` hook
+  va `0x7FF955FE14A0` — grounded from TWO artifacts (the guard log's va + the dump's
+  return addresses agree).
+
+- **Outer frames are FSR2 / DLSS init**: `WHGame!ffxFsr2ResourceIsNull+…` →
+  `WHGame!NVSDK_NGX_UpdateFeature+…` (recursive). The SAME graphics-init subsystem as
+  KI-0012. `kcdx.dll` is loaded (its own static CRT); `ucrtbase.dll` is WHGame's CRT.
+
+**Mechanism (evidence-grounded, the leading root cause):** kcdx's asset-system
+`ccrypak_fopen` HOOK 2 (own-FILE* loose-open, `9590dd4` — "cross-runtime FILE*
+confirmed live") returns a `FILE*` opened by **kcdx's CRT**. WHGame's FSR2/NGX init
+later `fseek`s that `FILE*` through **`ucrtbase` (WHGame's CRT)**; the fd is not valid
+in `ucrtbase`'s descriptor table → `get_osfhandle` invalid-parameter → null EACCES
+write → AV. This is the **cross-CRT `FILE*` hazard KI-0006 named** ("cross-CRT FILE*
+free confirmed-real") surfacing as a cross-CRT `fseek`.
+
+**Why NON-DETERMINISTIC (explains B.3):** FSR2/DLSS init touching that specific `FILE*`
+is GPU/driver/timing-dependent, so the identical probe config crashes only sometimes.
+The probes are a RED HERRING — they were never on the faulting stack (they installed
+zero hooks); the bug is in the asset HOOK 2 cross-CRT FILE* path and is independent of
+Phase 10. (Probe A/B/B.2 "no crash" were non-determinism, not real eliminations.)
+
+**Owed next (to confirm before a fix):** read the asset HOOK 2 source (the own-FILE*
+loose-open path) to confirm it hands a kcdx-CRT `FILE*` back to the engine, and confirm
+KI-0006's cross-CRT-free finding is the same FILE*. This is a design-surface fix (the
+asset FOpen hook must hand back a handle the engine's CRT owns, or not intercept the
+path FSR2 uses) → Gate A. NOT the probes.
+
+## Reframe (SUPERSEDED — the text-log-only "re-entrancy" theory, kept for honesty)
+The reframe below was my pre-dump theory. It is WRONG on the mechanism (the dump shows
+a null write, not a recursion spiral). Kept un-rewritten per one-pass discipline; the
+CORRECTED mechanism above is grounded.
+
+### Original reframe (the leading frame, to falsify not confirm)
 
 The `ccrypak_fopen` hook (specifically the asset-system **HOOK 2 own-FILE* loose-open**
 path, `9590dd4`, and the AdjustFileName resolver HOOK 1, `4a687f3`) was substantially
@@ -60,8 +114,12 @@ the asset-system FOpen detour lets an inventory-driven FOpen re-enter itself unb
 
 | # | Probe (one variable) | Status | Result |
 |---|---|---|---|
-| A | Remove cap-105/106/107 from the live install; repro inventory-open | pending | — |
-| B | (gated on A) read-only: instrument the `ccrypak_fopen` detour to log re-entrancy depth + the path argument on inventory-open, capture where depth spirals | pending | — |
+| A | Remove cap-105/106/107 from the live install; repro inventory-open | DONE | NO CRASH (run 11-21-13: 0 AV, 0 fault, no dmp, reached kPostLoadGame, suite 332 = probes absent). Probes IMPLICATED — falsifies "nil-hook probes can't matter". |
+| B | (gated on A) Re-deploy ONLY cap-107 (`after`-hook getter 0x1a7dac0); cap-105/106 absent; repro inventory-open | DONE | NO CRASH (run 11-27-05: 0 fault, suite 333 = only cap-107, reached kPostLoadGame). cap-107 EXONERATED. Culprit is cap-105 and/or cap-106 (the `before` probes). |
+| B.2 | Re-deploy ONLY cap-105 (`before` on `CScriptTable::CallFunction` 0xb9ceb4); cap-106/107 absent; repro inventory-open | DONE | NO CRASH (run 11-30-12: 0 fault, only cap-105, reached kPostLoadGame). cap-105 alone EXONERATED. |
+| B.3 | Re-deploy ALL THREE together (the original crashing config); repro inventory-open | DONE | NO CRASH (run 11-30-12... 11-31-17 reached kPostLoadGame, 0 fault, suite 333+... all 3 present). The IDENTICAL config that crashed at 11-09-56 did NOT crash → the crash is NON-DETERMINISTIC, not a deterministic function of the probe set. The bisection premise was WRONG; probes A/B/B.2 "exonerations" were non-determinism, not eliminations. |
+| D | **Read the minidump** (`cdb.exe -z … .ecxr; k`) — the deterministic artifact, which should have been step 1 | DONE | **Found the actual fault.** See "CORRECTED mechanism" below. NOT a re-entrancy spiral; a cross-CRT `FILE*` `fseek` → CRT invalid-parameter → null EACCES write. |
+| E | Read the HOOK 2 source (`src/asset_overlay.cpp` `FOpenLooseOverlay`) to confirm it hands a kcdx-CRT `FILE*` to the engine | DONE | CONFIRMED: HOOK 2 HIT mints a `FILE*` via kcdx's `_wfopen_s` (L339-342) + returns it as FOpen's result (L379). The design's cross-CRT safety proof (L259-261) is scoped to **FRead** only ("FRead routes any real heap FILE* to its OS arm; gate-verified `_research/asset-fopen-handle-recon/`") — it does NOT cover `fseek`/`get_osfhandle`, which validates the fd in the ENGINE's CRT. The gap is real. RESIDUAL (honest): the crash fires only on a HOOK 2 HIT (overlay map hit); whether the FSR2-init file was a HIT or a MISS (call_original, engine's own FILE*) is NOT yet confirmed — needs the crash-time overlay-map contents or a targeted probe. |
 
 Probe A is the cheapest most-falsifying step (exonerates or implicates the probes in one
 launch). Probe B is designed only after A's outcome; if A still crashes (probes
