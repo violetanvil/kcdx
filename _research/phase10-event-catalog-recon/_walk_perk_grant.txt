@@ -1,0 +1,293 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (765 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (2483 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: WalkPerkGrant.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\WalkPerkGrant.java (HeadlessAnalyzer)  
+INFO  WalkPerkGrant.java> ################ BRIDGE A: AddPerk command impl FUN_182cee04c ################ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+======================================================================== (GhidraScript)  
+INFO  WalkPerkGrant.java> FUNC FUN_182cee04c @ 182cee04c  size=152 (GhidraScript)  
+INFO  WalkPerkGrant.java>   
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+  
+  void FUN_182cee04c(undefined8 param_1,longlong *param_2,undefined8 param_3)
+  
+  {
+    char cVar1;
+    longlong lVar2;
+    undefined1 auStack_58 [32];
+    undefined4 local_38;
+    undefined4 uStack_34;
+    undefined4 uStack_30;
+    undefined4 uStack_2c;
+    undefined4 local_28;
+    undefined4 uStack_24;
+    undefined4 uStack_20;
+    undefined4 uStack_1c;
+    ulonglong local_18;
+    
+    local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_58;
+    lVar2 = FUN_18041ebc4(param_2);
+    if ((lVar2 != 0) && (cVar1 = FUN_1807207ac(param_3,&local_28), cVar1 != '\0')) {
+      local_38 = local_28;
+      uStack_34 = uStack_24;
+      uStack_30 = uStack_20;
+      uStack_2c = uStack_1c;
+      FUN_18046b704(lVar2 + 0x758,&local_38,0);
+      (**(code **)(*param_2 + 0x58))(param_2);
+      return;
+    }
+    (**(code **)(*param_2 + 0x58))(param_2);
+    return;
+  }
+  
+ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+---- BRIDGE A callees (one level) ---- (GhidraScript)  
+INFO  WalkPerkGrant.java>   callee: FUN_18041ebc4 @ 18041ebc4  size=102 (GhidraScript)  
+INFO  WalkPerkGrant.java>   callee: FUN_1807207ac @ 1807207ac  size=236 (GhidraScript)  
+INFO  WalkPerkGrant.java>   callee: FUN_18046b704 @ 18046b704  size=307 (GhidraScript)  
+INFO  WalkPerkGrant.java>   callee: __security_check_cookie @ 181c1e8c0  size=30 (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+======================================================================== (GhidraScript)  
+INFO  WalkPerkGrant.java> FUNC FUN_18041ebc4 @ 18041ebc4  size=102 (GhidraScript)  
+INFO  WalkPerkGrant.java>   
+  undefined8 FUN_18041ebc4(undefined8 param_1)
+  
+  {
+    longlong *plVar1;
+    char cVar2;
+    undefined8 uVar3;
+    longlong *local_res10 [3];
+    
+    local_res10[0] = (longlong *)0x0;
+    cVar2 = FUN_18071952c(param_1,local_res10);
+    plVar1 = local_res10[0];
+    if (cVar2 == '\0') {
+      uVar3 = 0;
+    }
+    else {
+      if (local_res10[0] != (longlong *)0x0) {
+        (**(code **)(*local_res10[0] + 0x18))(local_res10[0]);
+      }
+      uVar3 = FUN_18041ef80(local_res10);
+    }
+    if (plVar1 != (longlong *)0x0) {
+      (**(code **)(*plVar1 + 0x20))(plVar1);
+    }
+    return uVar3;
+  }
+  
+ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+======================================================================== (GhidraScript)  
+INFO  WalkPerkGrant.java> FUNC FUN_1807207ac @ 1807207ac  size=236 (GhidraScript)  
+INFO  WalkPerkGrant.java>   
+  /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+  
+  bool FUN_1807207ac(char *param_1,undefined4 *param_2)
+  
+  {
+    char cVar1;
+    undefined4 uVar2;
+    undefined4 uVar3;
+    undefined4 uVar4;
+    undefined4 uVar5;
+    int iVar6;
+    bool bVar7;
+    
+    uVar5 = _UNK_183d93cf4;
+    uVar4 = _UNK_183d93cf0;
+    uVar3 = _UNK_183d93cec;
+    uVar2 = _DAT_183d93ce8;
+    *param_2 = _DAT_183d93ce8;
+    param_2[1] = uVar3;
+    param_2[2] = uVar4;
+    param_2[3] = uVar5;
+    if (param_1 == (char *)0x0) {
+      bVar7 = false;
+    }
+    else {
+      cVar1 = *param_1;
+      if (cVar1 == '{') {
+        cVar1 = param_1[1];
+        param_1 = param_1 + 1;
+      }
+      if ((cVar1 == '0') && (param_1[1] == '\0')) {
+        bVar7 = true;
+      }
+      else {
+        iVar6 = FUN_180721684(uVar2,"%8x-%4hx-%4hx-%2hhx%2hhx-%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx",param_2,
+                              param_2 + 1,(longlong)param_2 + 6,param_2 + 2,(longlong)param_2 + 9,
+                              (longlong)param_2 + 10,(longlong)param_2 + 0xb,param_2 + 3,
+                              (longlong)param_2 + 0xd,(longlong)param_2 + 0xe,(longlong)param_2 + 0xf)
+        ;
+        bVar7 = iVar6 == 0xb;
+      }
+    }
+    return bVar7;
+  }
+  
+ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+======================================================================== (GhidraScript)  
+INFO  WalkPerkGrant.java> FUNC FUN_18046b704 @ 18046b704  size=307 (GhidraScript)  
+INFO  WalkPerkGrant.java>   
+  undefined1 FUN_18046b704(longlong param_1,longlong *param_2,undefined8 param_3)
+  
+  {
+    undefined8 uVar1;
+    longlong lVar2;
+    longlong lVar3;
+    char cVar4;
+    longlong *plVar5;
+    longlong *plVar6;
+    longlong *local_58;
+    undefined8 local_50;
+    longlong local_48;
+    longlong lStack_40;
+    
+    cVar4 = FUN_18046b84c();
+    plVar6 = (longlong *)0x0;
+    if (cVar4 == '\0') {
+      return 0;
+    }
+    FUN_181fca870(&local_58,param_1 + 0x28,param_2);
+    if (local_58 == *(longlong **)(param_1 + 0x30)) {
+      lVar2 = *param_2;
+      lVar3 = param_2[1];
+      uVar1 = *(undefined8 *)(param_1 + 8);
+      local_48 = lVar2;
+      lStack_40 = lVar3;
+      FUN_18046b364(&local_58,&local_48);
+      local_50 = uVar1;
+      plVar5 = (longlong *)FUN_18046b4ec(local_58,local_58,local_58,&local_50);
+      local_58 = plVar6;
+      if (plVar5 != (longlong *)0x0) {
+        plVar5[2] = lVar2;
+        plVar5[3] = lVar3;
+        (**(code **)(*plVar5 + 0x48))(plVar5);
+        local_58 = plVar5;
+      }
+      local_50 = 0;
+      FUN_18046b838(&local_50);
+      cVar4 = FUN_18039b480(&local_58);
+      if (cVar4 == '\0') goto LAB_18046b812;
+    }
+    else {
+      plVar6 = (longlong *)*local_58;
+      *local_58 = 0;
+      local_58 = plVar6;
+      FUN_180a26fb4(param_1 + 0x28,&local_50);
+    }
+    FUN_18046b894(param_1 + 0x40,&local_58);
+    if (((*(byte *)(param_1 + 0x60) & 2) == 0) &&
+       (cVar4 = (**(code **)(**(longlong **)(*(longlong *)(param_1 + 0x48) + -8) + 0x18))(),
+       cVar4 != '\0')) {
+      plVar6 = *(longlong **)(*(longlong *)(param_1 + 0x48) + -8);
+      (**(code **)(*plVar6 + 8))(plVar6,param_3);
+    }
+    FUN_180468b20(param_1);
+    plVar6 = (longlong *)0x1;
+  LAB_18046b812:
+    FUN_18046b838(&local_58);
+    return (char)plVar6;
+  }
+  
+ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+======================================================================== (GhidraScript)  
+INFO  WalkPerkGrant.java> FUNC __security_check_cookie @ 181c1e8c0  size=30 (GhidraScript)  
+INFO  WalkPerkGrant.java>   
+  /* WARNING: This is an inlined function */
+  
+  void __cdecl __security_check_cookie(uintptr_t _StackCookie)
+  
+  {
+    if ((_StackCookie == DAT_1848fcfc0) && ((short)(_StackCookie >> 0x30) == 0)) {
+      return;
+    }
+    FUN_181c1edd4(_StackCookie);
+    return;
+  }
+  
+ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+
+################ BRIDGE B: storm::addPerk / *PerkEffect symbols ################ (GhidraScript)  
+INFO  WalkPerkGrant.java>   SYM s_wh::rpgmodule::storm::addPerk_183b78df8 @ 183b78df8  (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java>   SYM s_AddPerk_183d38828 @ 183d38828  (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java>   SYM s_AlcoholPerkBacchusHangoverEffect_183f287f0 @ 183f287f0  (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java>   SYM s_LearnPerk_18472c4f8 @ 18472c4f8  (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java>   (scanned 1945262 symbols; 0 distinct fns) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+
+################ BRIDGE C: consumers of interned perk-key DATs ################ (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  DAT AddPerk-key @ 1855e3888 referenced by: (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 1808fd0b7 type=DATA in FUN_1808fd090@1808fd090 (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 1808fd0df type=DATA in FUN_1808fd090@1808fd090 (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 18217ed50 type=DATA in (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  DAT LearnPerk-key @ 1855e3890 referenced by: (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 182cac09f type=DATA in FUN_182cac05c@182cac05c (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 182cac0c3 type=DATA in FUN_182cac05c@182cac05c (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 18217edd0 type=DATA in (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  DAT PerkUsed-key @ 1855e38a0 referenced by: (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 181585273 type=DATA in FUN_18158524c@18158524c (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 18158529b type=DATA in FUN_18158524c@18158524c (GhidraScript)  
+INFO  WalkPerkGrant.java>     from 18217ee00 type=DATA in (no fn) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  (skip known getter FUN_1808fd090) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  (skip known getter FUN_182cac05c) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+  (skip known getter FUN_18158524c) (GhidraScript)  
+INFO  WalkPerkGrant.java> 
+=== done === (GhidraScript)  

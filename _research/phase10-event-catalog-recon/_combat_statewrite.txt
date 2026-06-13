@@ -1,0 +1,144 @@
+
+    0:  (GhidraScript)  
+    1: undefined8 * FUN_1830312c0(undefined8 *param_1,undefined8 *param_2,undefined8 *param_3) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   undefined8 *puVar1; (GhidraScript)  
+    5:   char cVar2; (GhidraScript)  
+    6:   undefined8 *puVar3; (GhidraScript)  
+    7:    (GhidraScript)  
+    8:   while ((param_2 != param_3 && (cVar2 = FUN_181a7dac0(param_2), cVar2 == '\0'))) { (GhidraScript)  
+    9:     param_2 = (undefined8 *)((longlong)param_2 + 0xc); (GhidraScript)  
+   10:   } (GhidraScript)  
+   11:   puVar3 = param_2; (GhidraScript)  
+   12:   if (param_2 != param_3) { (GhidraScript)  
+   13:     while (puVar1 = puVar3, puVar3 = (undefined8 *)((longlong)puVar1 + 0xc), puVar3 != param_3) { (GhidraScript)  
+   14:       cVar2 = FUN_181a7dac0(puVar3); (GhidraScript)  
+   15:       if (cVar2 == '\0') { (GhidraScript)  
+   16:         *param_2 = *puVar3; (GhidraScript)  
+   17:         *(undefined4 *)(param_2 + 1) = *(undefined4 *)((longlong)puVar1 + 0x14); (GhidraScript)  
+   18:         param_2 = (undefined8 *)((longlong)param_2 + 0xc); (GhidraScript)  
+   19:       } (GhidraScript)  
+   20:     } (GhidraScript)  
+   21:   } (GhidraScript)  
+   22:   *param_1 = param_2; (GhidraScript)  
+   23:   return param_1; (GhidraScript)  
+   24: } (GhidraScript)  
+   25:  (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: undefined8 FUN_18091da3c(longlong *param_1) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   longlong lVar1; (GhidraScript)  
+    5:   longlong *plVar2; (GhidraScript)  
+    6:   longlong *plVar3; (GhidraScript)  
+    7:   longlong *plVar4; (GhidraScript)  
+    8:   undefined8 uVar5; (GhidraScript)  
+    9:   longlong *local_res8; (GhidraScript)  
+   10:   code *local_38; (GhidraScript)  
+   11:   undefined4 uStack_30; (GhidraScript)  
+   12:    (GhidraScript)  
+   13:   lVar1 = (**(code **)(*(longlong *)param_1[0x3f] + 0x6e8))(); (GhidraScript)  
+   14:   plVar2 = *(longlong **)(*(longlong *)(lVar1 + 0x18) + 0x18); (GhidraScript)  
+   15:   plVar2 = (longlong *)(**(code **)(*plVar2 + 0x328))(plVar2,0); (GhidraScript)  
+   16:   plVar4 = (longlong *)0x0; (GhidraScript)  
+   17:   if ((plVar2 == (longlong *)0x0) || (lVar1 = (**(code **)(*plVar2 + 0x38))(plVar2), lVar1 == 0)) { (GhidraScript)  
+   18:     uVar5 = 0; (GhidraScript)  
+   19:   } (GhidraScript)  
+   20:   else { (GhidraScript)  
+   21:     FUN_1810ed900(param_1); (GhidraScript)  
+   22:     lVar1 = FUN_1804f7820(0xd10); (GhidraScript)  
+   23:     plVar2 = plVar4; (GhidraScript)  
+   24:     if (lVar1 != 0) { (GhidraScript)  
+   25:       plVar2 = (longlong *)FUN_1810eea6c(lVar1,param_1); (GhidraScript)  
+   26:     } (GhidraScript)  
+   27:     param_1[0x42] = (longlong)plVar2; (GhidraScript)  
+   28:     lVar1 = FUN_1804f7820(0x268); (GhidraScript)  
+   29:     plVar2 = plVar4; (GhidraScript)  
+   30:     if (lVar1 != 0) { (GhidraScript)  
+   31:       plVar2 = (longlong *)FUN_1814818cc(lVar1,param_1); (GhidraScript)  
+   32:     } (GhidraScript)  
+   33:     param_1[0x43] = (longlong)plVar2; (GhidraScript)  
+   34:     lVar1 = FUN_1804f7820(0x40); (GhidraScript)  
+   35:     plVar2 = plVar4; (GhidraScript)  
+   36:     if (lVar1 != 0) { (GhidraScript)  
+   37:       plVar2 = (longlong *)FUN_18091e278(lVar1,param_1); (GhidraScript)  
+   38:     } (GhidraScript)  
+   39:     param_1[0x44] = (longlong)plVar2; (GhidraScript)  
+   40:     lVar1 = FUN_1804f7820(0x20); (GhidraScript)  
+   41:     plVar2 = plVar4; (GhidraScript)  
+   42:     if (lVar1 != 0) { (GhidraScript)  
+   43:       plVar2 = (longlong *)FUN_18091e554(lVar1,param_1); (GhidraScript)  
+   44:     } (GhidraScript)  
+   45:     param_1[0x74] = (longlong)plVar2; (GhidraScript)  
+   46:     lVar1 = FUN_1804f7820(0x60); (GhidraScript)  
+   47:     plVar2 = plVar4; (GhidraScript)  
+   48:     if (lVar1 != 0) { (GhidraScript)  
+   49:       plVar2 = (longlong *)FUN_1810eb4c4(lVar1,param_1); (GhidraScript)  
+   50:     } (GhidraScript)  
+   51:     param_1[0x71] = (longlong)plVar2; (GhidraScript)  
+   52:     plVar3 = (longlong *)FUN_1804f7820(8); (GhidraScript)  
+   53:     plVar2 = plVar4; (GhidraScript)  
+   54:     if (plVar3 != (longlong *)0x0) { (GhidraScript)  
+   55:       *plVar3 = (longlong)param_1; (GhidraScript)  
+   56:       plVar2 = plVar3; (GhidraScript)  
+   57:     } (GhidraScript)  
+   58:     param_1[0x72] = (longlong)plVar2; (GhidraScript)  
+   59:     lVar1 = FUN_1804f7820(0xb8); (GhidraScript)  
+   60:     plVar2 = plVar4; (GhidraScript)  
+  ...trunc (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: void FUN_1810ee688(longlong param_1) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   undefined8 *puVar1; (GhidraScript)  
+    5:    (GhidraScript)  
+    6:   FUN_1805ba99c(param_1 + 0xd00); (GhidraScript)  
+    7:   puVar1 = *(undefined8 **)(param_1 + 0xcf0); (GhidraScript)  
+    8:   if (puVar1 != (undefined8 *)0x0) { (GhidraScript)  
+    9:     (**(code **)*puVar1)(puVar1,1); (GhidraScript)  
+   10:   } (GhidraScript)  
+   11:   puVar1 = *(undefined8 **)(param_1 + 0xce8); (GhidraScript)  
+   12:   if (puVar1 != (undefined8 *)0x0) { (GhidraScript)  
+   13:     (**(code **)*puVar1)(puVar1,1); (GhidraScript)  
+   14:   } (GhidraScript)  
+   15:   FUN_1810eea18(param_1 + 0xcb0); (GhidraScript)  
+   16:   FUN_1810eea18(param_1 + 0xc80); (GhidraScript)  
+   17:   FUN_1810eea18(param_1 + 0xc50); (GhidraScript)  
+   18:   FUN_1810ed808(param_1 + 0xc40); (GhidraScript)  
+   19:   FUN_1810ed808(param_1 + 0xc30); (GhidraScript)  
+   20:   FUN_1823d8430(param_1 + 0xc20); (GhidraScript)  
+   21:   FUN_1810ed4cc(param_1 + 0xc10); (GhidraScript)  
+   22:   FUN_1808e8144(param_1 + 0xc00); (GhidraScript)  
+   23:   FUN_1808e8144(param_1 + 0xbf0); (GhidraScript)  
+   24:   FUN_1810ed84c(param_1 + 0xbe0); (GhidraScript)  
+   25:   FUN_1810ed84c(param_1 + 0xbd0); (GhidraScript)  
+   26:   FUN_1810eff28(param_1 + 0xba0); (GhidraScript)  
+   27:   FUN_1810ed7b0(param_1 + 0xb58); (GhidraScript)  
+   28:   FUN_181753694(param_1 + 0xb20); (GhidraScript)  
+   29:   FUN_1810ef60c(param_1 + 0xaf0); (GhidraScript)  
+   30:   FUN_1810eda4c(param_1 + 0xac0); (GhidraScript)  
+   31:   FUN_1810ee278(param_1 + 0xa90); (GhidraScript)  
+   32:   FUN_1810ee278(param_1 + 0xa60); (GhidraScript)  
+   33:   FUN_1810ee278(param_1 + 0xa30); (GhidraScript)  
+   34:   FUN_1810ee278(param_1 + 0xa00); (GhidraScript)  
+   35:   FUN_1810efef4(param_1 + 0x9d0); (GhidraScript)  
+   36:   FUN_1810eea18(param_1 + 0x9a0); (GhidraScript)  
+   37:   FUN_1810efda0(param_1 + 0x958); (GhidraScript)  
+   38:   FUN_1810efda0(param_1 + 0x910); (GhidraScript)  
+   39:   FUN_1810ed7dc(param_1 + 0x8c0); (GhidraScript)  
+   40:   FUN_1810efea0(param_1 + 0x890); (GhidraScript)  
+   41:   FUN_1810eea18(param_1 + 0x860); (GhidraScript)  
+   42:   FUN_1810eea18(param_1 + 0x830); (GhidraScript)  
+   43:   FUN_1810edaa0(param_1 + 0x800); (GhidraScript)  
+   44:   FUN_1810edaa0(param_1 + 2000); (GhidraScript)  
+   45:   FUN_1810edaa0(param_1 + 0x7a0); (GhidraScript)  
+   46:   FUN_1810edaa0(param_1 + 0x770); (GhidraScript)  
+   47:   FUN_1810edaa0(param_1 + 0x740); (GhidraScript)  
+   48:   FUN_1810efd6c(param_1 + 0x710); (GhidraScript)  
+   49:   FUN_1810efd6c(param_1 + 0x6e0); (GhidraScript)  
+   50:   FUN_1810ef60c(param_1 + 0x6b0); (GhidraScript)  
+  ...trunc (GhidraScript)  
+

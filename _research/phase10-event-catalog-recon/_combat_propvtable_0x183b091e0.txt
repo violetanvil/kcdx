@@ -1,0 +1,94 @@
+=== vtable 0x183b091e0 slots === (GhidraScript)  
+  slot[0]=0x18275BDF8 FUN_18275bdf8 (GhidraScript)  
+  slot[1]=0x181A7DAC0 FUN_181a7dac0 (GhidraScript)  
+  slot[2]=0x18275F83C FUN_18275f83c (GhidraScript)  
+  slot[3]=0x181A72B60 FUN_181a72b60 (GhidraScript)  
+  slot[4]=0x18415EFA8 (not .text, stop) (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: undefined8 * FUN_18275bdf8(undefined8 *param_1,uint param_2) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   char cVar1; (GhidraScript)  
+    5:   undefined8 local_18; (GhidraScript)  
+    6:   undefined4 uStack_10; (GhidraScript)  
+    7:    (GhidraScript)  
+    8:   local_18 = 0; (GhidraScript)  
+    9:   *param_1 = wh::shared:: (GhidraScript)  
+   10:              C_ModelProperty<bool,wh::shared::traits::C_StandardDefaultValueTrait<bool>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<bool,wh::combatmodule::I_CombatActor*___ptr64>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
+   11:              ::vftable; (GhidraScript)  
+   12:   uStack_10 = 0; (GhidraScript)  
+   13:   cVar1 = FUN_180c5e72c(param_1 + 3,&local_18,0,0); (GhidraScript)  
+   14:   if (cVar1 != '\0') { (GhidraScript)  
+   15:     FUN_180396960((undefined4)local_18,&local_18); (GhidraScript)  
+   16:   } (GhidraScript)  
+   17:   if ((param_2 & 1) != 0) { (GhidraScript)  
+   18:     FUN_181ab4e10(param_1,0x30); (GhidraScript)  
+   19:   } (GhidraScript)  
+   20:   return param_1; (GhidraScript)  
+   21: } (GhidraScript)  
+   22:  (GhidraScript)  
+  direct refs to fn entry: 2 (GhidraScript)  
+    <- 1858d8e0c in <no fn> (GhidraScript)  
+    <- 183b091e0 in <no fn> (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: undefined1 FUN_181a7dac0(longlong param_1) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   return *(undefined1 *)(param_1 + 8); (GhidraScript)  
+    5: } (GhidraScript)  
+    6:  (GhidraScript)  
+  direct refs to fn entry: 192 (GhidraScript)  
+    <- 1830312e6 in FUN_1830312c0 (GhidraScript)  
+    <- 183031306 in FUN_1830312c0 (GhidraScript)  
+    <- 183aa33d8 in <no fn> (GhidraScript)  
+    <- 183aa3290 in <no fn> (GhidraScript)  
+    <- 183a3e318 in <no fn> (GhidraScript)  
+    <- 183a86828 in <no fn> (GhidraScript)  
+    <- 183a81408 in <no fn> (GhidraScript)  
+    <- 183a813b8 in <no fn> (GhidraScript)  
+    <- 183a81430 in <no fn> (GhidraScript)  
+    <- 183a813e0 in <no fn> (GhidraScript)  
+    <- 183b1dc78 in <no fn> (GhidraScript)  
+    <- 183b3c508 in <no fn> (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: undefined * FUN_18275f83c(longlong param_1) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   undefined *puVar1; (GhidraScript)  
+    5:    (GhidraScript)  
+    6:   puVar1 = &DAT_183b773ec; (GhidraScript)  
+    7:   if (*(char *)(param_1 + 8) == '\0') { (GhidraScript)  
+    8:     puVar1 = &DAT_183db32a4; (GhidraScript)  
+    9:   } (GhidraScript)  
+   10:   return puVar1; (GhidraScript)  
+   11: } (GhidraScript)  
+   12:  (GhidraScript)  
+  direct refs to fn entry: 3 (GhidraScript)  
+    <- 183a323c0 in <no fn> (GhidraScript)  
+    <- 183b08fa0 in <no fn> (GhidraScript)  
+    <- 183b091f0 in <no fn> (GhidraScript)  
+
+    0:  (GhidraScript)  
+    1: longlong FUN_181a72b60(longlong param_1) (GhidraScript)  
+    2:  (GhidraScript)  
+    3: { (GhidraScript)  
+    4:   return param_1 + 0x18; (GhidraScript)  
+    5: } (GhidraScript)  
+    6:  (GhidraScript)  
+  direct refs to fn entry: 57 (GhidraScript)  
+    <- 181d19b83 in FUN_181d19a90 (GhidraScript)  
+    <- 181d1931f in FUN_181d18bd0 (GhidraScript)  
+    <- 180242315 in FUN_1802420b0 (GhidraScript)  
+    <- 183bd4c90 in <no fn> (GhidraScript)  
+    <- 183a32f70 in <no fn> (GhidraScript)  
+    <- 183a81328 in <no fn> (GhidraScript)  
+    <- 183a81350 in <no fn> (GhidraScript)  
+    <- 183a81778 in <no fn> (GhidraScript)  
+    <- 183a81718 in <no fn> (GhidraScript)  
+    <- 183a81750 in <no fn> (GhidraScript)  
+    <- 183aa2d90 in <no fn> (GhidraScript)  
+    <- 183a975d8 in <no fn> (GhidraScript)  
+

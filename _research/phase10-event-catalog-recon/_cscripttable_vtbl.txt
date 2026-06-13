@@ -1,0 +1,271 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (677 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1987 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: c:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: c:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: DumpCScriptTableVtbl.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\DumpCScriptTableVtbl.java (HeadlessAnalyzer)  
+INFO  DumpCScriptTableVtbl.java> CScriptTable::vftable @ 0x183a49c70 (RVA 0x3a49c70) (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java> 
+=== slots 0..30 === (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 0] off=0x0   -> 0x1839ad924 (RVA 0x39ad924) FUN_1839ad924 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 1] off=0x8   -> 0x1805c97a0 (RVA 0x5c97a0) FUN_1805c97a0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 2] off=0x10  -> 0x181a75de0 (RVA 0x1a75de0) FUN_181a75de0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 3] off=0x18  -> 0x181a722e0 (RVA 0x1a722e0) FUN_181a722e0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 4] off=0x20  -> 0x18071cb80 (RVA 0x71cb80) FUN_18071cb80 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 5] off=0x28  -> 0x180720668 (RVA 0x720668) FUN_180720668 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 6] off=0x30  -> 0x1839af048 (RVA 0x39af048) FUN_1839af048 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 7] off=0x38  -> 0x18071e52c (RVA 0x71e52c) FUN_18071e52c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 8] off=0x40  -> 0x18071cedc (RVA 0x71cedc) FUN_18071cedc (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[ 9] off=0x48  -> 0x18071b4f4 (RVA 0x71b4f4) FUN_18071b4f4 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[10] off=0x50  -> 0x18071b504 (RVA 0x71b504) FUN_18071b504 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[11] off=0x58  -> 0x18071fb3c (RVA 0x71fb3c) FUN_18071fb3c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[12] off=0x60  -> 0x1839ae6a8 (RVA 0x39ae6a8) FUN_1839ae6a8 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[13] off=0x68  -> 0x180add5d8 (RVA 0xadd5d8) FUN_180add5d8 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[14] off=0x70  -> 0x18071b450 (RVA 0x71b450) FUN_18071b450 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[15] off=0x78  -> 0x180a30a68 (RVA 0xa30a68) FUN_180a30a68 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[16] off=0x80  -> 0x180a3086c (RVA 0xa3086c) FUN_180a3086c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[17] off=0x88  -> 0x180a30a3c (RVA 0xa30a3c) FUN_180a30a3c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[18] off=0x90  -> 0x180718730 (RVA 0x718730) FUN_180718730 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[19] off=0x98  -> 0x180add334 (RVA 0xadd334) FUN_180add334 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[20] off=0xa0  -> 0x180a7516c (RVA 0xa7516c) FUN_180a7516c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[21] off=0xa8  -> 0x1839ae10c (RVA 0x39ae10c) FUN_1839ae10c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[22] off=0xb0  -> 0x180b9ceb4 (RVA 0xb9ceb4) FUN_180b9ceb4  <<<< +0xb0 (CallFunction dispatch) (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[23] off=0xb8  -> 0x18071f19c (RVA 0x71f19c) FUN_18071f19c (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[24] off=0xc0  -> 0x18045a0c0 (RVA 0x45a0c0) FUN_18045a0c0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[25] off=0xc8  -> 0x1840bb880 (RVA 0x40bb880) (no fn) (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[26] off=0xd0  -> 0x1839ad890 (RVA 0x39ad890) FUN_1839ad890 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[27] off=0xd8  -> 0x1806386e0 (RVA 0x6386e0) FUN_1806386e0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[28] off=0xe0  -> 0x180718498 (RVA 0x718498) FUN_180718498 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[29] off=0xe8  -> 0x1807195b0 (RVA 0x7195b0) FUN_1807195b0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   slot[30] off=0xf0  -> 0x1809e3db0 (RVA 0x9e3db0) FUN_1809e3db0 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java> 
+------------------------------------------------------------------------ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java> DECOMP slot +0xb0 = the per-script-table CallFunction dispatcher: FUN_180b9ceb4 @ 180b9ceb4 (RVA 0xb9ceb4)  size=523 (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   undefined8 FUN_180b9ceb4(undefined8 param_1,undefined8 *param_2)
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined1 uVar1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     int iVar2;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined8 uVar3;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined8 uVar4;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     char cVar5;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined8 *puVar6;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     longlong lVar7;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     code *pcVar8;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     longlong lVar9;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     longlong lVar10;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     size_t _Size;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined1 auStack_168 [32];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     undefined8 local_148;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     char local_138 [256];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     ulonglong local_38;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     local_38 = DAT_1848fcfc0 ^ (ulonglong)auStack_168;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     local_148 = param_2[1];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_180b9d4b8(local_138,"%s.%s(%s)",param_2[2],*param_2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_18071cbf0(param_1);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_18071ef54(DAT_18549b0e0,*param_2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     uVar1 = *(undefined1 *)(param_2 + 7);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     cVar5 = FUN_18053207c(param_2 + 3);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     lVar10 = -1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     do {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar7 = lVar10;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar10 = lVar7 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     } while (local_138[lVar7 + 1] != '\0');
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     if (cVar5 == '\0') {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       iVar2 = *(int *)(param_2 + 10);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       _Size = (size_t)iVar2;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       uVar3 = param_2[8];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       puVar6 = (undefined8 *)FUN_180b9d0c0(DAT_18549b0e0,(longlong)(iVar2 + (int)(lVar7 + 1)) + 0xe);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       *puVar6 = uVar3;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       *(int *)(puVar6 + 1) = iVar2;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       memcpy((void *)((longlong)puVar6 + 0xc),(void *)param_2[9],_Size);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       *(undefined1 *)(_Size + 0xc + (longlong)puVar6) = uVar1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar10 = -1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       do {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar7 = lVar10;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar10 = lVar7 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       } while (local_138[lVar7 + 1] != '\0');
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       memcpy((void *)(_Size + 0xd + (longlong)puVar6),local_138,lVar7 + 2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       FUN_18071ef54(DAT_18549b0e0,*param_2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar10 = -1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       do {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar9 = lVar10 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar7 = lVar10 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar10 = lVar9;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       } while (local_138[lVar7] != '\0');
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       FUN_18071e46c(DAT_18549b0e0,local_138,lVar9);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       pcVar8 = FUN_1807206d8;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     }
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     else {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       puVar6 = (undefined8 *)FUN_180b9d0c0(DAT_18549b0e0,(longlong)((int)lVar7 + 0x23));
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       uVar3 = param_2[4];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       *puVar6 = param_2[3];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       puVar6[1] = uVar3;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       uVar3 = param_2[5];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       uVar4 = param_2[6];
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       *(undefined1 *)(puVar6 + 4) = uVar1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       puVar6[2] = uVar3;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       puVar6[3] = uVar4;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar10 = -1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       do {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar7 = lVar10;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar10 = lVar7 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       } while (local_138[lVar7 + 1] != '\0');
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       memcpy((void *)((longlong)puVar6 + 0x21),local_138,lVar7 + 2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       FUN_18071ef54(DAT_18549b0e0,*param_2);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       lVar10 = -1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       do {
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar9 = lVar10 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar7 = lVar10 + 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>         lVar10 = lVar9;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       } while (local_138[lVar7] != '\0');
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       FUN_18071e46c(DAT_18549b0e0,local_138,lVar9);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>       pcVar8 = FUN_18071a43c;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     }
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_180b9d11c(DAT_18549b0e0,pcVar8,3);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_180720738(DAT_18549b0e0,0xfffffffd);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     FUN_18071e77c(DAT_18549b0e0,0xfffffffe);
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>     return 1;
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   }
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java>   
+ (GhidraScript)  
+INFO  DumpCScriptTableVtbl.java> 
+=== done === (GhidraScript)  

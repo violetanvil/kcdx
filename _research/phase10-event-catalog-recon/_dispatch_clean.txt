@@ -1,0 +1,1019 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (572 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1565 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: c:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: c:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindEntityScriptDispatch.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindEntityScriptDispatch.java (HeadlessAnalyzer)  
+=== anchor string -> referencing functions ===
+  Entity:CallScriptFunction                            @183d1f690  refd-by=FUN_1819e8cb8@1819e8cb8
+  CallScriptFunction                                   @183e058c8  refd-by=FUN_180788660@180788660
+  CallScriptFunctionInTable                            @183e05a88  refd-by=FUN_180788640@180788640
+  CallScriptFunctionWithParam                          @183e05a68  refd-by=FUN_180788650@180788650
+  CallStateFunction                                     (NOT FOUND as defined data)
+  ActivateOutput called with undefined event %s for entity %s @18406fda0  refd-by=FUN_1804d1f58@1804d1f58
+  OnPickup                                             @183fb7d30  refd-by=FUN_18026cc10@18026cc10
+  OnUse                                                @183acd4e0  refd-by=FUN_180efb548@180efb548, FUN_180efb548@180efb548
+  OnUsed                                               @183acd4c8  refd-by=FUN_180efc71c@180efc71c, FUN_181313b04@181313b04, FUN_181313b04@181313b04, FUN_18108a31c@18108a31c, FUN_18108a31c@18108a31c, FUN_18108a31c@18108a31c
+  ScriptBind_Entity                                     (NOT FOUND as defined data)
+  CryEntitySystem\ScriptBind_Entity.cpp                 (NOT FOUND as defined data)
+  ProcessEvent                                          (NOT FOUND as defined data)
+
+=== symbols matching ScriptBind_Entity / CallScriptFunction ===
+  s_CScriptBind_Entity::StartAnimati_183a3b7d0                 @183a3b7d0  (Label)
+  s_CScriptBind_Entity::GetAnimation_183a3b820                 @183a3b820  (Label)
+  s_Entity:CallScriptFunction_183d1f690                        @183d1f690  (Label)
+  s_CallScriptFunction_183e058c8                               @183e058c8  (Label)
+  s_CallScriptFunctionInTableWithPar_183e05a30                 @183e05a30  (Label)
+  s_CallScriptFunctionWithParam_183e05a68                      @183e05a68  (Label)
+  s_CallScriptFunctionInTable_183e05a88                        @183e05a88  (Label)
+  s_CScriptBind_Entity::NetPresent_18406f3e8                   @18406f3e8  (Label)
+  s_CScriptBind_Entity::StartAnimati_18406f410                 @18406f410  (Label)
+  s_FATAL_ERROR:_CScriptBind_Entity:_18406f460                 @18406f460  (Label)
+  s_CScriptBind_Entity::GetName_18406f5a8                      @18406f5a8  (Label)
+  s_CScriptBind_Entity::SetMaterial_18406f910                  @18406f910  (Label)
+  s_CScriptBind_Entity::SetRegisterI_18479bf70                 @18479bf70  (Label)
+  s_CScriptBind_Entity::SetStateClie_18479bfa0                 @18479bfa0  (Label)
+  s_CScriptBind_Entity::GetRawId_18479c000                     @18479c000  (Label)
+  s_CScriptBind_Entity::GetArchetype_18479c020                 @18479c020  (Label)
+  s_CScriptBind_Entity::SetName_18479c088                      @18479c088  (Label)
+  s_CScriptBind_Entity::GetAIName_18479c0a8                    @18479c0a8  (Label)
+  s_CScriptBind_Entity::NoExplosionC_18479c0c8                 @18479c0c8  (Label)
+  s_CScriptBind_Entity::SetViewDistR_18479c0f8                 @18479c0f8  (Label)
+  s_CScriptBind_Entity::SetLodRatio_18479c120                  @18479c120  (Label)
+  s_CScriptBind_Entity::GetSpeed_18479c190                     @18479c190  (Label)
+  s_CScriptBind_Entity::GetMass_18479c1b0                      @18479c1b0  (Label)
+  s_CScriptBind_Entity::GetGravity_18479c1d0                   @18479c1d0  (Label)
+  s_CScriptBind_Entity::GetCurAnimat_18479c260                 @18479c260  (Label)
+  s_CScriptBind_Entity::GetBoneNameF_18479c288                 @18479c288  (Label)
+  s_CScriptBind_Entity::SetPublicPar_18479c4e0                 @18479c4e0  (Label)
+
+=== 10 referencing functions (decompiled, capped) ===
+
+------------------------------------------------------------------------
+FUNC FUN_18108a31c @ 18108a31c  size=1516
+  
+
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+  
+
+  void FUN_18108a31c(void)
+
+  
+
+  {
+
+    undefined8 uVar1;
+
+    undefined8 uVar2;
+
+    undefined8 uVar3;
+
+    undefined8 uVar4;
+
+    undefined8 uVar5;
+
+    undefined1 auStack_568 [32];
+
+    undefined8 local_548;
+
+    undefined8 local_540;
+
+    undefined8 local_538;
+
+    undefined4 local_528 [4];
+
+    char *local_518;
+
+    undefined8 *local_510;
+
+    char local_508 [8];
+
+    undefined8 local_500;
+
+    undefined8 uStack_4f8;
+
+    undefined1 local_4f0 [16];
+
+    undefined8 local_4e0 [2];
+
+    undefined8 local_4d0;
+
+    undefined1 local_4c8 [16];
+
+    undefined1 local_4b8 [16];
+
+    undefined1 local_4a8 [16];
+
+    undefined1 local_498 [16];
+
+    code *local_488;
+
+    undefined4 local_480 [4];
+
+    code *local_470;
+
+    undefined1 local_468 [16];
+
+    code *local_458;
+
+    undefined1 local_450 [16];
+
+    code *local_440;
+
+    undefined1 local_438 [16];
+
+    code *local_428;
+
+    undefined1 local_420 [16];
+
+    code *local_410;
+
+    undefined1 local_408 [24];
+
+    undefined1 local_3f0 [24];
+
+    undefined1 local_3d8 [24];
+
+    undefined1 local_3c0 [24];
+
+    undefined1 local_3a8 [24];
+
+    undefined1 local_390 [24];
+
+    undefined1 local_378 [24];
+
+    undefined1 local_360 [24];
+
+    undefined1 local_348 [24];
+
+    undefined1 local_330 [24];
+
+    undefined1 local_318 [24];
+
+    undefined1 local_300 [24];
+
+    undefined1 local_2e8 [24];
+
+    undefined1 local_2d0 [56];
+
+    undefined8 local_298;
+
+    undefined1 local_290 [64];
+
+    undefined1 local_250 [64];
+
+    undefined1 local_210 [64];
+
+    undefined1 local_1d0 [16];
+
+    code *local_1c0;
+
+    undefined1 local_1b8 [16];
+
+    code *local_1a8;
+
+    undefined1 local_1a0 [16];
+
+    code *local_190;
+
+    undefined1 local_188 [16];
+
+    code *local_178;
+
+    undefined1 local_170 [16];
+
+    code *local_160;
+
+    undefined1 local_158 [16];
+
+    code *local_148;
+
+    undefined1 local_140 [16];
+
+    code *local_130;
+
+    undefined1 local_128 [16];
+
+    code *local_118;
+
+    undefined1 local_110 [16];
+
+    code *local_100;
+
+    undefined1 local_f8 [16];
+
+    code *local_e8;
+
+    undefined1 local_e0 [16];
+
+    code *local_d0;
+
+    undefined1 local_c8 [16];
+
+    code *local_b8;
+
+    undefined1 local_b0 [16];
+
+    code *local_a0;
+
+    undefined1 local_98 [16];
+
+    code *local_88;
+
+    undefined1 local_80 [16];
+
+    code *local_70;
+
+    undefined1 local_68 [16];
+
+    code *local_58;
+
+    undefined1 local_50 [16];
+
+  … (121 more lines)
+
+------------------------------------------------------------------------
+FUNC FUN_180788640 @ 180788640  size=8
+  
+
+  char * FUN_180788640(void)
+
+  
+
+  {
+
+    return "CallScriptFunctionInTable";
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_1819e8cb8 @ 1819e8cb8  size=60
+  
+
+  /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+  
+
+  undefined * FUN_1819e8cb8(void)
+
+  
+
+  {
+
+    FUN_180c015dc(&DAT_18534f530,"Entity:CallScriptFunction");
+
+    _DAT_18534f548 = 0;
+
+    _DAT_18534f530 = CAutoRegFlowNode<CFlowNode_CallScriptFunction>::vftable;
+
+    return &DAT_18534f530;
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_180efb548 @ 180efb548  size=167
+  
+
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+  
+
+  void FUN_180efb548(longlong param_1,undefined8 param_2,undefined8 param_3,undefined8 param_4,
+
+                    undefined8 *param_5)
+
+  
+
+  {
+
+    longlong *plVar1;
+
+    undefined1 auStack_a8 [32];
+
+    char *local_88;
+
+    char *local_80;
+
+    longlong local_78;
+
+    undefined8 local_70;
+
+    undefined8 local_60;
+
+    undefined4 local_50;
+
+    code *local_48;
+
+    undefined8 *local_40;
+
+    undefined4 local_38;
+
+    undefined8 local_28;
+
+    undefined8 local_20;
+
+    ulonglong local_18;
+
+    
+
+    local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_a8;
+
+    plVar1 = *(longlong **)(param_1 + 0x48);
+
+    if (plVar1 != (longlong *)0x0) {
+
+      local_20 = *param_5;
+
+      local_78 = param_1 + 8;
+
+      local_88 = "OnUse";
+
+      local_80 = "userId";
+
+      local_48 = FUN_180ac8fb0;
+
+      local_40 = &local_28;
+
+      local_50 = *(undefined4 *)(param_1 + 0x58);
+
+      local_70 = 0;
+
+      local_60 = 0;
+
+      local_38 = 0x10;
+
+      local_28 = param_4;
+
+      (**(code **)(*plVar1 + 0xb0))(plVar1,&local_88);
+
+    }
+
+    return;
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_18026cc10 @ 18026cc10  size=107
+  
+
+  /* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+  
+
+  void FUN_18026cc10(void)
+
+  
+
+  {
+
+    FUN_1804f692c(&DAT_185335278,"OnPickup");
+
+    _DAT_185335280 = 1;
+
+    FUN_1804f692c(&DAT_185335288,"OnDelivery");
+
+    _DAT_185335290 = 0;
+
+    FUN_1804f692c(&DAT_185335298,"OnProcessed");
+
+    _DAT_1853352a0 = 2;
+
+    atexit((_func_5014 *)&LAB_18219cea0);
+
+    return;
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_1804d1f58 @ 1804d1f58  size=668
+  
+
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+  
+
+  void FUN_1804d1f58(undefined8 param_1,longlong *param_2)
+
+  
+
+  {
+
+    undefined8 uVar1;
+
+    char cVar2;
+
+    longlong lVar3;
+
+    longlong lVar4;
+
+    undefined8 uVar5;
+
+    undefined1 auStack_b8 [32];
+
+    undefined8 local_98;
+
+    undefined8 local_90;
+
+    undefined8 local_88;
+
+    undefined4 local_80;
+
+    undefined1 local_78 [8];
+
+    int local_70;
+
+    undefined1 local_68 [8];
+
+    undefined8 local_60;
+
+    longlong local_58;
+
+    undefined8 *local_50;
+
+    ulonglong local_28;
+
+    
+
+    local_28 = DAT_1848fcfc0 ^ (ulonglong)auStack_b8;
+
+    lVar3 = FUN_1807194a0();
+
+    if (((lVar3 == 0) || (cVar2 = FUN_1804d21f4(param_2,&local_88), cVar2 == '\0')) ||
+
+       (lVar4 = FUN_1805d7324(lVar3,2), uVar1 = local_88, lVar4 == 0)) goto LAB_1804d21ca;
+
+    cVar2 = (**(code **)(**(longlong **)(lVar3 + 0x20) + 0x90))
+
+                      (*(longlong **)(lVar3 + 0x20),local_88,local_78);
+
+    if (cVar2 == '\0') {
+
+      uVar5 = FUN_18080e280(lVar3);
+
+      FUN_180a5fe60("ActivateOutput called with undefined event %s for entity %s",uVar1,uVar5);
+
+      goto LAB_1804d21ca;
+
+    }
+
+    FUN_180509558(local_68,0x13);
+
+    local_58 = (longlong)local_70;
+
+    local_60 = uVar1;
+
+    if (local_70 == 0) {
+
+      local_90 = (undefined8 *)((ulonglong)local_90._4_4_ << 0x20);
+
+      cVar2 = FUN_18071fbe8(param_2,2,&local_90);
+
+      if (cVar2 == '\0') {
+
+        uVar5 = FUN_18080e280(lVar3);
+
+        FUN_180a5fe60("ActivateOutput(%s,value) called with wrong type for 2nd parameter for entity %s"
+
+                      ,uVar1,uVar5);
+
+      }
+
+  LAB_1804d21b3:
+
+      local_50 = &local_90;
+
+    }
+
+    else if (local_70 == 1) {
+
+      local_90 = (undefined8 *)((ulonglong)local_90._4_4_ << 0x20);
+
+      cVar2 = FUN_180abbb70(param_2,2,&local_90);
+
+      if (cVar2 == '\0') {
+
+        uVar5 = FUN_18080e280(lVar3);
+
+        FUN_180a5fe60("ActivateOutput(%s,value) called with wrong type for 2nd parameter for entity %s"
+
+                      ,uVar1,uVar5);
+
+      }
+
+      local_50 = &local_90;
+
+    }
+
+    else if (local_70 == 2) {
+
+      local_98._0_1_ = 0;
+
+      cVar2 = FUN_1804d22f8(param_2,2,&local_98);
+
+      if (cVar2 == '\0') {
+
+        uVar5 = FUN_18080e280(lVar3);
+
+        FUN_180a5fe60("ActivateOutput(%s,value) called with wrong type for 2nd parameter for entity %s"
+
+                      ,uVar1,uVar5);
+
+      }
+
+      local_50 = &local_98;
+
+    }
+
+    else if (local_70 == 3) {
+
+      local_88 = 0;
+
+      local_80 = 0;
+
+      cVar2 = FUN_180abbbc0(param_2,2,&local_88);
+
+      if (cVar2 == '\0') {
+
+        uVar5 = FUN_18080e280(lVar3);
+
+        FUN_180a5fe60("ActivateOutput(%s,value) called with wrong type for 2nd parameter for entity %s"
+
+                      ,uVar1,uVar5);
+
+      }
+
+      local_50 = &local_88;
+
+    }
+
+    else {
+
+      if (local_70 == 4) {
+
+        local_88 = 0;
+
+        cVar2 = FUN_180718df4(param_2,2,&local_88);
+
+        if (cVar2 == '\0') {
+
+          uVar5 = FUN_18080e280(lVar3);
+
+          FUN_180a5fe60("ActivateOutput(%s,value) called with wrong type for 2nd parameter for entity %s"
+
+                        ,uVar1,uVar5);
+
+        }
+
+        local_90 = (undefined8 *)CONCAT44(local_90._4_4_,(undefined4)local_88);
+
+  … (19 more lines)
+
+------------------------------------------------------------------------
+FUNC FUN_180efc71c @ 180efc71c  size=1440
+  
+
+  void FUN_180efc71c(undefined8 param_1)
+
+  
+
+  {
+
+    code *local_res10 [3];
+
+    
+
+    local_res10[0] = FUN_182ac06c4;
+
+    FUN_1819c3acc();
+
+    local_res10[0] = FUN_182ac0800;
+
+    FUN_180efcd58(param_1,"SetExtensionParams");
+
+    local_res10[0] = FUN_182ab9d4c;
+
+    FUN_180efcd58(param_1,"GetExtensionParams");
+
+    local_res10[0] = FUN_182abbc9c;
+
+    FUN_180b6a2c8(param_1,"GetStats");
+
+    local_res10[0] = (code *)&LAB_182abad88;
+
+    FUN_180b6a2c8(param_1,"GetParams");
+
+    local_res10[0] = FUN_182abf990;
+
+    FUN_180b6a2c8(param_1,"Reset");
+
+    local_res10[0] = FUN_182abfe3c;
+
+    FUN_180efccbc(param_1,"Select","select",param_1,local_res10);
+
+    local_res10[0] = FUN_182ab694c;
+
+    FUN_180efc534(param_1,"CanPickUp");
+
+    local_res10[0] = FUN_18143d804;
+
+    FUN_180efc534(param_1,"CanUse");
+
+    local_res10[0] = FUN_182abca50;
+
+    FUN_180b6a2c8(param_1,"IsMounted");
+
+    local_res10[0] = FUN_182abea8c;
+
+    FUN_1819c3b74(param_1);
+
+    local_res10[0] = FUN_182abad3c;
+
+    FUN_180b6a2c8(param_1,"GetOwnerId");
+
+    local_res10[0] = FUN_18143d84c;
+
+    FUN_180b6a2c8(param_1,"GetEntityHoldingInHand");
+
+    local_res10[0] = FUN_182ac1834;
+
+    FUN_180efc534(param_1,"StartUse");
+
+    local_res10[0] = FUN_182ac1b08;
+
+    FUN_180efc534(param_1,"StopUse");
+
+    local_res10[0] = FUN_182ac2128;
+
+    FUN_180efc534(param_1,&DAT_183a5bd58);
+
+    local_res10[0] = FUN_182abce74;
+
+    FUN_180b6a2c8(param_1,"IsUsed");
+
+    local_res10[0] = FUN_182abad00;
+
+    FUN_180b6a2c8(param_1,"GetMountedDir");
+
+    local_res10[0] = FUN_182abac98;
+
+    FUN_180b6a2c8(param_1,"GetMountedAngleLimits");
+
+    local_res10[0] = FUN_180c878b0;
+
+    FUN_1819c3c1c(param_1);
+
+    local_res10[0] = FUN_182abdf48;
+
+    FUN_18120bd80(param_1);
+
+    local_res10[0] = FUN_182abc4a0;
+
+    FUN_180b6a2c8(param_1,"IsDestroyed");
+
+    local_res10[0] = FUN_182abcb20;
+
+    FUN_180b6a2c8(param_1,"IsOversized");
+
+    local_res10[0] = FUN_182abc6a8;
+
+    FUN_180b6a2c8(param_1,"IsFromShop");
+
+    local_res10[0] = FUN_1811cc15c;
+
+    FUN_180b6a2c8(param_1,"BelongsToDeadBody");
+
+    local_res10[0] = FUN_182aba978;
+
+    FUN_180b6a2c8(param_1,"GetLinkedOwner");
+
+    local_res10[0] = FUN_182abe248;
+
+    FUN_180efc534(param_1,"OnUsed");
+
+    local_res10[0] = FUN_182ab6ab4;
+
+    FUN_180efc534(param_1,"CanSteal");
+
+    local_res10[0] = FUN_182abe1cc;
+
+    FUN_180efc534(param_1,"OnSteal");
+
+    local_res10[0] = FUN_182abb5e0;
+
+    FUN_180efccbc(param_1,"GetSlot","usePresence",param_1,local_res10);
+
+    local_res10[0] = FUN_180c878b0;
+
+    FUN_180b6a2c8(param_1,"GetHealth");
+
+    local_res10[0] = FUN_180c878b0;
+
+    FUN_180b6a2c8(param_1,"GetMaxHealth");
+
+    local_res10[0] = FUN_182abc0a8;
+
+    FUN_180b6a2c8(param_1,"GetUIName");
+
+    local_res10[0] = FUN_182aba42c;
+
+    FUN_180b6a2c8(param_1,"GetId");
+
+    local_res10[0] = FUN_182ac0c44;
+
+    FUN_1819c3cc4(param_1);
+
+    local_res10[0] = FUN_182ac0cbc;
+
+    FUN_1819c5fc8(param_1);
+
+    local_res10[0] = FUN_182abad9c;
+
+    FUN_180b6a2c8(param_1,"GetPhase");
+
+    local_res10[0] = FUN_182abadf0;
+
+    FUN_180b6a2c8(param_1,"GetPhaseById");
+
+    return;
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_180788650 @ 180788650  size=8
+  
+
+  char * FUN_180788650(void)
+
+  
+
+  {
+
+    return "CallScriptFunctionWithParam";
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_180788660 @ 180788660  size=8
+  
+
+  char * FUN_180788660(void)
+
+  
+
+  {
+
+    return "CallScriptFunction";
+
+  }
+
+  
+
+
+------------------------------------------------------------------------
+FUNC FUN_181313b04 @ 181313b04  size=1275
+  
+
+  /* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+  
+
+  void FUN_181313b04(void)
+
+  
+
+  {
+
+    undefined8 uVar1;
+
+    undefined8 uVar2;
+
+    undefined8 uVar3;
+
+    undefined8 uVar4;
+
+    undefined8 uVar5;
+
+    undefined1 auStack_588 [32];
+
+    undefined8 local_568;
+
+    undefined8 local_560;
+
+    undefined8 local_558;
+
+    undefined4 local_548 [4];
+
+    char *local_538;
+
+    undefined8 *local_530;
+
+    char local_528 [8];
+
+    undefined8 local_520;
+
+    undefined8 uStack_518;
+
+    undefined1 local_510 [16];
+
+    undefined8 local_500 [2];
+
+    undefined8 local_4f0;
+
+    undefined1 local_4e8 [16];
+
+    undefined1 local_4d8 [16];
+
+    undefined1 local_4c8 [16];
+
+    undefined1 local_4b8 [16];
+
+    code *local_4a8;
+
+    undefined4 local_4a0 [4];
+
+    code *local_490;
+
+    undefined1 local_488 [16];
+
+    code *local_478;
+
+    undefined1 local_470 [16];
+
+    code *local_460;
+
+    undefined1 local_458 [16];
+
+    code *local_448;
+
+    undefined1 local_440 [16];
+
+    code *local_430;
+
+    undefined1 local_428 [24];
+
+    undefined1 local_410 [16];
+
+    undefined1 local_400 [16];
+
+    undefined1 local_3f0 [24];
+
+    undefined1 local_3d8 [24];
+
+    undefined1 local_3c0 [24];
+
+    undefined1 local_3a8 [24];
+
+    undefined1 local_390 [24];
+
+    undefined1 local_378 [24];
+
+    undefined1 local_360 [24];
+
+    undefined1 local_348 [24];
+
+    undefined1 local_330 [24];
+
+    undefined1 local_318 [24];
+
+    undefined1 local_300 [24];
+
+    undefined1 local_2e8 [24];
+
+    undefined1 local_2d0 [64];
+
+    undefined1 local_290 [56];
+
+    undefined8 local_258;
+
+    undefined1 local_250 [64];
+
+    undefined1 local_210 [64];
+
+    undefined1 local_1d0 [48];
+
+    undefined1 local_1a0 [48];
+
+    undefined1 local_170 [48];
+
+    undefined1 local_140 [48];
+
+    undefined1 local_110 [48];
+
+    undefined1 local_e0 [48];
+
+    undefined1 local_b0 [48];
+
+    undefined1 local_80 [48];
+
+    undefined1 local_50 [48];
+
+    ulonglong local_20;
+
+    
+
+    local_20 = DAT_1848fcfc0 ^ (ulonglong)auStack_588;
+
+    local_520 = 0;
+
+    uStack_518 = 0;
+
+    FUN_1813c7c10(local_548);
+
+    local_530 = (undefined8 *)0x2c;
+
+    local_538 = "wh::xgenaimodule::NonInteractiveLedgeTrigger";
+
+    FUN_180ce60ac(local_548,&local_538);
+
+    uVar1 = FUN_18078c23c(&local_538,&local_520);
+
+    FUN_18039b0f8(local_510,uVar1);
+
+    FUN_18039b0f8(local_500);
+
+    local_4f0 = 0;
+
+    local_258 = 0;
+
+    FUN_180ce72a0(local_500[0],local_510,local_290);
+
+    if (local_530 != (undefined8 *)0x0) {
+
+      FUN_1804f67e8();
+
+    }
+
+    uVar1 = FUN_181314000(local_510,local_4c8);
+
+    local_530 = (undefined8 *)0x6;
+
+    local_538 = "Ledges";
+
+    uVar1 = FUN_180e2eaa0(uVar1,local_2d0,&local_538);
+
+  … (85 more lines)
+
+=== done ===
