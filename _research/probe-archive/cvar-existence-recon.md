@@ -120,3 +120,46 @@ no `test_names` (the probe only logs `CVAR_PROBE` lines; it reports no rows).
 `MISS <name>` line per candidate, then two `SUMMARY` lines (resolved count +
 names, missed count + names). The discriminator: a number = the CVar exists; a
 `nil` (logged as `MISS`) = it is absent on this build.
+
+---
+
+## Follow-up: writability probe (P3 s2 correction)
+
+**Why.** The existence probe proved cvars are READABLE — but the catalog bar is
+that an entry actually CHANGES the game (runtime-WRITABLE). On the first P3 s2
+launch, `skip_intro_logos`->`g_skipIntro` FAILED: `g_skipIntro` is readable but
+its `console.execute` set no-op'd (a write-restricted/const cvar). Readable does
+NOT imply writable. A second probe tested writability to pick a confirmed
+replacement.
+
+**Method (one variable per candidate — did the write take?).** For each
+candidate: read `before`; `console.execute("<name> <changed-value>")`; read
+`after`. `after == target` -> WRITABLE; `after == before` -> RESTRICTED (set
+no-op'd); else PARTIAL. Restore `before` on every path.
+
+**Results (build release_1_5_1164953_841, launch 2026-06-12 18:54):**
+
+| CVar | before -> after | verdict |
+|------|----------------|---------|
+| `r_ssdo` | 1 -> 0 | WRITABLE |
+| `r_Sharpening` | 0 -> 1 | WRITABLE |
+| `r_VSync` | 1 -> 0 | WRITABLE |
+| `cl_bob` | 1 -> 0 | WRITABLE |
+| `r_TexturesStreaming` | 2 -> 0 | WRITABLE |
+| `r_ssao` | — | SKIP (not readable on this build) |
+
+Plus the 5 already-shipped entries proved writable in the first launch
+(`r_MotionBlur`, `r_DepthOfField`, `r_DisplayInfo`, `r_ChromaticAberration`,
+`wh_ui_showCompass` all changed). Selected `r_ssdo` (ambient occlusion) as the
+`skip_intro_logos` replacement — a clean, recognizable graphics toggle, confirmed
+readable AND writable.
+
+**Lesson for future catalog entries:** a console-driven behavior entry needs BOTH
+proofs — readable (existence) AND writable (the set takes). A cvar can be one
+without the other (`g_skipIntro` is read-only at runtime). Probe writability, not
+just existence, before shipping a console-toggle entry.
+
+**Read recipe:** `grep CVAR_WRITE kcdx-dev_<ts>.log` — one
+`WRITABLE/RESTRICTED/PARTIAL/SKIP <name>` line per candidate + a `SUMMARY
+writable=` line. The reusable wiring is the same read-set-read-restore shape as
+the existence probe, with the write attempt added between the reads.

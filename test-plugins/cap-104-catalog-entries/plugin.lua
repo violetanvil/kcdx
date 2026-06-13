@@ -51,8 +51,8 @@ local ENTRIES = {
       behavior = "kcdx.behavior.chromatic_aberration",  cvar = "r_ChromaticAberration", on_value = 1 },
     { row = "cap-104-show_compass",
       behavior = "kcdx.behavior.show_compass",          cvar = "wh_ui_showCompass",     on_value = 1 },
-    { row = "cap-104-skip_intro_logos",
-      behavior = "kcdx.behavior.skip_intro_logos",      cvar = "g_skipIntro",           on_value = 1 },
+    { row = "cap-104-ambient_occlusion",
+      behavior = "kcdx.behavior.ambient_occlusion",     cvar = "r_ssdo",                on_value = 1 },
 }
 
 -- Per-entry runtime state filled across the two post-load windows.
@@ -84,7 +84,7 @@ local verbs_ok = domain_ok
 local ALL_ROWS = {
     "cap-104-motion_blur", "cap-104-depth_of_field", "cap-104-display_info",
     "cap-104-chromatic_aberration", "cap-104-show_compass",
-    "cap-104-skip_intro_logos", "cap-104-restore-clean",
+    "cap-104-ambient_occlusion", "cap-104-restore-clean",
 }
 
 if not verbs_ok then

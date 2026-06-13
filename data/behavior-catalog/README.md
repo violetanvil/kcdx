@@ -20,4 +20,4 @@ declare code is unchanged, only the stamping root differs.
 | [`kcdx.behavior.display_info`](display_info.lua) | Toggle the on-screen display-info overlay (`r_DisplayInfo`). |
 | [`kcdx.behavior.chromatic_aberration`](chromatic_aberration.lua) | Toggle the chromatic-aberration effect (`r_ChromaticAberration`). |
 | [`kcdx.behavior.show_compass`](show_compass.lua) | Toggle the HUD compass (`wh_ui_showCompass`). |
-| [`kcdx.behavior.skip_intro_logos`](skip_intro_logos.lua) | Toggle skipping the startup intro logos (`g_skipIntro`). |
+| [`kcdx.behavior.ambient_occlusion`](ambient_occlusion.lua) | Toggle screen-space ambient occlusion (`r_ssdo`). |
