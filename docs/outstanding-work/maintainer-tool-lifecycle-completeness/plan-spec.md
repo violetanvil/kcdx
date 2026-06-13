@@ -53,17 +53,22 @@ the full version-relative set.
 |---|---|---|---|
 | E1 — close-intervals already-done skip (`valid_through == last_verified` → no edit-spec) | D41 fact 2; s08 reconciliation | 1.1 | mirrors verify-all's existing skip |
 | E2 — already-acted-on reconciliation classification (derive from report version + DB state) | D41 fact 2 | 1.1 (logic) + 2.2 (preview surface) | |
-| E3 — s08 already-acted row → "no further action" state | D41 fact 3; s08 States "Already acted on" | 3.3 | |
-| E4 — s08 close→needs-action flag (a close that orphans flags it) | D41 fact 3; s08 "Close → needs-action" | 3.3 | |
-| E5 — `[Fix ▸]` carries the divergence `detail` to s04 | D41 fact 3; s08 Fix-flow | 3.4 | |
-| E6 — `[Fix ▸]` return path to the worklist (report intact) | D41 fact 3; s08 Fix-flow | 3.4 | |
-| E7 — applied row shows the resulting value | D41 fact 3; s08 Fix-flow | 3.4 | |
+| E3 — s08 already-acted row → "no further action" state | D41 fact 3; s08 States "Already acted on" | 3.4 | |
+| E4 — s08 close→needs-action flag (a close that orphans flags it) | D41 fact 3; s08 "Close → needs-action" | 3.4 | |
+| E5 — `[Fix ▸]` carries the divergence `detail` to s04 | D41 fact 3; s08 Fix-flow | 3.5 | |
+| E6 — `[Fix ▸]` PUSHES s02/s04; `‹ back` restores the worklist report intact (no re-import) | D41 fact 3 + D42; s08 Fix-flow + law 10 | 3.5 | rests on the 3.2 back-stack |
+| E7 — applied row shows the resulting value | D41 fact 3; s08 Fix-flow | 3.5 | |
 | E8 — lifecycle-completeness detection query (orphan + never-verified + broken-refs at V) | D41 fact 1; s09 §Contents kinds | 1.2 | |
 | E9 — backend needs-action read endpoint | D41 fact 1; s09 §Contents/Loading | 2.1 | |
 | E10 — s09 view shell (placement, header, by-kind collapsible sections) | s09 §Region, §Contents | 3.1 | |
-| E11 — s09 per-row resolution actions (navigate to s02/s04/s05 + return + drop-off) | s09 §Contents rows 35–46 | 3.2 | |
+| E11 — s09 per-row resolution actions (PUSH s02/s04/s05 + `‹ back` return + drop-off) | s09 §Contents rows 35–46 | 3.3 | rests on the 3.2 back-stack |
 | E12 — s01 `[Needs action ▸ N]` affordance + count badge | s09 §Contents row 29; s01 spec | 3.1 | |
 | E13 — s09 empty = all-clear (success-framed) state | s09 States "Empty" | 3.1 | |
 | E14 — s09 loading / error / disabled / edge states | s09 States | 3.1 | |
+| E15 — in-app content back-stack (push/reset/`‹ back`/state-carrying frames; no URL router) | TRD D42; ui/design.md law 10 + law 2 | 3.2 | the navigation primitive 3.3/3.5 consume |
+| E16 — version-new selector (linked-Bin-resolved version selectable, marked "from your linked Bin · new", ephemeral) | TRD D43; ui/design.md `select / dropdown` silhouette; s02 spec | 3.2 | |
+| E17 — unsaved-changes guard on navigate-away from a dirty editor (Save/Discard/Cancel) | TRD D44; ui/design.md law 10; s02/s04/s08 "Unsaved-changes guard" states | 3.2 | |
 
-Every element resolves to a step; no deferrals.
+Every element resolves to a step; no deferrals. (E15–E17 are the D42/D43/D44 navigation-redesign
+elements added when the settled redesign — TRD `42867e4` + screen specs `52c9ddf` — made the in-app
+back-stack a first-class build dependency; the former 3.2 blocker named exactly its absence.)

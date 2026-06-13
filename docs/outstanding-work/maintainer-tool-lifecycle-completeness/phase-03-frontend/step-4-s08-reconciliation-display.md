@@ -1,4 +1,4 @@
-# 3.3 [FE] The s08 reconciliation display + close→needs-action flag (E3, E4)
+# 3.4 [FE] The s08 reconciliation display + close→needs-action flag (E3, E4)
 
 ## What
 
@@ -21,7 +21,7 @@ One commit in the frontend repo (`data/maintainer-tool/frontend/src/worklist/`):
   reflects that the entity is now needs-action (it surfaces in the s09 view on next visit; the s08 side
   is the "Orphaned by a close" state — the close stays one atomic transaction).
 
-Does NOT change the resolver/preview logic (1.1/2.2 own it) or the Fix-flow (3.4).
+Does NOT change the resolver/preview logic (1.1/2.2 own it) or the Fix-flow (3.5).
 
 ## Test bar
 
