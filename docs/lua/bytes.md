@@ -5,6 +5,26 @@ Rewrite bytes at a located site. Succeeds the v0.1 `[[patch]]` TOML schema. A
 replacement must be the same length as the original it overwrites — adding code
 goes through `kcdx.hook`.
 
+## Where bytes sits — the low-level tier under `kcdx.statement.*`
+
+`kcdx.bytes` is the **lowest-level static-modification tier**. It is the general
+primitive: a raw byte rewrite at *any* located site (function-internal or not).
+One tier up, [`kcdx.statement.*`](statement.md) makes a static change with a
+**named op** — same zero per-call cost (the bytes execute natively), but you say
+*what* you want (`return 0`, `skip this call`, `never take this branch`) instead
+of hand-writing the replacement bytes, and the change is hash-tracked against the
+named op.
+
+- **Reach for [`kcdx.statement.replace_with`](statement.md)** when a named
+  [op](op.md) expresses your change — it is named-not-hex and the engine emits
+  the bytes for you.
+- **Use `kcdx.bytes`** when you need a raw byte rewrite that no higher tier
+  expresses — a specific replacement at a specific site. This is the general
+  primitive; reach for it when the named ops do not cover what you need.
+
+Both write static bytes with zero per-call cost. For per-call Lua logic, use
+[`kcdx.hook`](hook.md) instead.
+
 ## Common path — `kcdx.bytes.<name>{...}`
 
 The everyday shape: name the site, pass the rewrite payload in a single

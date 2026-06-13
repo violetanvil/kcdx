@@ -15,8 +15,8 @@ empowered C++ `kcdx::bytes::Replace` wrapper (bytes' next unshipped phase). No
 | Step | Status | Commit |
 |---|---|---|
 | ~~[1 — narrow `kcdx.bytes` remit + final call-site migration]~~ | STRUCK | reversal 2026-06-12 — narrowing reversed; remnant (bytes.md tier-pointer) folded into step 3 |
-| [2 — `lua-api-surface.md` rule 4 / 4a rewrite](step-2-rule-update.md) | NOT STARTED | — |
-| [3 — docs: tiered front door + `extensibility.md` + bytes tier-pointer](step-3-docs.md) | NOT STARTED | — |
+| [2 — `lua-api-surface.md` rule 4 / 4a rewrite](step-2-rule-update.md) | DONE | (landed) — rules 4/4a already in final form (landed in the 2026-05-28 doc pass); no diff owed |
+| [3 — docs: tiered front door + `extensibility.md` + bytes tier-pointer](step-3-docs.md) | DONE | (landed) |
 | [4 — empowered C++ `kcdx::bytes::Replace` wrapper + test](step-4-cpp-bytes-wrapper.md) | NOT STARTED | — |
 
 ## Verification gate (whole phase)

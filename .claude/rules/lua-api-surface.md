@@ -219,8 +219,10 @@ is in `cornerstones.md` (AP12 in `anti-patterns.md`). On this surface:
 > Everything is under one global, `kcdx`. Site-modification verbs split
 > by mechanism: `kcdx.hook.*` for callback-based interception (per-call
 > Lua cost; use when per-call logic is needed), `kcdx.statement.*` for
-> static-bytes modification (zero per-call cost; bytes execute natively),
-> `kcdx.bytes` for raw byte rewrites outside functions. Named common
+> static-bytes modification with a named op (zero per-call cost; bytes
+> execute natively), `kcdx.bytes` for a raw byte rewrite at any located
+> site (the lowest-level tier — reach for it when no named op or higher
+> tier fits). Named common
 > behaviors live under `kcdx.behavior.*` (engine-shipped) or under
 > `<author>.<plugin>.<bare>` (plugin-declared via `kcdx.behavior.declare`);
 > all reachable through `kcdx.behavior.set/get/list`. Everything else is

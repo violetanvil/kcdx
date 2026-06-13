@@ -46,10 +46,33 @@ shape it takes:
 That is the whole surface model. A call you have never seen still resolves to
 the right place by these rules.
 
-### Tiers of intent — from "name a behavior" down to "rewrite bytes"
+### Tiers of intent — pick the right one in one glance
 
-The site-modification surface is layered, highest-level (least to write, the
-engine does the most) to lowest-level (most control, you supply the most):
+To change the game, reach for the **highest tier that does the job** — the
+higher the tier, the less you write and the more the engine carries. Four tiers,
+top to bottom:
+
+1. **Behavior** — `kcdx.behavior.set("name", value)`. A named behavior already
+   exists; one line, no concepts to learn. *Reach here first.*
+2. **Hook** — `kcdx.hook.before/after/around/replace`. Per-call Lua logic at a
+   named code site (it costs a dispatch per call). *When you need to run code
+   on each call.*
+3. **Statement** — `kcdx.statement.replace_with`. A static change at a code site
+   via a **named op**, zero per-call cost (the bytes execute natively). *When the
+   change is fixed and you want native speed.*
+4. **Bytes** — `kcdx.bytes`. The lowest-level tier: a raw byte rewrite at any
+   located site, used when no named op or higher tier fits. *The general
+   low-level primitive — the `pattern` AOB locator on it is the labeled
+   expert hatch.*
+
+Every tier **names its target** (the engine resolves the address AND the
+verified ABI); the disassembler stays an expert-only escape hatch. **Don't know
+what exists?** Browse named behaviors with `kcdx.behavior.list()`, discover a
+function from what you know about it with `kcdx.find{...}`, and inspect one in
+detail with `kcdx_dev_inspect`.
+
+The site-modification surface, highest-level (least to write, the engine does
+the most) to lowest-level (most control, you supply the most):
 
 - **Behavior** (`kcdx.behavior.set/get/list`) — the top tier: name a common
   behavior and a value; the engine carries the rest. A consumer plugin can be
@@ -57,16 +80,17 @@ engine does the most) to lowest-level (most control, you supply the most):
   live under `kcdx.behavior.*`; a plugin declares its own with
   `kcdx.behavior.declare`. See [behavior.md](behavior.md).
 - **Hook** (`kcdx.hook.*`) — intercept a named game function with a callback
-  (before/after/around/replace/mid) when you need per-call logic.
+  (before/after/around/replace/mid) when you need per-call logic. See
+  [hook.md](hook.md).
 - **Statement** (`kcdx.statement.*`) — a static-bytes change at a located
-  statement, zero per-call cost, named not hex.
-- **Bytes** (`kcdx.bytes`) — a raw byte rewrite at a located site, the
-  lowest-level surface.
+  statement, zero per-call cost, named not hex. See [statement.md](statement.md).
+- **Bytes** (`kcdx.bytes`) — a raw byte rewrite at any located site, the
+  lowest-level surface, used when no higher tier expresses the change. See
+  [bytes.md](bytes.md).
 
-Reach for the highest tier that does the job: a named behavior when one exists,
-a hook/statement/bytes verb when you need finer control. Every tier names its
-target (the engine resolves the address AND the verified ABI); the disassembler
-stays an expert-only escape hatch.
+To extend or be extended by *another* plugin (publish/subscribe events,
+reconfigure another plugin's behaviors, hook its declared functions by name),
+see [extensibility.md](extensibility.md).
 
 ### kcdx.version
 
@@ -387,6 +411,7 @@ it does not exist yet.
 | Call | What it does | File |
 |---|---|---|
 | `kcdx.on` lifecycle events | `"ready"`, the 9 game events, custom `"<author>.<plugin>.<event>"` | [lifecycle.md](lifecycle.md) |
+| cross-plugin extension | make your plugin extensible (publish events, declare behaviors / DLL functions) + extend another plugin (subscribe, reconfigure, hook by name) | [extensibility.md](extensibility.md) |
 | cross-cutting rules | main-thread, pointer-userdata, deferred-apply, error contracts | [cross-cutting.md](cross-cutting.md) |
 
 ### Planned
