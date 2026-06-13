@@ -9,7 +9,7 @@ catalog-aware loader path, then the shipped entries. Design:
 | Step | Status | Commit |
 |---|---|---|
 | [1 — the catalog loader path](step-1-catalog-loader.md) | DONE | d4b2f8f |
-| [2 — the shipped entries (5–10)](step-2-shipped-entries.md) | DONE | (landed) |
+| [2 — the shipped entries (5–10)](step-2-shipped-entries.md) | DONE | 13e63ad (+ 80a0c39 swap-fix) |
 
 ## Phase verification gate
 

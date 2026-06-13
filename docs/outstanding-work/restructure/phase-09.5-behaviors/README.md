@@ -25,7 +25,7 @@ cascade).
 |---|---|---|
 | [1 — core surface (probe · registry · boundary · window law · toggle · edges · auto-order)](phase-01-core-surface/README.md) | DONE | s1 736481d · s2 7080dd0 · s3 08e2f2a · s4 5295397 · s5 1176742 · s6 eb57d1d · s7 783d7bb |
 | [2 — C++ parity + the command queue](phase-02-cpp-parity/README.md) | DONE | s1 2e81f11 · s2 a8c75be |
-| [3 — the engine catalog](phase-03-catalog/README.md) | DONE | s1 d4b2f8f · s2 (landed) |
+| [3 — the engine catalog](phase-03-catalog/README.md) | DONE | s1 d4b2f8f · s2 13e63ad (+ 80a0c39 swap-fix) |
 
 ## Build order rationale
 
