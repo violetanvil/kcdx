@@ -90,7 +90,7 @@ The discussion that produced this plan resolved ten load-bearing questions. Each
 | 9.3 — `kcdx.hook.*` / `kcdx.statement.*` split + `kcdx.locator.*` / `kcdx.op.*` + multi-region trampoline | **NOT STARTED** |
 | 9.4 — `kcdx.find{...}` + `kcdx_dev_inspect` console | **NOT STARTED** |
 | 9.5 — `kcdx.behavior.*` named-behavior catalog | **NOT STARTED** |
-| 9.6 — `kcdx.bytes` narrowing + rule 4/4a update + final migration | **NOT STARTED** |
+| 9.6 — Lua API rule 4/4a update + tiered docs + C++ bytes wrapper (bytes narrowing STRUCK 2026-06-12) | **NOT STARTED** |
 | 9.7 — Curated-target sub-verb resolver | **MERGED into Phase 9.2** (2026-05-28) — declare + smart resolver were two halves of one surface (a named-entry table populated from curated refdb + author declare; smart resolver over that table); landing them sequentially would have shipped a transitional UX. |
 | 10 — `[[event]]` → `kcdx.on(...)` event catalog | **LIFECYCLE EVENTS DONE** (`messaging.cpp` wires every save/load/post-load/input-loaded/etc.); **GAMEPLAY EVENT CATALOG NOT STARTED** (the 10–15 NEW gameplay events damage_taken / dialogue_line_spoken / item_picked_up / etc. are NOT RE'd or hooked) |
 | 11a — FIX A shim integration | **NOT STARTED** (depends on `_research/phase8-fix-a/` RE — ~38% RVAs mapped at last writing) |
@@ -1997,17 +1997,23 @@ The tweak plugin has no statement-level knowledge; it consumes the behaviors Rea
 
 **Verification gate:** test plugin uses `kcdx.behavior.set("test_behavior", true)` against a `kcdx.behavior.*` catalog entry → underlying byte rewrite applies. Behavior-only plugin without `authored_against_game_version` still loads (exempt). `kcdx.behavior.list()` returns engine + plugin behaviors; `kcdx.behavior.list("redmoon.")` filters to redmoon's. Cross-plugin test: plugin A declares `a.test.foo`; plugin B calls `kcdx.behavior.set("a.test.foo", "value")`; implementation fires with the value.
 
-### Phase 9.6 — `kcdx.bytes` narrowing + Lua API rule update + final migration — **NOT STARTED**
+### Phase 9.6 — Lua API rule update + tiered docs + C++ bytes wrapper — **NOT STARTED**
 
-**Status (2026-05-28 audit):** `kcdx.bytes` still serves its Phase 2 remit (function-internal + non-function bytes both); the narrowing to "non-function only + labeled-expert `pattern` hatch" is not landed. Rule 4 / 4a in `.claude/rules/lua-api-surface.md` already documents the sub-verb model (struck during the 2026-05-28 doc updates that documented Phase 9.7's smart-resolver direction) — confirm against the rule file before landing. `docs/lua/extensibility.md` does not exist.
+> **DESIGN REVERSAL (2026-06-12).** The original "`kcdx.bytes` narrowing" premise is **STRUCK**. A grounding pass + a cold architectural review (our original thinking withheld) overturned it on the evidence:
+> - **`kcdx.statement.replace_with` cannot express what `kcdx.bytes` does.** `replace_with` emits only *named* `kcdx.op.*` operations (`replace_with_noop`, `replace_with_return(0)`, …) — it has no path to write an arbitrary byte string. The one real migration target in the corpus, cap-01's `44 8A F0` → `45 31 F6`, has no `kcdx.op.*` that produces those bytes; the migration is **not expressible**.
+> - **And could not resolve even if it could.** cap-01's target (`outfit_swap_callsite_aob`, id 5) is `kind=callsite` — a mid-function AOB with no statement metadata; `replace_with` resolves against the statement cache and returns `function_no_statements`.
+> - **The narrowed remit has zero inhabitants.** Every existing `kcdx.bytes` call site is function-internal (callsite/function kind); there are NO data_slot/vtable_base/string_anchor bytes sites, and the only non-function DB entities are live engine pointers/vtables unsafe to rewrite in a test. The narrowing would have rejected 100% of the passing corpus to gain a region nobody uses.
+> - **It was a UX regression** (cornerstone #1): forcing an author who wrote a working one-line `kcdx.bytes{target=<callsite>, replacement="45 31 F6"}` onto `kcdx.statement` sends them to a dead end.
+>
+> **Corrected design.** `kcdx.bytes` STAYS the general low-level raw-byte-rewrite primitive (function-internal OR not). `kcdx.statement.*` is the *higher-level curated tier* (named ops, content locators, statement-hash tracking, zero per-call cost) authors reach for **by intent**, not by memory region. This is the tier ladder the design source already ships (`docs/lua/index.md` §"Tiers of intent": behavior → hook → statement → bytes, "the lowest-level surface"); "no overlap" mistook an abstraction ladder for an engine-error space — overlap-by-abstraction-level is the established pattern (raw-address vs named-target hook forms coexist; a bytes patch + a hook coexist on one site). The steer toward `statement` lives in **docs**, never in a binder reject. No `kcdx.bytes` binder change, no hard reject, no forced migration.
+>
+> **What this struck, what survives.** STRUCK: original step 1 ("narrow `kcdx.bytes` + reject function-internal + migrate to statement") in full. SURVIVES: the rule 4/4a rewrite (step 2 — drop "narrowed remit" framing, keep the sub-verb/tier framing), the tiered docs front-door + `extensibility.md` (step 3 — gains the small `docs/lua/bytes.md` → statement tier-pointer that was step 1's only real remnant), and the empowered C++ `kcdx::bytes::Replace` wrapper (step 4). The `kcdx.hook` mode-as-key → sub-verb migration is already DONE (verified 2026-06-12: no live mode-as-key call shape remains in `src/`/`test-plugins/`, only descriptive comments).
 
-The cleanup phase. Rewrites the design rule that governs the surface; narrows `kcdx.bytes` to its post-9.3 remit; migrates any remaining test plugins.
+**Status (2026-05-28 audit, pre-reversal):** `kcdx.bytes` serves its Phase 2 remit (function-internal + non-function bytes both) — and CONTINUES to, post-reversal. Rule 4 / 4a in `.claude/rules/lua-api-surface.md` already documents the sub-verb model (struck during the 2026-05-28 doc updates that documented Phase 9.7's smart-resolver direction) — confirm against the rule file before landing. `docs/lua/extensibility.md` does not exist.
 
-**`kcdx.bytes` narrowing:**
+The cleanup phase. Rewrites the design rule that governs the surface; lands the tiered docs front-door + the extensibility guide + the bytes-as-low-level-tier pointer; ships the empowered C++ bytes wrapper. (The `kcdx.bytes` narrowing is STRUCK per the reversal above — bytes stays the general primitive.)
 
-- Remit narrowed to: raw byte rewrites OUTSIDE functions (data section, vtable slots, string tables); labeled-expert `pattern`-locator use for AOBs without function context.
-- Function-internal byte work is documented as belonging in `kcdx.statement.replace_with` with a `kcdx.locator.*`.
-- The narrowing removes engine-error space: `kcdx.bytes` does what `kcdx.statement.*` doesn't (touch non-function memory), `kcdx.statement.*` does what `kcdx.bytes` doesn't (function-internal with content locators + hash tracking). No overlap.
+**`kcdx.bytes` remit — UNCHANGED (narrowing STRUCK).** `kcdx.bytes` remains the general raw-byte-rewrite surface for any located site, function-internal or not — the lowest-level tier under `kcdx.statement.*`. Authors are *steered* to `statement` by the docs tier ladder when a named op fits, never *forced* by a binder reject. The two surfaces coexist by abstraction level (raw escape hatch vs. curated statement op), the same coexistence pattern the engine already sanctions elsewhere.
 
 **`.claude/rules/lua-api-surface.md` update:**
 
@@ -2018,13 +2024,13 @@ The cleanup phase. Rewrites the design rule that governs the surface; narrows `k
 
 **Final migration:**
 
-- Any remaining test plugins / in-source call sites using the pre-9.3 `kcdx.hook` shape (mode-as-table-key) migrate to sub-verb shape.
-- `kcdx.bytes` callsites that were function-internal byte work migrate to `kcdx.statement.replace_with` per the narrowed remit.
-- `docs/lua/*.md` per-call files rewritten to reflect final shapes.
+- The pre-9.3 `kcdx.hook` mode-as-table-key shape → sub-verb shape migration is **already DONE** (verified 2026-06-12: no live mode-as-key call shape in `src/`/`test-plugins/`, only descriptive comments). No remaining call-site migration.
+- ~~`kcdx.bytes` callsites that were function-internal byte work migrate to `kcdx.statement.replace_with`~~ — **STRUCK** (the narrowing is reversed; bytes stays general, every existing function-internal bytes call site stays valid).
+- `docs/lua/*.md` per-call files reflect final shapes — including `docs/lua/bytes.md` gaining a tier-pointer up to `kcdx.statement.*` (folded into step 3; bytes is documented as the low-level tier, not narrowed).
 
 **`docs/lua/index.md` leads with the tiered author model.** The author landing on the docs sees in the first three sentences which surface to reach for based on what they want to do:
 
-> kcdx gives you four ways to change how the game behaves. **`kcdx.behavior.set("name", value)`** if a named behavior exists for what you want (one line, no concepts to learn). **`kcdx.hook.before/after/around/replace`** when you need per-call Lua logic at a code site (per-call cost). **`kcdx.statement.replace_with`** when you want a static change at a code site (zero per-call cost; bytes execute natively). **`kcdx.bytes`** for raw byte rewrites outside functions (data section, vtable slots) or the labeled-expert `pattern` hatch.
+> kcdx gives you four ways to change how the game behaves. **`kcdx.behavior.set("name", value)`** if a named behavior exists for what you want (one line, no concepts to learn). **`kcdx.hook.before/after/around/replace`** when you need per-call Lua logic at a code site (per-call cost). **`kcdx.statement.replace_with`** when you want a static change at a code site with a named op (zero per-call cost; bytes execute natively). **`kcdx.bytes`** the lowest-level tier — a raw byte rewrite at any located site, when no named op or higher tier fits (function-internal or not; the `pattern` AOB locator is the labeled-expert hatch).
 >
 > Browse `kcdx.behavior.list()` for what's named already (engine catalog + every loaded plugin's declared behaviors). Use `kcdx.find{...}` to discover a function from what you know (a string the game shows, a CVAR name). Use `kcdx_dev_inspect` for full statement detail on a function.
 
@@ -2036,7 +2042,7 @@ Without this front-door framing, the docs are a flat verb list; with it, the aut
 - **Extend another plugin (author B):** subscribe to A's events (`kcdx.on("a:event", ...)`); reconfigure A's behaviors (`kcdx.behavior.set("a.behavior", ...)`); wrap A's Lua functions (plain Lua); hook A's declared C++ functions by name (`kcdx.hook.*`). The doc names the one boundary case — A's stripped, undeclared, compiled internal — as the rare expert fallback (RE it, or ask A to add a one-line `kcdx.dll.declare`).
 - Leads with events/behaviors/Lua (zero friction for both sides); function-level hooking documented as the lower-level tool; the RE case explicitly the boundary of supported extension.
 
-**Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `kcdx.bytes` narrowed-remit doc landed; `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../../.claude/rules/docs-discipline.md).
+**Verification gate:** full test suite green; no plugin uses old surface forms; rule 4 + 4a documented; `docs/lua/bytes.md` documents bytes as the low-level tier with a pointer up to `kcdx.statement.*` (NOT a narrowed remit — bytes stays general); `docs/lua/index.md` leads with the tier model; `docs/lua/extensibility.md` exists and covers both directions; `kcdx.dll.declare` + `kcdx.functions.*` per-call docs landed; per-call `docs/lua/` and `docs/cpp/` entries cover every shipped capability per [docs-discipline.md](../../../.claude/rules/docs-discipline.md).
 
 **Empowered C++ wrapper for `kcdx.bytes`.** Also ships in this phase since this is bytes' next unshipped phase. The raw `kcdxBytesInterface::Register(&opts)` is the always-available floor (Phase 3 sub-2, DONE); the empowered helper layers on top in `include/kcdx/Kcdx.h`, peer to the existing `kcdx::hook::*` helpers:
 
@@ -2148,7 +2154,7 @@ Phase 11 is complete when 11d's verification is green.
 
 ### Phase 12 — C++ empowered-wrapper sweep (remaining surfaces) + correctness fix + UX polish — **NOT STARTED**
 
-The closing C++ ergonomics phase. Phase 3 sub-1/sub-2/sub-3 shipped the raw `kcdxHookInterface` / `kcdxBytesInterface` / `kcdxTrampolineInterface` v2 + the empowered `kcdx::hook::*` wrapper layer on hook only (sub-1 step 6). Phase 9.2 ships the empowered `kcdx::declare::Function/Value` wrappers alongside `kcdxDeclareInterface`. Phase 9.6 ships the empowered `kcdx::bytes::Replace` wrapper alongside the `kcdx.bytes` narrowing. Phase 12 sweeps the remaining shipped raw surfaces that have no future-phase home of their own — code / task / cosave — and lands the wrapper-machinery correctness fix + UX polish.
+The closing C++ ergonomics phase. Phase 3 sub-1/sub-2/sub-3 shipped the raw `kcdxHookInterface` / `kcdxBytesInterface` / `kcdxTrampolineInterface` v2 + the empowered `kcdx::hook::*` wrapper layer on hook only (sub-1 step 6). Phase 9.2 ships the empowered `kcdx::declare::Function/Value` wrappers alongside `kcdxDeclareInterface`. Phase 9.6 ships the empowered `kcdx::bytes::Replace` wrapper (the `kcdx.bytes` narrowing it was once bundled with is STRUCK — see §"Phase 9.6"). Phase 12 sweeps the remaining shipped raw surfaces that have no future-phase home of their own — code / task / cosave — and lands the wrapper-machinery correctness fix + UX polish.
 
 **Direction (user-locked 2026-05-28, in the `/senior-architect-reply` thread for the hook docs flip — Option C):** the canonical Lua-mirror peer for any named surface is the empowered wrapper; the raw `K.<verb>->...(&opts)` form is the labeled raw-floor drop-down per [`docs/cpp/wrapper.md`](../../cpp/wrapper.md) §"The 3-floor model". Every wrapper that lands flips the matching `docs/cpp/<verb>.md` to lead with the empowered shape and demote the raw form.
 
