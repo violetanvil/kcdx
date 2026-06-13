@@ -1,0 +1,38 @@
+# CAP-106 — Phase 10 event-catalog VERIFICATION PROBE: perk_unlocked anchor.
+#
+# EXPERT/VERIFICATION-ONLY plugin. Hooks a game function by a RAW RVA through the
+# labeled expert escape hatch, NOT the common name-based surface. Sanctioned ONLY
+# because it is a probe answering a Phase-10 anchor-binding unknown before any DB
+# seed row is authored — the raw RVA lets it run WITHOUT growing the Address
+# Library. A raw RVA in production plugin code is AP1; here it is the deliberate
+# labeled expert form for a one-off verification.
+#
+# THE ANCHOR UNDER VERIFICATION (pure-static walk, _research/phase10-event-catalog-
+# recon/pilot-perk-static.md): the perk-collection add-if-absent + on-changed notify.
+#   target  FUN_18046b704  (perk-collection insert; the real C++ grant)
+#   RVA     0x46b704
+#   ABI     bool __fastcall(ptr perkCollection /*rcx*/, ptr perkId /*rdx*/, ptr ctx /*r8*/)
+#
+# THE VERIFY-THE-ANCHOR QUESTION: does a NATURAL-PROGRESSION perk unlock (a quest
+# reward / level-up / RTTR C_AddPerkEffect — not just the Lua AddPerk command)
+# fire this function? The static walk proved FUN_18046b704 is a real add-perk-
+# if-absent with an on-changed notify, but could NOT prove (RTTR is runtime-bound)
+# whether game-progression grants flow through it vs a different insert path. This
+# probe closes that: it hooks the insert entry and PASSes on first fire, confirming
+# 0x46b704 is on the perk-grant path.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name             = "cap_106_probe_perk"
+display_name     = "CAP-106 probe: perk_unlocked anchor (perk-collection insert)"
+author           = "ts"
+description       = "VERIFICATION PROBE (raw-RVA expert hatch): hooks the perk-collection insert FUN_18046b704 @ 0x46b704, PASSes on first fire. Confirms a natural-progression perk unlock routes through this grant path."
+version          = "0.1.0"
+kcdx_min_version = "0.1.0"
+log_level        = "debug"
+test_names       = ["CAP-106-probe-perk"]
+
+[entrypoints]
+lua = "plugin.lua"

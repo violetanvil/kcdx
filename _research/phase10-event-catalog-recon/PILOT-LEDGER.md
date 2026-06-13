@@ -9,9 +9,16 @@ Pilots map to the three mechanisms the [`FINDINGS.md`](FINDINGS.md) triage surfa
 
 | Mechanism | Pilot | Siblings it templates | Next action | Status |
 |---|---|---|---|---|
-| LUA-EVENT (entity-script → owned VM) | item_picked_up (`OnPickup`) | location_entered, npc_interacted_with | live probe (agent build/deploy → user launch) | PROBE-IN-BUILD |
-| C++ NEEDS-LIVE (state-change, no anchor) | combat_started (IsInCombat edge) | combat_ended, damage_taken, damage_dealt | live probe (agent build/deploy → user launch) | PROBE-IN-BUILD |
-| C++ caller-hop (interned constant) | perk_unlocked (`AddPerk`/`storm::addPerk`) | level_up, quest_stage_advanced | static read DONE → live confirm (hook `FUN_18046b704`) | PROBE-IN-BUILD |
+| LUA-EVENT (entity-script → owned VM) | item_picked_up (`OnPickup`) | location_entered, npc_interacted_with | confirm launch (cap-105-probe-pickup built) | PROBE-BUILT — awaiting launch |
+| C++ NEEDS-LIVE (state-change, no anchor) | combat_started (getter edge-detect) | combat_ended, damage_taken, damage_dealt | confirm launch (cap-107-probe-combat built) | PROBE-BUILT — awaiting launch |
+| C++ caller-hop (interned constant) | perk_unlocked (`FUN_18046b704`) | level_up, quest_stage_advanced | confirm launch (cap-106-probe-perk built) | PROBE-BUILT — awaiting launch |
+
+## Probes built (cycle landed, [unverified — pending launch])
+3 suite-gated verification probes, raw-RVA expert hatch, step-review APPROVED, build
+green: `cap-105-probe-pickup` (hook 0xb9ceb4, PASS on funcName "OnPickup"),
+`cap-106-probe-perk` (hook 0x46b704, PASS on first grant fire),
+`cap-107-probe-combat` (after-hook getter 0x1a7dac0, PASS on first 0↔≥1 edge). NO DB
+written. The ONE launch confirms all three; per-probe PASS read from kcdx-dev.log.
 
 ## perk_unlocked static read — DONE (pilot-perk-static.md)
 Static walk READ the unread caller-hop: the real grant fn is **`FUN_18046b704` @ RVA

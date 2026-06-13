@@ -1,0 +1,48 @@
+# CAP-107 — Phase 10 event-catalog VERIFICATION PROBE: combat_started/ended anchor.
+#
+# EXPERT/VERIFICATION-ONLY plugin. Hooks a game function by a RAW RVA through the
+# labeled expert escape hatch, NOT the common name-based surface. Sanctioned ONLY
+# because it is a probe answering a Phase-10 anchor-binding unknown before any DB
+# seed row is authored — the raw RVA lets it run WITHOUT growing the Address
+# Library. A raw RVA in production plugin code is AP1; here it is the deliberate
+# labeled expert form for a one-off verification.
+#
+# THE ANCHOR UNDER VERIFICATION (pure-static pin, _research/phase10-event-catalog-
+# recon/pilot-combat-pin.md): the combat-state property GETTER.
+#   target  FUN_181a7dac0  (C_ModelProperty getter, vtable slot 1)
+#   RVA     0x1a7dac0
+#   ABI     u8 __fastcall(ptr prop /*rcx*/)  -- returns the state byte in al
+#
+# WHY THE GETTER (not the WRITER): the recon VERDICT was NO STATIC PIN of the
+# transition WRITER — the combat-state value is written by an inlined templated
+# SetValue (one of 2,523 indistinguishable [+8] writes) with no function/vtable
+# slot to hook, and the change-signal dispatches through a runtime-bound listener
+# list. The only statically-pinnable surface is the GETTER (slot 1, 0x1a7dac0,
+# returns the state byte at [prop+8]). So this probe hooks the getter with an
+# AFTER callback and EDGE-DETECTS over the polled reads.
+#
+# THE CAVEAT (load-bearing, repeated in plugin.lua): this getter is on the READ
+# path with ~192 callers — it fires on READ CADENCE, not at the true SetValue
+# moment. The probe is therefore an EDGE-DETECTOR over polled reads, NOT a true
+# transition event. This is acceptable for a v1 combat_started/combat_ended
+# verification; kcdx has no write-watch primitive, so this is the buildable path.
+#
+# THE OBSERVABLE: maintain a per-prop-pointer prior-value table; on a 0<->>=1
+# crossing, log the transition (started: 0->>=1; ended: >=1->0). PASS on the
+# first observed transition.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name             = "cap_107_probe_combat"
+display_name     = "CAP-107 probe: combat state anchor (getter edge-detect)"
+author           = "ts"
+description       = "VERIFICATION PROBE (raw-RVA expert hatch): hooks the combat-state getter FUN_181a7dac0 @ 0x1a7dac0 with an after callback, edge-detects 0<->>=1 over polled reads, PASSes on first transition. EDGE-DETECTOR over reads, NOT a true SetValue event (no write-watch primitive)."
+version          = "0.1.0"
+kcdx_min_version = "0.1.0"
+log_level        = "debug"
+test_names       = ["CAP-107-probe-combat"]
+
+[entrypoints]
+lua = "plugin.lua"

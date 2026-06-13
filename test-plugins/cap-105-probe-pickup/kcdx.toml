@@ -1,0 +1,45 @@
+# CAP-105 — Phase 10 event-catalog VERIFICATION PROBE: item_picked_up anchor.
+#
+# EXPERT/VERIFICATION-ONLY plugin. It hooks a game function by a RAW RVA through
+# the labeled expert escape hatch (the disassembler-test expert path), NOT the
+# common name-based surface. This is sanctioned ONLY because it is a probe that
+# answers a Phase-10 anchor-binding unknown before any DB seed row is authored —
+# the raw RVA lets the probe run WITHOUT growing the Address Library. The shipped
+# author surface always resolves a target by NAME (the engine carries address +
+# ABI); a raw RVA in production plugin code is AP1. Here it is the deliberate,
+# labeled expert form for a one-off verification.
+#
+# THE ANCHOR UNDER VERIFICATION (pure-static pin, _research/phase10-event-catalog-
+# recon/pilot-pickup-pin.md): CScriptTable::CallFunction, the single global
+# entity-script dispatch chokepoint.
+#   target  FUN_180b9ceb4  (CScriptTable::CallFunction, vtable slot 22 / +0xb0)
+#   RVA     0xb9ceb4
+#   ABI     u64 __fastcall(ptr scriptTable /*rcx*/, ptr callDesc /*rdx*/)
+#   callDesc layout: funcName (const char*) at [callDesc + 0x00]
+#
+# THE VERIFY-THE-ANCHOR QUESTION: does a player item-pickup route through this
+# slot with funcName "OnPickup"? Static pinned the dispatch MECHANISM (the OnUse
+# fire site -> slot 22 -> FUN_180b9ceb4); whether item pickup uses this entity-
+# script path (vs the C++ CItemSystem path) is runtime-bound. This probe closes
+# that gap: it hooks the dispatcher, logs every On<X> funcName, and PASSes the
+# first time funcName == "OnPickup" is observed.
+#
+# VOLUME/FILTER: this slot fires for EVERY script call (not just events) — it is
+# a hot dispatch. The before-callback FILTERS to funcName starting with "On"
+# before logging, to avoid spamming the log (per the pilot pin's volume caveat).
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name             = "cap_105_probe_pickup"
+display_name     = "CAP-105 probe: item_picked_up anchor (entity-script dispatch)"
+author           = "ts"
+description       = "VERIFICATION PROBE (raw-RVA expert hatch): hooks CScriptTable::CallFunction @ 0xb9ceb4, filters On<X> funcNames, PASSes on first OnPickup observed. Confirms item pickup routes through the entity-script dispatch chokepoint."
+version          = "0.1.0"
+kcdx_min_version = "0.1.0"
+log_level        = "debug"
+test_names       = ["CAP-105-probe-pickup"]
+
+[entrypoints]
+lua = "plugin.lua"
