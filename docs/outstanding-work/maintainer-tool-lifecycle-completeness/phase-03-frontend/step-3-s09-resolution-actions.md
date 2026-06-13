@@ -46,6 +46,20 @@ AT this step (3.1's view + the 3.2 back-stack primitive + the existing s02/s04/s
 - The existing s02/s04/s05 resolve screens + the s05 create-new-version entry (the canonical flows the
   actions route to; they already exist — verified by the s09 soundness gate).
 
+## Seams consumed from 3.2 (user-approved deferrals this step owns)
+
+3.2 (`FE:6aaaeaa`) built the back-stack primitive + the s04 field-editor dirty source. Two seams it
+deferred land HERE, because this step wires the s09→s02-lifecycle resolve push that first makes them
+reachable:
+- **The s02 LIFECYCLE dirty source for the unsaved-changes guard (D44).** 3.2 wired only the s04
+  field-editor dirty source; `LifecycleEditor` exposes no dirty signal yet. This step's Deprecate/
+  Supersede/Fix-reference resolve actions push INTO s02 lifecycle editing, so it wires the lifecycle
+  `onDirtyChange` seam (mirroring the FieldEditor one) into the nav-store guard.
+- **The guard's Save + Discard runners** (when this step's resolve pushes out of a dirty s02
+  lifecycle) — register the lifecycle save spine + a discard (clear the dirty lifecycle edits) with
+  the nav store's `registerSaveRunner` / `registerDiscard` so the guard's Save/Discard are truthful
+  on the paths this step makes reachable. (3.5 owns the same for a dirty s04 pushed from s08 `[Fix ▸]`.)
+
 ## Reference
 
 [`../plan-spec.md`](../plan-spec.md) — E11.

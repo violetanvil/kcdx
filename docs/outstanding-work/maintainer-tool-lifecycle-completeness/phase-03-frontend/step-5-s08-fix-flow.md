@@ -45,6 +45,31 @@ worklist + s04 editor exist).
 - Independent of 3.4 (both are s08-surface changes touching distinct concerns — order either; landing
   3.4 first keeps the s08 reconciliation coherent before the Fix-flow polish).
 
+## Seams consumed from 3.2 (user-approved deferrals this step owns)
+
+3.2 (`FE:6aaaeaa`) built the back-stack primitive but deferred two s08/s04-specific seams to HERE,
+because this step wires the `[Fix ▸]` push (s08→s04) that first makes them load-bearing:
+- **s08's parsed report lifted INTO the frame's carried state.** 3.2 preserved report survival across
+  a push→`‹ back` excursion via the kept-mounted-and-toggle model (the report survives because
+  `VerificationWorklist` stays mounted) — the behavior law 10/D31 requires works today. This step lifts
+  the report state into the nav-store frame (making the worklist a controlled component) so the frame
+  literally carries it, the cleaner law-10 model, as `[Fix ▸]` builds the s08→s04 push chain that needs
+  it. FALSIFIABLE test: `‹ back` from the fix restores the SAME report (asserted via carried frame
+  state, not just kept-mounted survival).
+- **The guard's Save + Discard runners for a dirty s04 pushed from `[Fix ▸]`.** 3.2's guard intercepts
+  a dirty navigate-away but registers no Save/Discard runner (Save is a safe no-op-stay until wired —
+  never a silent navigate, D44/AP14). This step registers the s04 save spine (the s06 confirm) +
+  a discard (clear the dirty s04 edits) with the nav store so the guard's Save/Discard are truthful
+  on the `[Fix ▸]`→dirty-s04→`‹ back` path. (3.3 owns the same for a dirty s02 lifecycle.)
+
+## Note for the linked-Bin-install-source step (not this step)
+
+3.2's D43 version-new selector is built + tested (the dropdown OFFERS a linked-Bin-resolved-new version,
+marked "from your linked Bin · new", selectable). The s02 spec's "auto-SELECT the new version on
+resolve" (s02 line ~176) is deliberately NOT implemented yet — `linkedBinVersion` is always null today
+(no step threads the linked-Bin install source into s02), and auto-select-on-resolve is in tension with
+law 3. The auto-select lands with the (separate) step that wires the s02 linked-Bin install source.
+
 ## Reference
 
 [`../plan-spec.md`](../plan-spec.md) — E5, E6, E7.
