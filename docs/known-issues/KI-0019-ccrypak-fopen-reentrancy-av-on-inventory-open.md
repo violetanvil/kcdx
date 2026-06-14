@@ -10,9 +10,14 @@ commit_at_report: f115640
 > **STATUS: OPEN — NOT FIXED, NOT VERIFIED.** No code has changed; the crash still
 > reproduces (non-deterministically). What exists is a LEADING DIAGNOSIS from the dump +
 > source (cross-CRT `FILE*` `fseek`), with one residual UNCONFIRMED (HOOK 2 hit-vs-miss
-> on the FSR2-init file — see Trail E). The fix is DEFERRED to Phase 11 / FIX A (bundled
-> with KI-0006), not written and not tested. Nothing here is a verified fix; closure
-> requires Phase 11's fix to land AND a launch confirming the crash is gone.
+> on the FSR2-init file — see Trail E). The fix is the **file-system takeover**
+> ([`docs/design/file-system-takeover.md`](../design/file-system-takeover.md), §9) —
+> kcdx takes total ownership of the engine CCryPak file object, so every handle is
+> minted/read/sought/closed on kcdx's own CRT and no engine `ucrtbase` ever operates a
+> kcdx handle, eliminating the cross-CRT crash class structurally. Not written and not
+> tested. Nothing here is a verified fix; closure happens when the takeover lands AND a
+> launch confirms the inventory-open crash is gone (the plan's step 4.2 —
+> [`docs/outstanding-work/file-system-takeover/`](../outstanding-work/file-system-takeover/)).
 
 # KI-0019 — ACCESS_VIOLATION on inventory open: runaway re-entrant `engine.ccrypak_fopen` recursion
 
@@ -54,7 +59,7 @@ inventory-open gesture.
   KI-0012's fix held; this is a DISTINCT re-entrancy on the same hook, at a different
   trigger.
 
-## Resolution routing (user-decided 2026-06-13) — BUNDLED → KI-0006 / Phase 11, stays OPEN
+## Resolution routing (user-decided 2026-06-13; re-homed to the file-system takeover) — stays OPEN
 
 KI-0019 is the **`fseek` sibling of [KI-0006](KI-0006-serve-execute-vehicle-not-found.md)**:
 the SAME `src/asset_overlay.cpp` HOOK 2 cross-CRT `FILE*` ("return kcdx's OWN CRT
@@ -63,15 +68,22 @@ WHGame's `fclose` frees kcdx's `/MT` handle, mod-init trigger); KI-0019 is the c
 **`fseek`** (`ucrtbase` `get_osfhandle` rejects kcdx's fd, FSR2/DLSS-init trigger). One
 root cause, two engine consumers of the same foreign `FILE*`.
 
-KI-0006 is BUNDLED → Phase 11 (FIX A drops the static vendored Lua/CRT and routes
-through WHGame's symbols, collapsing the dual-runtime that CREATES the cross-CRT-`FILE*`
-hazard class at the source). KI-0019 rides the same fix: **the user approved bundling it
-into Phase 11 rather than a separate patch** — one structural fix, not two. KI-0019 stays
-**OPEN, Phase-11-gated**; KI-0006 is the durable bundle handle. When Phase 11's single
-runtime lands, both the `fclose` and the `fseek` cross-CRT instances are re-verified
-against the post-FIX-A architecture (the surviving evidence here carries forward). No
-separate fix track; no provisional mask (the mechanism IS root-caused — it is a known
-capability constraint deferred to its structural fix, not an unknown).
+The fix is the **file-system takeover** — its OWN track, decoupled from Phase 11 / FIX A
+([`docs/design/file-system-takeover.md`](../design/file-system-takeover.md) §9; design §11
+records that this is a separate track from the restructure's DllMain/VM scope). The
+takeover eliminates the cross-CRT class **structurally, not by patch**: kcdx takes total
+ownership of the engine CCryPak file object, so kcdx owns the read family and a kcdx
+handle is operated ONLY by kcdx's read slots on kcdx's own CRT — there is no point at
+which the engine's `ucrtbase` operates a kcdx handle, so the boundary KI-0019's `fseek`
+and KI-0006's `fclose` both crossed is never crossed by construction. Patching the one
+`fseek` would leave the straddle (the next engine CRT op on a kcdx handle is the next
+crash); owning the read family removes it entirely. The design is **both KIs' shared
+home** (design §9). They stay **OPEN** and close together when the takeover lands AND a
+launch confirms the inventory-open crash is gone — the plan's step 4.2
+([`docs/outstanding-work/file-system-takeover/`](../outstanding-work/file-system-takeover/)).
+The surviving evidence here carries forward as the re-verification starting point (design
+§11 preserves the in-flight state). No provisional mask (the mechanism IS root-caused — it
+is a known capability constraint addressed by its structural fix, not an unknown).
 
 ## CORRECTED mechanism (from the minidump — supersedes the "re-entrancy" reframe below)
 

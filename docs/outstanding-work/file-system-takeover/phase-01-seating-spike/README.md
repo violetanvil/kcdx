@@ -12,7 +12,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| [1.1 — correct KI-0019/KI-0006 routing](step-1-ki-routing.md) | NOT STARTED | — |
+| [1.1 — correct KI-0019/KI-0006 routing](step-1-ki-routing.md) | DONE | (landed) |
 | [1.2 — remove PROBE F + capture](step-2-probe-f-removal.md) | NOT STARTED | — |
 | [1.3 — probe P1 (CCryPak construction timing)](step-3-probe-ctor-timing.md) | NOT STARTED | — |
 | [1.4 — stub vtable + swap + probe P2/P4](step-4-stub-vtable-swap.md) | NOT STARTED | — |
