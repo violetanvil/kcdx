@@ -376,20 +376,6 @@ extern "C" void* FOpenLooseOverlay(FOpen_t     call_original,
                      kcdx::log::KV("mode", mode));
     }
 
-    // === DIAGNOSTIC (PROBE F): KI-0019 hit-vs-miss confirmation. The deduped
-    // marker above logs only the FIRST hit; this logs EVERY HOOK 2 HIT (vpath +
-    // the kcdx-CRT FILE* about to be returned) so we can see whether a HIT serves
-    // a file the engine's FSR2/DLSS init then fseek's (the crash) — i.e. whether
-    // the inventory-open AV is the HOOK-2-HIT path at all, or a MISS (engine FILE*,
-    // fixing HOOK 2 a no-op). Cost bounded: fires ONLY on a HIT (overlay-map
-    // match), the rare path — the hot MISS path returns above and logs nothing.
-    // Read-only: logs the fp it is already about to return. PROBE_F: clean grep.
-    LOG_DEBUG_KV("PROBE_F", "hook2_hit_returning_kcdx_crt_FILE",
-                 kcdx::log::KV("vpath", key),
-                 kcdx::log::KV("fp", static_cast<void*>(fp)),
-                 kcdx::log::KV("winner", winnerPlugin),
-                 kcdx::log::KV("disk", diskPath));
-
     // Return our own CRT FILE* as FOpen's result. The chain's Around-mode JIT
     // writes this pointer-width value into FOpen's rv slot (the same path HOOK
     // 1's char* return takes); the engine's read family then serves kcdx's bytes
