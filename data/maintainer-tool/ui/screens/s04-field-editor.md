@@ -137,6 +137,51 @@ AOB-uniqueness pass → `pattern_scan`. The maintainer can still edit `evidence_
 sets the strongest tier it proves, never over-claims. (A `live_production` tier comes only from
 the in-game live check, ingested via s08 — not from a browser static check.)
 
+## Arriving from a failing report row — the per-field divergence diff (TRD D45)
+
+When s04 is reached via an s08 `[Fix ▸]` on a `failed` report row, the editor surfaces **WHICH
+recorded field diverged from the running build, recorded-vs-actual, inline at the field to edit** —
+re-derived IN-BROWSER, with no engine or report-schema change. The in-game sweep produces only a
+whole-row `failed` verdict + a prose `detail` (it computes one whole-body hash per entity, it cannot
+isolate a field — TRD D45); the per-field diff is the TOOL's, computed by re-running the per-author
+static check above against the divergent build.
+
+**The "What diverged" banner (E5, extended).** At the top of the editor, an advisory banner
+(`Alert`, law 4 — never blocks the edit) titled **"What diverged"** names that the maintainer
+arrived from a failing worklist row and carries the engine's prose `detail` (e.g. *"on-disk body
+hash mismatch: build diverged from the recorded version"*) so the reason is visible without
+re-checking the worklist. When the per-field diff has computed (a DLL is linked, below), the banner
+also **names the diverged field(s)** at a glance (*"signature, rva diverge from the linked build"*) —
+the glance-level overview; the field-level detail is inline (below).
+
+**'Actual' derives from the REPORT's DLL — the divergent build (TRD D45).** The diff derives the
+"actual" column from the SAME running-game DLL the in-game sweep ran against — the build that
+diverged — NOT a version-matching DLL. The report's `game_version` prefills the DLL-link prompt; the
+maintainer links/picks that running build. (A `failed` row failed because the build diverged from the
+recorded version, so the divergent build is where "what's actually there now" lives — the honest
+source for recorded-vs-actual.)
+
+**Per-field recorded-vs-actual (law 1 / law 7).** For each KIND-RELEVANT field the check covers
+(§"Field relevance by kind": `function` → `rva` + `signature`; `callsite` / `instruction_anchor` →
+`survival_aob`; `string_anchor` → `survival_anchor_string`; `vtable_base` → `survival_slot_count`),
+a field that diverged shows, inline in its reserved gutter (the same space the dirty marker + "was:"
+line + verdict badge already reserve — no reflow): the **recorded** value, the derived **actual**
+(what the linked build shows — the resolved site / body-hash result / `.text` match count), and a
+**diverged marker** (glyph + text, never color-alone — law 7). This puts the diff directly where the
+maintainer edits, answering "the actual field is clear showing what is different". A kind-relevant
+field that did NOT diverge shows no marker (it matches the build). (Per-field ATTRIBUTION is the
+build's thin new layer over `runVerdictCheck`, which returns one row-level verdict per row — TRD D45
+marks the attribution `unverified, probe before building`; the probe settles which kind-relevant
+field a row-level divergence maps to before the inline diff lands.)
+
+**The no-DLL-yet state (law 4).** On `[Fix ▸]` arrival before a suitable DLL is linked — the common
+case, since a divergent build is new and no version-matching DLL exists — the editor shows every
+RECORDED field value immediately + the "What diverged" banner's prose `detail` + a **non-blocking
+prompt** (*"Link the running-game DLL to see what diverged"*, prefilled from the report's
+`game_version`). The per-field "actual" fills in once the DLL is picked. The editor is NEVER blocked
+on the DLL (a maintainer hand-correcting a known value proceeds without a file pick — the existing
+"no DLL → advisory, authoring proceeds" contract, law 4).
+
 ## Field relevance by kind
 Each `kind` populates only certain columns; the rest stay NULL (`../../policy.md`
 §"Address kinds" + §"Survival columns" — the AUTHORITY; the "Used by kind(s)" column is the
@@ -211,6 +256,19 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
   advisory (law 4) — `[Review changes]` is NOT gated on the verdict (only on validator
   validity, law 6); a Changed/Ambiguous verdict warns + carries the "I accept — save anyway"
   override to s06, it never disables save.
+- **Arrived from a failing `[Fix ▸]` — no DLL linked (TRD D45)** — the "What diverged" banner
+  (engine prose `detail`) + every recorded field value + the non-blocking "Link the running-game
+  DLL to see what diverged" prompt (prefilled from the report's `game_version`). No per-field
+  "actual" yet; the editor is fully usable (law 4 — never blocked on the DLL).
+- **Arrived from a failing `[Fix ▸]` — DLL linked, diff computed (TRD D45)** — each diverged
+  kind-relevant field shows recorded-vs-actual inline (diverged marker, glyph+text not
+  color-alone, law 7) in its reserved gutter (no reflow, law 1); the "What diverged" banner names
+  the diverged field(s) at a glance. A field that matches the build shows no marker.
+- **Arrived from a failing `[Fix ▸]` — no divergence found / cannot check (TRD D45)** — the
+  per-kind check PASSES against the linked build → surfaced honestly (*"no field diverged against
+  the linked build"*), never a silent empty; OR the check cannot run for this kind (a
+  `vtable_index` deferral, a function row with no recorded `content_hash`) → an honest CannotCheck
+  reason in the banner, advisory, never a faked pass.
 - **Edge content** — a long `signature` / survival AOB wraps within its well; the field
   list scrolls; many survival columns stay grouped under a "Survival" sub-heading so the
   trio + resolve facts aren't buried. A `kind` with few used fields renders a short grid

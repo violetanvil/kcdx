@@ -4,6 +4,29 @@ Newest-first. Tracks revisions to the UI design layer ([`design.md`](design.md) 
 per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 [`../changelog.md`](../changelog.md).
 
+## 2026-06-14 — s04 shows PER-FIELD divergence (recorded vs actual) on a `[Fix ▸]` arrival (TRD D45)
+The screen-spec layer for the per-field divergence diff settled in the TRD (`../changelog.md` D45).
+Settled through `/design` (each fork the user's call; disassembler test PASSES — the maintainer picks
+the DLL, the tool does the byte work).
+- **s04 (extended):** a new §"Arriving from a failing report row — the per-field divergence diff
+  (TRD D45)" — the recorded-vs-actual inline at each diverged kind-relevant field (diverged marker,
+  glyph+text not color-alone, law 7; reusing the reserved dirty/verdict gutters, law 1), the "What
+  diverged" banner (E5) extended to name the diverged field(s), 'actual' derived from the report's
+  divergent DLL, and the non-blocking no-DLL-yet state (recorded values + a "link the DLL" prompt,
+  law 4 — never gated on the DLL). Three new States & variants (no-DLL / diff-computed /
+  no-divergence-or-cannot-check). **The E5 "What diverged" banner is back-filled into the spec** —
+  it had landed in code (step 3.5) without a screen-spec entry; the spec is now the authority for it.
+- **s08 (extended):** §"The Fix flow carries context and returns" sharpened — the s08 row carries
+  the prose `detail` + the trigger; the PER-FIELD diff renders on s04 (the engine report carries only
+  the whole-row reason — the sweep computes one whole-body hash, it cannot isolate a field, TRD D45).
+**Integrated in:** `screens/s04-field-editor.md` (the new section + 3 states); `screens/s08-verification-worklist.md`
+(the Fix-flow paragraph). The functional decision + the in-browser-re-derive rationale are TRD D45
+(`../changelog.md`).
+**Why:** the Phase-3 milestone UAT showed the `[Fix ▸]` banner carried only the engine's whole-row
+prose reason ("it doesn't nicely show me what is wrong"); the user wanted "the actual field you would
+edit … very clear showing what is different". The visual layer renders the per-field recorded-vs-actual
+the TRD D45 decision settled.
+
 ## 2026-06-12 — navigation redesign: in-app back-stack (law 10) + Bin-version-new selector + unsaved-changes guard (TRD D42/D43/D44)
 The visual + interaction layer for the navigation redesign settled in the TRD (`../changelog.md`
 D42/D43/D44, committed 42867e4). Settled through the `/ui-design` dialogue (each fork the user's call;

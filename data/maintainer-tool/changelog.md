@@ -3,6 +3,45 @@
 Newest-first. Tracks revisions to [`design.md`](design.md) (the TRD) and the UI design
 layer [`ui/design.md`](ui/design.md) + [`ui/screens/`](ui/screens/).
 
+## 2026-06-14 — the `[Fix ▸]` arrival shows PER-FIELD divergence (recorded vs actual), re-derived in-browser (D45; extends D41)
+
+A `[Fix ▸]` on a failing s08 report row now surfaces WHICH recorded `address_versions` field diverged
+from the running build, recorded-vs-actual, inline at the field to edit on s04 — frontend-only, no
+engine change, no report-schema bump.
+- **The diff is the TOOL's, not the engine's.** The in-game sweep computes ONE whole-body-hash
+  verdict per entity and cannot isolate a field (`src/survival_verify.cpp` `MapStaticVerdict` — a
+  single `Status` from a whole-body `content_hash` compare + a `.text` reachability range test; the
+  per-field facts are DB columns, not separate sweep outputs). So the report carries only a whole-row
+  `failed` + a prose `detail`; the per-field diff is computed client-side by re-running s04's EXISTING
+  per-kind static check (`verdictCheck.ts` → `extractSurvivalCheck` → `checker`), no new check.
+- **'Actual' derives from the REPORT's DLL** — the running build that diverged (prefilled from the
+  report's `game_version`), not a version-matching DLL: a `failed` row failed BECAUSE the build
+  diverged, so the divergent build is where "what's actually there now" lives.
+- **No-DLL-yet (the common case) is non-blocking** — recorded values + the engine prose `detail` +
+  a "link the running-game DLL" prompt; the "actual" fills in once a DLL is picked. The editor is
+  never gated on the DLL (law 4).
+- **Prominence** — inline recorded-vs-actual at each diverged kind-relevant field (diverged marker,
+  glyph+text not color-alone, law 7; reusing s04's reserved gutters, law 1) PLUS the E5 "What
+  diverged" banner extended to name the diverged field(s) at a glance.
+- A `results-driven` flag carried for `/plan`: whether each kind's existing check behaves correctly
+  against a DIVERGENT (non-version-matching) DLL is `assumes correct-against-divergent-DLL —
+  unverified, probe before building` (a probe/spike against a real divergent-DLL fixture is the first
+  build step). The probe scope ALSO covers per-field ATTRIBUTION — `runVerdictCheck` returns one
+  row-level verdict per row, so mapping it to the specific diverged kind-relevant field (`signature`
+  vs `rva` for a `function` row) is a thin new layer the probe confirms before the inline diff lands
+  (surfaced by the §C.4 soundness gate).
+**Integrated in:** `design.md` D45 (the decisions table); `ui/screens/s04-field-editor.md`
+(§"Arriving from a failing report row — the per-field divergence diff" + the three new states + the
+E5 banner back-filled into the spec); `ui/screens/s08-verification-worklist.md` (§"The Fix flow
+carries context and returns" sharpened to point at the per-field diff on s04); `ui/changelog.md`.
+**Why:** surfaced during the Phase-3 milestone UAT of the s08 Fix-flow — the `[Fix ▸]` banner
+carried only the engine's whole-row prose reason, so "it doesn't nicely show me what is wrong". The
+user sharpened it to "the actual field you would edit should be very clear showing what is different"
+(recorded-vs-actual). Settled via `/design`: depth = in-browser re-derive (not an engine v4 report),
+'actual' = the report's divergent DLL, no-DLL state = recorded + prompt (never block), prominence =
+inline + summary banner. Extends D41 (the Fix-flow `detail`-carry gains the per-field diff); reuses
+D26 (no-upload in-browser check) + the s04 per-kind check (D24–D31); supersedes nothing.
+
 ## 2026-06-12 — entity-lifecycle completeness + report-vs-DB reconciliation (D41; extends D39/D40)
 
 The tool guarantees no entity is ever left silently incomplete at the current game version, and the

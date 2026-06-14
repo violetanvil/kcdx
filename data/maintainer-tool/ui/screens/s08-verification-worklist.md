@@ -143,11 +143,18 @@ complete separately (author a successor row for the current version, OR mark the
 OR supersede it). The orphan is never silent — the close surfaces it, the maintainer resolves it
 when they choose.
 
-**The Fix flow carries context and returns (TRD D41/D42).** `[Fix ▸]` is a round-trip,
+**The Fix flow carries context and returns (TRD D41/D42/D45).** `[Fix ▸]` is a round-trip,
 context-carrying navigation, not a one-way drop: it carries the failing row's divergence `detail`
 (the engine's reason, e.g. *"on-disk body hash mismatch: build diverged from the recorded
-version"*) to the s04 field editor so the maintainer sees WHAT diverged without re-checking the
-worklist; and it **PUSHES a state-carrying frame onto the content back-stack (law 10)** — the s08
+version"*) to the s04 field editor so the maintainer sees WHY the row failed without re-checking the
+worklist. **On arrival, s04 surfaces the PER-FIELD divergence — which recorded field is wrong,
+recorded-vs-actual, inline at the field to edit (TRD D45)** — re-derived in-browser against the
+report's DLL (the divergent running build, prefilled from the report's `game_version`); the engine
+report carries only the whole-row prose `detail` (the sweep computes one whole-body hash per entity,
+it cannot isolate a field — TRD D45), so the field-level diff is the TOOL's, computed by s04's
+existing per-kind check. The s08 row's job is to carry the `detail` + the trigger; the per-field diff
+renders on s04 (see `s04-field-editor.md` §"Arriving from a failing report row"). And `[Fix ▸]`
+**PUSHES a state-carrying frame onto the content back-stack (law 10)** — the s08
 frame stores the parsed report (the worklist + block split + scroll), so `‹ back` from the fix
 **restores the report exactly, with no re-import** (the report is client-side only — TRD D31 — and
 the state-carrying frame, not a re-fetch, is what preserves it). An applied row (after a confirmed
