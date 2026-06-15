@@ -15,7 +15,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 | [1.1 — correct KI-0019/KI-0006 routing](step-1-ki-routing.md) | DONE | 4164a4e |
 | [1.2 — remove PROBE F + capture](step-2-probe-f-removal.md) | DONE | a65c3f2 |
 | [1.3 — probe P1 (CCryPak construction timing)](step-3-probe-ctor-timing.md) | DONE | f28cd39 |
-| [1.4 — stub vtable + swap + probe P2/P4](step-4-stub-vtable-swap.md) | DONE | (landed) |
+| [1.4 — stub vtable + swap + probe P2/P4](step-4-stub-vtable-swap.md) | DONE | 3be161a |
 
 ## Verification gate (phase done when)
 
@@ -32,3 +32,24 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 A wrong P1/P2/P4 outcome HALTS the plan here — the real-slot build (Phase 3) does
 not proceed on an unproven seating mechanism.
+
+### 1.4 outcome — swap-mechanism gate MET (run 2026-06-15, `3be161a`)
+
+P2 and P4 both PASS: the launch (run 2026-06-15 10:06:34) seated the swap and
+went live — `FS_TAKEOVER vtable_swapped` then `swap_live_first_open
+first_vpath=./system.cfg` (P2: the engine dispatched its first vanilla open into
+kcdx's slot 36), and the boot reached the world through the 101 thunked slots,
+`cap-108-fs-takeover-seating` PASS / `ACCEPT-SUITE 1/1` (P4: the thunks are sound
+against the swapped, layout-preserved object). The swap MECHANISM is proven —
+kcdx seats + holds, the engine dispatches into kcdx, the game boots.
+
+The phase's KI-0019/KI-0006 RESOLUTION half is **NOT** met by this spike, and was
+never going to be: only slot 36 is kcdx-owned; the read family (FSeek/FClose/
+FRead, …) is still `THUNK(original)` on the engine's CRT, so the cross-CRT
+inventory-open `fseek` crash STILL reproduced with the swap active (32×
+`engine.ccrypak_fopen` FAULTED_FIRE + a `ucrtbase!fseek → null EACCES write`
+dump, AFTER the swap — KI-0019 Trail H; evidence `_research/probe-archive/p2-p4-seating-and-ki0019-persists.md`).
+That crash resolves at step 4.2 (read-family slots flipped THUNK→KCDX), per
+design §9. So the seating-mechanism gate is the green half; the crash-resolution
+gate stays open until 4.2 — the phase-grain row is NOT flipped to DONE on this
+step alone.
