@@ -17,7 +17,7 @@ KI close, or the phase build+gate) is met.
 |---|---|---|
 | 1 — verification-engine Phase 6 milestone UI acceptance (s08 import → 3-block worklist → 2 batch actions → s06 confirm + `[Fix ▸]`) → flips that tree's Phase 6 to DONE | DONE — accepted 2026-06-15 on the real 2026-06-09 production v3 report (name resolution, 3-block split, No-action collapsible, proof-rank chips, 0-failing edge header, KI-0023 on-import reconcile all confirmed; verify-all/close-intervals writes accepted at the prior sweep). Phase 6 flipped to DONE | — (acceptance, no commit hash) |
 | 1a — KI-0023 fix: close-intervals batch re-showed the acted row broken on re-import (design gap — reconciliation only fired on a batch round-trip, never on import). Fixed via `/debug` by on-import reconciliation (FE `46d3c09`, capture D46 `592ea9d`); Gate A + Gate B `land-fix`; user-confirmed. UNBLOCKS step 1 | DONE | FE:46d3c09 |
-| 1b — red-box divergence-emphasis enhancement (make WHAT broke more visible — a red box around the diverged element); its own FE `/design`-fork → `/feature`/`/execute` cycle with its own UAT | NOT STARTED | — |
+| 1b — red-box divergence-emphasis enhancement (make WHAT broke more visible — a red box around the diverged element); its own FE `/design`-fork → `/feature`/`/execute` cycle with its own UAT | DONE — design settled (D47, `490e791`) + built (`FE:f26322b`): the s04 `diverged-field box` (error-token border+tint on a field row keyed to divergence.status==="diverged", persists through edit, composes with the dirty + glyph+text markers; laws 1/7/9). Build green + vitest 594/594; both `/design` gates + step-review PROCEED. UI is fully-directed (D47 fixed every visible decision) → no mid-build milestone UAT; a quick visual confirm rides the next browser look | FE:f26322b |
 | 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | NOT STARTED | — |
 | 3 — KI-0021 fix: new-entity verified first row unsavable (port the `verified_date` today-auto-fill from CreateVersionForm to CreateEntityForm + regression test) via `/debug` | NOT STARTED | — |
 | 4 — KI-0020 fix: harden the flaky `App.test.tsx` s09 timing tests (fake timers / `waitFor` / `act`) via `/debug` or `/execute` | NOT STARTED | — |
@@ -29,8 +29,10 @@ reconciliation, FE `46d3c09`, capture D46). **Step 1 accepted 2026-06-15** on th
 v3 report — the DB was already in its post-acceptance state from the prior session, so the worklist
 correctly showed all acted rows under "no further action," which directly demonstrated the KI-0023
 on-import reconcile; the verify-all/close-intervals writes were accepted at the prior sweep. Phase 6
-is DONE. Immediate work: **Step 1b — the red-box divergence-emphasis enhancement** (its own
-`/design`-fork → `/feature`/`/execute` FE cycle with its own UAT).
+is DONE. Step 1b (the red-box enhancement) is DONE — design settled (D47, `490e791`) + built
+(`FE:f26322b`), gates green. Immediate work: **Step 2 — the lifecycle-completeness Phase 3
+milestone UI acceptance** (s09 needs-action view + back-stack + unsaved-guard + s08
+reconciliation/Fix-flow).
 
 The owning trees + their canonical ledgers:
 - Steps 1: [maintainer-tool-verification-engine/](../maintainer-tool-verification-engine/README.md) Phase 6.
