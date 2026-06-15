@@ -17,7 +17,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| [3.1 — probe P3 (off-vtable raw-handle access) + handle rep](step-1-probe-handle-rep.md) | DONE | (landed) |
+| [3.1 — probe P3 (off-vtable raw-handle access) + handle rep](step-1-probe-handle-rep.md) | DONE | 4f2c32d |
 | [3.2 — slot-1 AdjustFileName + open slots](step-2-resolution-open-slots.md) | NOT STARTED | — |
 | [3.3 — read family on kcdx CRT](step-3-read-family.md) | NOT STARTED | — |
 | [3.4 — existence/metadata + enumeration slots](step-4-existence-enum-slots.md) | NOT STARTED | — |
