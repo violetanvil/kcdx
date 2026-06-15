@@ -20,7 +20,7 @@ layer must do.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1.1 — Probe divergent-DLL behavior + per-field attribution](step-1-probe-divergent-dll-attribution.md) | DONE | (landed) |
+| [1.1 — Probe divergent-DLL behavior + per-field attribution](step-1-probe-divergent-dll-attribution.md) | DONE | dea42f7 |
 
 Finding captured to `_research/maintainer-tool-fix-divergence-probe/` (FINDINGS.md + the reusable
 `fixDivergenceProbe.spike.ts`). E1: `runVerdictCheck` is divergent-DLL-safe for every kind (no throw,
