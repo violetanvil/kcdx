@@ -34,3 +34,12 @@ experiences the s09 view (open from the navigator badge → the by-kind sections
 → it drops off → the all-clear state), the s08 reconciliation/Fix-flow (`[Fix ▸]` → s04 → `‹ back` to the
 report intact), and the unsaved-changes guard, then accepts. Build to the s09 + s08 + s02 screen specs +
 `ui/design.md` law 10 (`.claude/rules/spec-conformance.md`), not the step-doc summaries.
+
+**Gate met — milestone acceptance ACCEPTED 2026-06-15.** On the live tool (backend `127.0.0.1:8000`
++ vite `127.0.0.1:5173`, live `/needs-action` = 7 never-verified entities at version 1.5.1164953), the
+maintainer walked the surface and confirmed: s09 opened from the navigator badge with the by-kind
+sections + counts as specced (Uncovered/Broken-refs `(0)` muted-none, Never-verified `(7)` expanded);
+`[Verify ▸]` PUSHED s04; the KI-0024-fixed trio-edit path held (blanking a verified trio cell blocked,
+no raw-validator error attributed to the populated fields); `‹ back` restored s09 with state intact; the
+s08 Fix-flow carried detail to s04 and `‹ back` returned to the report intact. Build green + vitest
+565/565 across the 5 steps. Phase 3 DONE.
