@@ -26,12 +26,23 @@ Add a NEW curated row to the reference DB: a brand-new **entity** (a stable cros
 
 ---
 
-## 1. Precondition — the fact is verified, the server is up
+## 1. Precondition — the fact is verified, the server is up, the baseline covers a function's RVA
 
 Before gathering anything:
 
 - **The fact is verified.** The `rva`, `signature`, `offset`, `vtable_slot`, `survival_*` values you will record came from `/research-disassembly`'s evidence ladder (an existing seed row, a prior `_research/` dump, a predecessor sig, the Ghidra project, or a fresh disassembly), with a known **evidence tier**. If you do not have the verified fact + its tier, STOP — run `/research-disassembly` first. A value you cannot back with evidence stays empty (honest-uncertainty, AP2); never invent one to fill a column.
-- **The backend is running.** This skill drives the maintainer-tool backend API. The agent starts it (`.claude/rules/agent-builds-and-deploys.md` — the agent runs servers; the user does not): from inside `data/maintainer-tool/backend/`, `python -m uvicorn app.main:app --reload` (default `http://127.0.0.1:8000`). Confirm `GET /health` reports `state: resolved` (the DB + the three CSVs present AND the known-versions read succeeds) before proceeding; an `empty`/`error` state names what is missing — surface it, do not write.
+- **The backend is running.** This skill drives the maintainer-tool backend API. The agent starts it (`.claude/rules/agent-builds-and-deploys.md` — the agent runs servers; the user does not): from inside `data/maintainer-tool/backend/`, `python -m uvicorn app.main:app --reload` (default `http://127.0.0.1:8000`). Confirm `GET /health` reports `state: resolved` (the curated DB + the three CSVs present AND the known-versions read succeeds) before proceeding; an `empty`/`error` state names what is missing — surface it, do not write.
+
+- **For a `function`-kind add, the bulk baseline must cover the RVA — PROBE it, never assume.** A `function` / `function_variadic` / `function_no_sig` row's survival datum is a body fingerprint (`content_hash` + `length`) PROMOTED from a matching bulk row; the validator refuses to mint a function row at an RVA the bulk baseline does not cover (it will not create a NULL-fingerprint ghost function). The bulk baseline is the DEV DB at `<checkout>/data/reference-dev.sqlite`. `GET /health` reports `resolved` on the CURATED DB alone — it does NOT prove the bulk baseline covers your RVA. So before previewing a function-kind add, READ ground truth (a checkable fact, not a theory — `.claude/rules/results-driven.md`):
+
+  ```
+  SELECT id, kcdx_id, kind, rva, length, content_hash IS NOT NULL
+  FROM address_versions WHERE rva = <your rva>;
+  ```
+  - **A row at that RVA with `content_hash` present** → the baseline covers it. Proceed. (If it already has a non-NULL `kcdx_id`, the function is ALREADY a curated entity — this is not a new add; route to the GUI for an UPDATE, do not re-add.)
+  - **No row at that RVA** → the baseline does not cover this version's function set. STOP — this is the rebuild prerequisite, handled below.
+
+- **The baseline is rebuilt FROM IN-REPO DATA — surface the rebuild as a user op; never run it unilaterally, never call it unfetchable.** When the baseline does not cover the RVA, the fix is to rebuild it from data already in this repo via `import_to_sqlite.py` — either `--rebuild` from the local (gitignored) Ghidra dump at `data/refdata-extractor/dump/refdata-<version>/`, or the D38 CSV-genesis path from `data/db-export/` (curated) + `data/db-export-bulk/` (bulk). This is a **heavyweight maintainer operation the user owns** (`.claude/rules/agent-builds-and-deploys.md` + `.claude/rules/design-authority.md`): SURFACE it to the user (the baseline does not cover the RVA; the in-repo rebuild must run first) and STOP. Do NOT kick off the multi-hour rebuild on your own initiative, and do NOT theorize the cause — probe the actual state (is the dump dir present? is `reference-dev.sqlite` built?) and report what you found. **NEVER** describe the baseline as "an unfetchable LFS artifact," "needs `git lfs pull`," or "a rebuild may not be runnable here" — the rebuild source is in this repo; a claim of un-runnability is a `results-driven` violation (theorizing a checkable fact). The non-function kinds (`callsite`, `data_slot`, `vtable_*`, `*_anchor`) mint with NULL fingerprint columns and have NO bulk-baseline prerequisite — skip this check for them.
 
 ## 2. Gather the row — the per-kind COLLECT checklist
 
@@ -63,6 +74,7 @@ POST the gathered row to the matching preview endpoint (`http://127.0.0.1:8000`)
 
 Read the response:
 - `valid: false` → the validator rejected the row; the `errors` name why (a missing required column, a partial trio, an out-of-enum kind, a duplicate tuple, a broken FK). FIX the input (or, if it reveals the fact is wrong, return to `/research-disassembly`) and re-preview. Never work around a validator rejection.
+- **A baseline / fingerprint rejection for a function-kind row** (the validator cannot find a bulk fingerprint for the RVA) → the §1 baseline pre-check should have caught this; if it reaches here, do NOT theorize the cause. PROBE `reference-dev.sqlite` for the RVA (the §1 query), then surface the in-repo rebuild as the user-owned remediation (§1). Never re-frame it as an unfetchable artifact or claim the rebuild can't run here.
 - `valid: true` → the response carries the `field_delta` (exactly what will be written, `field: old → new`), the `ap18_new_row` flag, and (for an entity) the assigned `kcdx_id`. This is the row to surface.
 
 ## 4. SURFACE for explicit approval — AP18, before any write
@@ -97,7 +109,8 @@ Report: the row added (`name` + `kcdx_id` + version, or `(kcdx_id, valid_from_ve
 - **The backend validator is the single gate** — this skill restates none of policy.md's rules. It collects per the §2 checklist, previews, and lets the validator reject. A re-implemented rule here would drift from `policy.md` / `schema.py` / the data-core.
 - **Drive the validated path; never hand-edit the export.** All writes go through `/save` → `/confirm`. Never edit `data/db-export/*.csv` or the DB directly — the validated path owns the write, the export, and the git commit.
 - **The agent runs the server; the user does not** (`.claude/rules/agent-builds-and-deploys.md`). Starting the backend, hitting `/health`, previewing, and confirming are the agent's tool actions. The user's only action is the approval decision in §4.
-- **New rows only.** An UPDATE to an existing row (re-verify / supersede / deprecate / edit-notes) is the GUI's job — refuse and route. This skill adds; it does not mutate approved entities.
+- **A function-kind add's bulk-baseline prerequisite is PROBED, never theorized** (`.claude/rules/results-driven.md`). Before previewing a `function` / `function_variadic` / `function_no_sig` add, read `reference-dev.sqlite` for the RVA's fingerprint (§1). The baseline is rebuilt FROM IN-REPO DATA (`import_to_sqlite.py` — the local dump, or the D38 CSV-genesis from `data/db-export[-bulk]/`); it is NOT an unfetchable LFS artifact. A missing baseline is surfaced as a user-owned rebuild op — the agent never runs the multi-hour rebuild unilaterally, never claims it is un-runnable here, and never says "needs `git lfs pull`." Theorizing the baseline state instead of probing it is the violation this rule exists to prevent.
+- **New rows only.** An UPDATE to an existing row (re-verify / supersede / deprecate / edit-notes) is the GUI's job — refuse and route. This skill adds; it does not mutate approved entities. A function whose RVA already carries a non-NULL `kcdx_id` in `reference-dev.sqlite` is ALREADY curated — route to the GUI, do not re-add.
 - **The owed test plugin is surfaced, never dropped** (`policy.md` §"Test plugin requirement"; `.claude/rules/deferral-authority.md`). A new entity without its `test-plugins/` exercise is a policy debt — flag it as the owed follow-up; the user decides when.
 - **Commit cadence is the backend's.** The `/confirm` transaction makes its own git commit; this skill does not also invoke `/commit` for the DB row. A new `_research/` artifact from the preceding `/research-disassembly` is committed by that skill, per its own §7.
 
@@ -108,5 +121,7 @@ Report: the row added (`name` + `kcdx_id` + version, or `(kcdx_id, valid_from_ve
 - Re-stating policy.md's required-column / trio / FK / enum rules in this skill (a 4th drifting copy) instead of letting the validator be the gate.
 - Hand-editing `data/db-export/*.csv` or the DB to add a row, bypassing the validated path.
 - Treating a `valid: false` preview as something to work around instead of a fact to fix at its source.
+- Hitting a function-kind baseline rejection and THEORIZING the cause — "the bulk source isn't in the checkout," "needs `git lfs pull`," "a rebuild may not be runnable here" — instead of probing `reference-dev.sqlite` for the RVA. The baseline is in-repo-rebuildable; a claim of un-runnability is a `results-driven` violation.
+- Running the multi-hour `--rebuild` on the agent's own initiative instead of surfacing it as a user-owned op.
 - Adding an entity and never surfacing the owed test plugin — a silent policy debt.
-- Using this skill to UPDATE an existing approved row — that is the GUI's, not an addition.
+- Using this skill to UPDATE an existing approved row (or re-adding a function whose RVA already has a curated `kcdx_id`) — that is the GUI's, not an addition.
