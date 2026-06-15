@@ -18,8 +18,10 @@ KI close, or the phase build+gate) is met.
 | 1 — verification-engine Phase 6 milestone UI acceptance (s08 import → 3-block worklist → 2 batch actions → s06 confirm + `[Fix ▸]`) → flips that tree's Phase 6 to DONE | DONE — accepted 2026-06-15 on the real 2026-06-09 production v3 report (name resolution, 3-block split, No-action collapsible, proof-rank chips, 0-failing edge header, KI-0023 on-import reconcile all confirmed; verify-all/close-intervals writes accepted at the prior sweep). Phase 6 flipped to DONE | — (acceptance, no commit hash) |
 | 1a — KI-0023 fix: close-intervals batch re-showed the acted row broken on re-import (design gap — reconciliation only fired on a batch round-trip, never on import). Fixed via `/debug` by on-import reconciliation (FE `46d3c09`, capture D46 `592ea9d`); Gate A + Gate B `land-fix`; user-confirmed. UNBLOCKS step 1 | DONE | FE:46d3c09 |
 | 1b — red-box divergence-emphasis enhancement (make WHAT broke more visible — a red box around the diverged element); its own FE `/design`-fork → `/feature`/`/execute` cycle with its own UAT | DONE — design settled (D47, `490e791`) + built (`FE:f26322b`): the s04 `diverged-field box` (error-token border+tint on a field row keyed to divergence.status==="diverged", persists through edit, composes with the dirty + glyph+text markers; laws 1/7/9). Build green + vitest 594/594; both `/design` gates + step-review PROCEED. UI is fully-directed (D47 fixed every visible decision) → no mid-build milestone UAT. **Accepted 2026-06-15 on the vitest evidence** (6 falsifiable rows: renders for diverged & only diverged, persists through edit, composes with the dirty + glyph+text markers, keys on `status` not the boolean — the AP14 guard) + build-green + the gates; the live pixel render is unverifiable against the current DB (the one `failed` row is already-closed → no `[Fix ▸]` target, and no divergent DLL is linked), so the border+tint pixels are unconfirmed by eyeball — the wiring + laws 1/7/9 are asserted. | FE:f26322b |
-| 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | NOT STARTED | — |
-| 3 — KI-0021 fix: new-entity verified first row unsavable (port the `verified_date` today-auto-fill from CreateVersionForm to CreateEntityForm + regression test) via `/debug` | NOT STARTED | — |
+| 2pre — KI-0024 fix: audit-trio orphan on a direct trio edit (resequenced ahead of Step 2 — it sits in Step 2's s09 `[Verify ▸]` → s04 trio-edit acceptance path). User-hit during Step 2 acceptance ("on random fields all the time"). The s04 trio coupling fired one direction only; every trio-cell-initiated path (direct write, D29 auto-suggest, EMPTYING a verified cell) could orphan the all-or-null trio + the error surface showed the raw validator string on the wrong fields. Fixed both directions + the error surface via `/debug` (FE `8557c11` version-empty; FE `158dd3f` version-set + teaching error/deficient-attribution); Gate A (1b + 2a) + Gate B `land-fix`; vitest 604/604; user-confirmed. Closed `8697121`. UNBLOCKS Step 2's trio-edit acceptance | DONE | FE:8557c11 + FE:158dd3f |
+| 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | NOT STARTED — KI-0024 (its trio-edit path) now fixed; resume on the fixed editor | — |
+| 3 — KI-0021 fix: new-entity verified first row unsavable (port the `verified_date` today-auto-fill from CreateVersionForm to CreateEntityForm + regression test) via `/debug`. **Same audit-trio family as KI-0024.** Fold in the s05 `CreateVersionForm` blank-trio gap Gate B surfaced during KI-0024 (the same P1 shape on the create surface — `setField` there has no blank-reject; validator still rejects loud, no silent save) | NOT STARTED | — |
+| 4b — general validator-message → teaching-copy translation layer ("option 2c", deferred by the user at KI-0024's Fork-2): translate EVERY raw validator message the editor surfaces (not just the trio-incomplete verdict) to teaching copy + per-shape deficient-field attribution. Its own FE `/execute`/`/feature` cycle | NOT STARTED | — |
 | 4 — KI-0020 fix: harden the flaky `App.test.tsx` s09 timing tests (fake timers / `waitFor` / `act`) via `/debug` or `/execute` | NOT STARTED | — |
 | 5 — db-direct Phase 5: Docker packaging (image serving the built frontend + mounted-checkout + env-injected push-credential seam) via `/feature` | NOT STARTED | — |
 
@@ -30,9 +32,16 @@ v3 report — the DB was already in its post-acceptance state from the prior ses
 correctly showed all acted rows under "no further action," which directly demonstrated the KI-0023
 on-import reconcile; the verify-all/close-intervals writes were accepted at the prior sweep. Phase 6
 is DONE. Step 1b (the red-box enhancement) is DONE — design settled (D47, `490e791`) + built
-(`FE:f26322b`), gates green. Immediate work: **Step 2 — the lifecycle-completeness Phase 3
-milestone UI acceptance** (s09 needs-action view + back-stack + unsaved-guard + s08
-reconciliation/Fix-flow).
+(`FE:f26322b`), gates green.
+
+**Step 2 acceptance then surfaced KI-0024 (2026-06-15):** during the s09 `[Verify ▸]` → s04 trio-edit
+walk-through the user hit the audit-trio orphan ("on random fields all the time"). Resequenced ahead
+of Step 2 as row **2pre** and closed via `/debug` (FE `8557c11` + `158dd3f`, close `8697121`) — both
+coupling directions + the raw-validator-string/wrong-field error surface fixed; user-confirmed. Two
+follow-ups it surfaced are now tracked rows: the s05 same-shape blank-trio gap folded into Step 3
+(KI-0021 family); the general teaching-error layer (option 2c) as row **4b**. Immediate work resumes:
+**Step 2 — the lifecycle-completeness Phase 3 milestone UI acceptance** on the now-fixed editor (s09
+needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow).
 
 The owning trees + their canonical ledgers:
 - Steps 1: [maintainer-tool-verification-engine/](../maintainer-tool-verification-engine/README.md) Phase 6.
