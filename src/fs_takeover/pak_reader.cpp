@@ -5,6 +5,13 @@
 #include <cstring>
 #include <vector>
 
+#include "miniz.h"
+// miniz.h defines a zlib-compat `crc32` → `mz_crc32` alias macro; undo it so it
+// does not clobber PakEntry::crc32 (the member access `entry.crc32` would
+// otherwise textually rewrite to `entry.mz_crc32`). kcdx calls `mz_crc32`
+// directly, so dropping the unqualified alias loses nothing.
+#undef crc32
+
 #include "../log.h"
 
 namespace kcdx::fs_takeover {
@@ -19,10 +26,23 @@ constexpr uint32_t kSigEOCD       = 0x06054b50;  // "PK\x05\x06" end-of-central-
 constexpr uint32_t kSigCDR        = 0x02014b50;  // "PK\x01\x02" central-dir file header
 constexpr uint32_t kSigZip64EOCD  = 0x06064b50;  // "PK\x06\x06" zip64 end-of-central-dir
 constexpr uint32_t kSigZip64Loc   = 0x07064b50;  // "PK\x06\x07" zip64 EOCD locator
+constexpr uint32_t kSigLFH        = 0x04034b50;  // "PK\x03\x04" local file header
+
+// PKZIP compression methods kcdx serves (design §6 — only 0 and 8 occur).
+constexpr uint16_t kMethodStored  = 0;
+constexpr uint16_t kMethodDeflate = 8;
 
 // Fixed-size record layouts (bytes), per the PKZIP spec.
 constexpr size_t kEOCDSize   = 22;  // EOCD fixed part (before any comment)
 constexpr size_t kCDRFixed   = 46;  // central-dir file header fixed part (before name/extra/comment)
+constexpr size_t kLFHFixed   = 30;  // local file header fixed part (before name/extra)
+
+// A single pak entry is an asset file — large but bounded. Cap the per-entry
+// compressed AND uncompressed sizes BEFORE allocating a read/inflate buffer, so
+// a corrupt/hostile entry claiming a multi-GB size cannot trigger a huge
+// allocation. 512 MiB comfortably exceeds the largest real vanilla asset (the
+// observed largest GeomCaches entry is ~9.4 MB) while bounding a zip-bomb.
+constexpr uint64_t kMaxEntryBytes = 512ull * 1024 * 1024;  // 512 MiB
 
 // The PKZIP comment-length field is 16-bit, so the EOCD can sit at most this
 // far back from EOF (max comment + the EOCD record itself).
@@ -277,6 +297,179 @@ bool ParsePakCentralDirectory(const std::wstring& pakPath,
                  log::KV("entries", static_cast<uint64_t>(outEntries.size())),
                  log::KV("cdr_off", static_cast<uint64_t>(cdrOffset)),
                  log::KV("cdr_size", static_cast<uint64_t>(cdrSize)));
+    return true;
+}
+
+bool ReadPakEntry(const std::wstring& pakPath,
+                  const PakEntry& entry,
+                  std::vector<uint8_t>& outBytes,
+                  std::string& outError) {
+    outBytes.clear();
+    outError.clear();
+
+    auto pakTag = [&]() -> std::string {
+        std::string narrow;
+        narrow.reserve(pakPath.size());
+        for (wchar_t c : pakPath) narrow.push_back(c < 128 ? static_cast<char>(c) : '?');
+        size_t slash = narrow.find_last_of("/\\");
+        return slash == std::string::npos ? narrow : narrow.substr(slash + 1);
+    };
+    auto fail = [&](const std::string& why) -> bool {
+        outBytes.clear();
+        outError = why;
+        LOG_ERROR("PAK_READER", "entry read failed pak=%s entry='%s': %s",
+                  pakTag().c_str(), entry.name.c_str(), why.c_str());
+        return false;
+    };
+
+    // Cap the declared sizes BEFORE allocating any read/inflate buffer — a
+    // corrupt entry claiming a multi-GB size must not drive a huge allocation
+    // (untrusted external input; also bounds a zip-bomb's inflate target).
+    if (entry.compressed_size > kMaxEntryBytes) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "compressed_size %llu exceeds the sane per-entry cap %llu",
+                      static_cast<unsigned long long>(entry.compressed_size),
+                      static_cast<unsigned long long>(kMaxEntryBytes));
+        return fail(buf);
+    }
+    if (entry.uncompressed_size > kMaxEntryBytes) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "uncompressed_size %llu exceeds the sane per-entry cap %llu",
+                      static_cast<unsigned long long>(entry.uncompressed_size),
+                      static_cast<unsigned long long>(kMaxEntryBytes));
+        return fail(buf);
+    }
+    // Reject an unsupported method up front (design §6 — only STORED/DEFLATE).
+    if (entry.method != kMethodStored && entry.method != kMethodDeflate) {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf),
+                      "unsupported compression method %u (only 0=STORED, 8=DEFLATE)",
+                      entry.method);
+        return fail(buf);
+    }
+    // STORED stores the bytes verbatim — the two sizes must agree.
+    if (entry.method == kMethodStored &&
+        entry.compressed_size != entry.uncompressed_size) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "STORED entry compressed_size %llu != uncompressed_size %llu",
+                      static_cast<unsigned long long>(entry.compressed_size),
+                      static_cast<unsigned long long>(entry.uncompressed_size));
+        return fail(buf);
+    }
+
+    // Open on kcdx's own CRT — the engine's ucrtbase never touches this read
+    // (design §6 / §4.4, the cross-CRT crash-free guarantee).
+    FileGuard g;
+    if (_wfopen_s(&g.f, pakPath.c_str(), L"rb") != 0 || g.f == nullptr) {
+        return fail("could not open pak file on kcdx CRT (_wfopen_s)");
+    }
+
+    // File size (kcdx 64-bit fseek/ftell) — every offset is bounds-checked
+    // against this before a read (an entry pointing past EOF fails loud).
+    if (_fseeki64(g.f, 0, SEEK_END) != 0) return fail("fseek to EOF failed");
+    __int64 sizeL = _ftelli64(g.f);
+    if (sizeL < 0) return fail("ftell returned a negative size");
+    const uint64_t fileSize = static_cast<uint64_t>(sizeL);
+
+    // --- Parse the LOCAL FILE HEADER at entry.local_header_offset.
+    // The LFH carries its OWN name/extra lengths (which can differ from the
+    // central-directory record's); the compressed data starts AFTER them. The
+    // CDR's lengths are NOT reused here.
+    if (entry.local_header_offset > fileSize ||
+        entry.local_header_offset + kLFHFixed > fileSize) {
+        return fail("local-header offset + fixed header runs past EOF");
+    }
+    uint8_t lfh[kLFHFixed];
+    if (_fseeki64(g.f, static_cast<__int64>(entry.local_header_offset), SEEK_SET) != 0) {
+        return fail("fseek to local file header failed");
+    }
+    if (std::fread(lfh, 1, kLFHFixed, g.f) != kLFHFixed) {
+        return fail("fread of the local file header came up short");
+    }
+    if (Read32(lfh) != kSigLFH) {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf),
+                      "local file header signature is 0x%08x, not PK\\x03\\x04",
+                      Read32(lfh));
+        return fail(buf);
+    }
+    const uint16_t lfhNameLen  = Read16(lfh + 26);
+    const uint16_t lfhExtraLen = Read16(lfh + 28);
+
+    // Compute the data start from the LFH's own lengths and bounds-check the
+    // whole compressed extent against the file (each term is bounded: the LFH
+    // offset by fileSize above, the two 16-bit lengths by their type, the
+    // compressed size by kMaxEntryBytes above — the sum cannot overflow u64).
+    const uint64_t dataStart = entry.local_header_offset + kLFHFixed +
+                               static_cast<uint64_t>(lfhNameLen) +
+                               static_cast<uint64_t>(lfhExtraLen);
+    if (dataStart > fileSize || dataStart + entry.compressed_size > fileSize) {
+        return fail("entry data (start + compressed_size) runs past EOF");
+    }
+
+    // --- Read the compressed bytes (kcdx fread on kcdx CRT).
+    std::vector<uint8_t> comp(static_cast<size_t>(entry.compressed_size));
+    if (entry.compressed_size != 0) {
+        if (_fseeki64(g.f, static_cast<__int64>(dataStart), SEEK_SET) != 0) {
+            return fail("fseek to entry data start failed");
+        }
+        if (std::fread(comp.data(), 1, comp.size(), g.f) != comp.size()) {
+            return fail("fread of the entry compressed bytes came up short");
+        }
+    }
+
+    // --- Deliver the uncompressed bytes.
+    if (entry.method == kMethodStored) {
+        outBytes = std::move(comp);  // STORED — the bytes ARE the output.
+    } else {
+        // DEFLATE — inflate into a buffer sized to the DECLARED uncompressed
+        // size (the cap above already bounded it). flags=0 → raw DEFLATE (no
+        // zlib header), matching a PKZIP method-8 entry's stored stream. The
+        // output buffer is never grown on the fly, so a zip-bomb is bounded to
+        // the declared size; a stream that wants more fails (FAILED or a short
+        // written count that the length check below rejects).
+        outBytes.resize(static_cast<size_t>(entry.uncompressed_size));
+        const size_t written = tinfl_decompress_mem_to_mem(
+            outBytes.data(), outBytes.size(),
+            comp.data(), comp.size(),
+            /*flags=*/0);
+        if (written == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED) {
+            outBytes.clear();
+            return fail("tinfl_decompress_mem_to_mem failed to inflate the DEFLATE stream");
+        }
+        if (written != entry.uncompressed_size) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf),
+                          "inflated %llu bytes != declared uncompressed_size %llu",
+                          static_cast<unsigned long long>(written),
+                          static_cast<unsigned long long>(entry.uncompressed_size));
+            return fail(buf);
+        }
+    }
+
+    // --- Verify the uncompressed bytes' CRC-32 against the recorded value.
+    // The strongest end-to-end correctness check: a wrong local-header parse,
+    // seek, inflate flag, or off-by-N yields a wrong CRC. Always-on (cold path,
+    // the cost is irrelevant; the correctness is not — design §6).
+    const mz_ulong crc = mz_crc32(mz_crc32(0, nullptr, 0),
+                                  outBytes.data(), outBytes.size());
+    if (static_cast<uint32_t>(crc) != entry.crc32) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "CRC-32 mismatch: computed 0x%08x, recorded 0x%08x",
+                      static_cast<uint32_t>(crc), entry.crc32);
+        return fail(buf);
+    }
+
+    LOG_DEBUG_KV("PAK_READER", "read_entry",
+                 log::KV("pak", pakTag()),
+                 log::KV("name", entry.name),
+                 log::KV("method", static_cast<uint64_t>(entry.method)),
+                 log::KV("usize", static_cast<uint64_t>(outBytes.size())),
+                 log::KV("data_off", dataStart));
     return true;
 }
 

@@ -71,4 +71,45 @@ bool ParsePakCentralDirectory(const std::wstring& pakPath,
                               std::vector<PakEntry>& outEntries,
                               std::string& outError);
 
+// Read one pak entry's UNCOMPRESSED bytes, entirely on kcdx's own CRT.
+//
+// Given a PakEntry (as ParsePakCentralDirectory produced) and the pak path,
+// this opens the pak (kcdx _wfopen), parses the entry's LOCAL FILE HEADER at
+// entry.local_header_offset (the LFH carries its OWN name/extra lengths, which
+// can differ from the central-directory record's — the compressed data starts
+// at offset + 30 + local-name-len + local-extra-len, NEVER the CDR's lengths),
+// reads entry.compressed_size bytes (kcdx fread), and delivers the uncompressed
+// bytes into outBytes:
+//   - STORED (method 0): copied directly (compressed_size must equal
+//     uncompressed_size).
+//   - DEFLATE (method 8): inflated via the vendored miniz inflater
+//     (tinfl_decompress_mem_to_mem, raw DEFLATE) into a buffer sized to the
+//     DECLARED uncompressed_size; the written length must equal it.
+//   - any other method: a loud failure (design §6 — only 0 and 8 occur).
+// The uncompressed bytes' CRC-32 is verified against entry.crc32 — a mismatch
+// fails loud. This is the strongest end-to-end correctness check (a wrong
+// local-header parse, seek, inflate flag, or off-by-N yields a wrong CRC); it
+// runs on every read (cold path — the cost is irrelevant, the correctness is
+// not). See file-system-takeover design §6 (every byte on kcdx's CRT) + §4.4
+// (no engine read leaf in the path).
+//
+// A .pak is untrusted external data: compressed_size and uncompressed_size are
+// capped against a sane maximum BEFORE any read/inflate buffer is allocated,
+// and every offset+length (LFH, data start, compressed extent) is bounds-
+// checked against the file size. A corrupt entry claiming a multi-GB size, or
+// one pointing past EOF, is a logged failure + a false return, never an
+// over-allocation or a crash.
+//
+// Returns true with outBytes holding exactly uncompressed_size bytes on
+// success. On any failure it logs the situation + context (kcdx::log) and
+// returns false with outError set; outBytes is cleared. Never throws, never
+// returns partial/wrong-length bytes as if whole.
+//
+// Cold path (a read at index-build / open time, not a hot loop) — normal
+// allocation is fine here.
+bool ReadPakEntry(const std::wstring& pakPath,
+                  const PakEntry& entry,
+                  std::vector<uint8_t>& outBytes,
+                  std::string& outError);
+
 }  // namespace kcdx::fs_takeover

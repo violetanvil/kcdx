@@ -1,0 +1,62 @@
+# CAP-111 — kcdx's own pak-entry read path delivers correct uncompressed bytes.
+#
+# The regression proof for the file-system-takeover pak reader's read half (the
+# file-system-takeover design §6: kcdx reads pak bytes with its OWN PKZIP reader,
+# every byte on kcdx's CRT, no engine ZipDir; §4.4: no engine read leaf in the
+# path). This is step 2.3 of that plan — step 2.2 located each entry (the
+# central-directory parse); this step READS one. Pairs with cap-110 (the parser)
+# and cap-109 (the inflater).
+#
+# Shape: NATIVE C++ DLL plugin (the cap-110 shape) — the DLL compiles the
+# engine's own pak_reader.cpp into itself PLUS the vendored miniz.c (the read
+# path inflates), with a log-sink stub for the kcdx::log symbols. It runs TWO
+# assertions at kcdxPlugin_Load — both pure CPU + file reads, no engine lifecycle
+# dependency:
+#
+#   (a) STORED read: read the first method-0 entry of <game>/Data/GeomCaches.pak
+#       and assert output length == uncompressed_size AND CRC-32 == entry.crc32.
+#   (b) DEFLATE read: find the first method-8 entry of <game>/Data/Tables.pak
+#       (discovered by iterating the parsed CDR — NOT a hardcoded index), read
+#       it, and assert output length == uncompressed_size AND CRC-32 ==
+#       entry.crc32.
+#
+# The row:
+#
+#   * cap-111-pak-entry-read  boot-only. PASS requires BOTH (a) and (b): kcdx's
+#     own read path parses the local file header, seeks, reads, and STORED-copies
+#     / DEFLATE-inflates a real vanilla pak entry to CRC-correct bytes, entirely
+#     on kcdx's CRT.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - the CDR parse of either fixture pak returns false, OR no entry of the
+#     required method (0 for (a), 8 for (b)) is found, OR
+#   - ReadPakEntry returns false (bad local-header signature, out-of-bounds
+#     offset, oversize cap, unsupported method, short read, inflate failure,
+#     length mismatch, or an internal CRC mismatch), OR
+#   - the output length != the recorded uncompressed_size, OR
+#   - the output bytes' CRC-32 != the recorded entry.crc32, OR
+#   - a fixture pak is absent at the known path (reported FAIL with a clear
+#     reason — never a silent skip, never a crash).
+# Not a tautology: the read's output bytes are CRC-checked against the value the
+# central directory recorded; a wrong local-header parse, seek, inflate flag, or
+# off-by-N yields a CRC mismatch, not a pass.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_Load; the aggregator
+# emits the matrix line on the engine lifecycle messages. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_111_pak_entry_read"
+display_name        = "CAP-111 pak-entry read"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own pak-entry read path (+ vendored miniz) and reading a STORED + a DEFLATE entry from real vanilla paks, asserting CRC-correct uncompressed bytes on kcdx's CRT — the file-system-takeover pak reader's read half (step 2.3)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-111-pak-entry-read"]
+
+[entrypoints]
+dll = "cap-111.dll"
