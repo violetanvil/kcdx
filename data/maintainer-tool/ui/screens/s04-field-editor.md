@@ -174,6 +174,30 @@ build's thin new layer over `runVerdictCheck`, which returns one row-level verdi
 marks the attribution `unverified, probe before building`; the probe settles which kind-relevant
 field a row-level divergence maps to before the inline diff lands.)
 
+**The diverged-field box — red-boxed emphasis so the eye lands on the break (TRD D47, law 1 / law 7
+/ law 9).** A diverged kind-relevant field is wrapped in a **diverged-field box**: an `error`-token
+border (1–2px) around the whole field row — the input plus its already-reserved gutter / "was:" /
+verdict-badge space — plus a faint `error`-tinted row background. The box reuses the field row's
+EXISTING reserved box, so it adds NO layout and shifts nothing (law 1 — no reflow). It NEVER stands
+alone as the divergence signal: the diverged glyph+text marker (above) is retained, so the cue is
+glyph + text + box, never color-alone (law 7); the border + tint resolve to the `error` semantic
+token, never a raw value (law 9). **Every diverged field is boxed equally** — when more than one
+kind-relevant field diverges (e.g. a `function` row where both `rva` and `signature` diverge), each
+gets its own identical box (no priority ordering); the "What diverged" banner continues to name the
+full diverged set at a glance. A kind-relevant field that did NOT diverge shows no box (it matches
+the build). The box is keyed to the per-field divergence RESULT, not to a raw color — it is the same
+attribution layer the diverged marker uses.
+
+**The box persists through the edit until the fix is saved (law 1 / law 3).** The diverged-field box
+marks the DIVERGENCE FACT — that this field diverged from the linked build — which holds true until
+the correction is committed. So when the maintainer edits a boxed field, the box PERSISTS while the
+field is dirty (the existing dirty marker layers ON TOP, in its own reserved gutter — both visible,
+no reflow); the box clears only after the save lands and the row is no longer divergent. The box
+never clears on the first keystroke — a half-typed or wrong correction must keep the "this was
+broken" signal until ground truth (a saved, re-checked row) says otherwise. (This is the static
+divergence result driving the box; the dirty marker is the orthogonal edit-in-progress signal — the
+two compose, neither replaces the other.)
+
 **The no-DLL-yet state (law 4).** On `[Fix ▸]` arrival before a suitable DLL is linked — the common
 case, since a divergent build is new and no version-matching DLL exists — the editor shows every
 RECORDED field value immediately + the "What diverged" banner's prose `detail` + a **non-blocking
@@ -260,10 +284,16 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
   (engine prose `detail`) + every recorded field value + the non-blocking "Link the running-game
   DLL to see what diverged" prompt (prefilled from the report's `game_version`). No per-field
   "actual" yet; the editor is fully usable (law 4 — never blocked on the DLL).
-- **Arrived from a failing `[Fix ▸]` — DLL linked, diff computed (TRD D45)** — each diverged
+- **Arrived from a failing `[Fix ▸]` — DLL linked, diff computed (TRD D45 / D47)** — each diverged
   kind-relevant field shows recorded-vs-actual inline (diverged marker, glyph+text not
-  color-alone, law 7) in its reserved gutter (no reflow, law 1); the "What diverged" banner names
-  the diverged field(s) at a glance. A field that matches the build shows no marker.
+  color-alone, law 7) in its reserved gutter (no reflow, law 1) AND is wrapped in the
+  **diverged-field box** (`error`-token border + faint tint around the field row, TRD D47) so the
+  eye lands on the break; the marker is retained alongside the box (glyph + text + box, never
+  color-alone, law 7), the box reuses the row's reserved space (no reflow, law 1), and the
+  border/tint resolve to the `error` token (law 9). Every diverged field is boxed equally; the box
+  PERSISTS through editing (with the dirty marker layered on) and clears only when the saved
+  correction makes the row non-divergent. The "What diverged" banner names the diverged field(s) at
+  a glance. A field that matches the build shows no marker and no box.
 - **Arrived from a failing `[Fix ▸]` — no divergence found / cannot check (TRD D45)** — the
   per-kind check PASSES against the linked build → surfaced honestly (*"no field diverged against
   the linked build"*), never a silent empty; OR the check cannot run for this kind (a

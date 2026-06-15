@@ -354,6 +354,12 @@ diff cell) are app components built FROM these.
 - **button** → `Button` variants (primary / default / subtle / outline-danger) — Review
   changes, Save, Cancel, Revert-field, Deprecate.
 - **dirty marker** → the changed-field accent gutter mark (`dirty` role + glyph).
+- **diverged-field box** → the s04 `[Fix ▸]`-arrival emphasis around a field that diverged from
+  the linked build (TRD D47): an `error`-token border (1–2px) + faint `error` tint wrapping the
+  field row's EXISTING reserved box (input + gutter + "was:"/error lines), so it adds no layout
+  (law 1). Composes WITH — never replaces — the diverged glyph+text marker (glyph + text + box,
+  never color-alone, law 7) and the `dirty marker` (the box persists through editing, the dirty
+  marker layers on top). Border + tint resolve to the `error` role token, no raw value (law 9).
 - **diff cell** → a compare-`Table` cell whose value differs across the set (`diff_band` +
   a marker glyph).
 - **overlay surface** → `Modal` (centered, desktop) / full-screen `Drawer` or `Modal
