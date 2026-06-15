@@ -42,6 +42,20 @@ PRE-EXISTING inconsistency that any new add now trips over.
 | 2026-06-15 | PROBE C: is kcdx_id=12 deprecated/superseded? + what does the seed CSV carry? | NOT deprecated (`is_deprecated=0`, `superseded_by=None`) — a live entity. `address_versions_seed.csv:13` carries `valid_through_version=1.5.1164953` (FILLED) — the source of the closed interval. 1 of 159 seed rows has `valid_through_version` filled: kcdx_id=12. |
 | 2026-06-15 | PROBE D: git-blame the kcdx_id=12 seed row + read the D40 interval-integrity validator | Written by `f15ae4f` ("maintainer-tool: batch save 1 version-row UPDATE(s)", a parallel-chat op). D40 (`check_address_version_intervals`, L611-616) checks closed-row consistency but explicitly NOT open-row presence — so closing a live entity's only interval passes every validator. |
 | 2026-06-15 | PROBE E (fix-design facts; Gate-A-substitute, the dispatched architect-review died on a token limit): read `_resolve_derives_from_av_id` callers + `check_address_version_intervals` + the update-version confirm path | Fork-1: the `update-version` confirm resolves only the EDITED row's own derives-from (L2187); kcdx_id=12 is a leaf anchor with none → no self-trip. BUT the post-commit CSV byte-identity re-export (`assert_csv_export_deterministic`) rebuilds the whole DB → re-resolves the 9→12 edge. So a repair that REOPENS kcdx_id=12 (clears its `valid_through_version`) is self-consistent and passes; a repair touching only kcdx_id=9 would not. Fork-2: `check_address_version_intervals` (validators.py:549) DELIBERATELY does not front open-row presence (legit transient two-open-rows during create-version); the DB `ix_av_open_unique` index caps at ≤1 open but permits ZERO. No guard exists for "a live entity has ≥1 open interval" — the hole. The bad row is ALREADY committed, so a write-time-only guard can't detect it; a standing invariant check is needed too. |
+| 2026-06-15 | PROBE F: attempt the repair — `/save`+`/confirm/update-version` on kcdx_id=12 with `edits:{valid_through_version:""}` (reopen) | PARTIALLY BLOCKED. Preview `valid:true` but `field_delta:[]` (the interval edit is applied via the prospective-seed CSV edit + whole-state validation, NOT the field_delta display computation — an empty preview delta is EXPECTED, not the cause; a CLOSE on an open entity also shows `[]`). `/confirm` FAILED with the SAME `survival_derives_from kcdx_id=12 ...` and rolled back. First attempt had a STALE-backend confound ([Errno 10048] port-bind); after a clean kill (PID 25640) + restart, ONE clean re-attempt: backend log "confirm failed -- validator rejected the edit", NO DB change (kcdx_id=12 still closed). So the failure is the apply's PRE-WRITE whole-state validation, not the post-commit re-export. |
+| 2026-06-15 | PROBE G: read the update-version apply path (`update_version_row` db_editor.py:243; `apply_direct_edit`/`_drive_direct_over_prospective_seed`) | The edit DOES thread into the prospective seed CSV (`seed_csv_edit.update_row_in_place` clears `valid_through_version`). BUT (db_editor.py:356-362) `apply_direct_edit` adds the single UPDATE action ONLY when the edited row's tag is NON-baseline (KI-0008: `_seed_action_rows` drops a baseline-tag edit → a silent no-op). kcdx_id=12's row IS at the BASELINE tag (valid_from=1.5.1164953=GAME_VERSION_TAG), so the interval-reopen edit produces NO UPDATE action → no DB write → the whole-state validation runs against the still-closed DB → the 9→12 edge fails → rejected. ROOT of the reopen gap: a baseline-tag interval-reopen edit is dropped (the same KI-0008-class drop, here on the reopen direction). The reopen capability (fix step 1) must emit the UPDATE action for a baseline-tag interval edit (or a dedicated reopen write path). (Mechanism LOCATED; the action-generation fix is the next build layer.) |
+
+## Validator hardening — BUILT, tests authored (uncommitted, gated on the repair)
+
+`check_live_entity_has_open_interval` (validators.py) wired into all 3 integrity-pass
+sites (import_to_sqlite.py: build_rows, _build_curated_overlay, _validate_full_seed_state)
++ exported from `seeds_shared`. Test `test_live_entity_has_open_interval_accepts_rejects`
+(test_db_editor_interval.py): 5 cases (live-closed-only REJECT incl. the kcdx_id=12
+repro; deprecated/superseded EXEMPT; live-with-open ACCEPT). **State: the 2 pure-dict
+validator tests PASS; the 3 fixture-rebuild tests ERROR in setup — because the `baseline`
+fixture rebuilds from the committed seed, which the new check CORRECTLY rejects (the real
+kcdx_id=12 defect). This is the validator working, AND the hard ordering proof: the
+validator cannot land green until the seed is repaired.** Uncommitted in the working tree.
 
 ## Facts (empirical only)
 
@@ -94,11 +108,31 @@ correct; fix the data at its source through the validated path.
 
 Ordered for incremental verifiability (`.claude/rules/incremental-delivery.md`).
 
+REORDER (discovered building step 1, `.claude/rules/incremental-delivery.md`): the
+standing-invariant check, the moment it is active, correctly detects the
+already-committed broken kcdx_id=12 — so EVERY rebuild/integrity pass over the
+current committed seed fails (the test fixtures that rebuild from the seeds fail).
+The validator step is therefore NOT independently verifiable while the seed is
+broken. The repair must land FIRST (through the OLD code, no new check), cleaning
+the seed; THEN the validator lands and every rebuild passes. The pure-dict
+validator tests (crafted seed rows, no fixture rebuild) pass standalone either way
+— they prove the check accepts legal/exempt + rejects the live-closed-only shape.
+
+SECOND REORDER (PROBE F, user-decided 2026-06-15): the repair CANNOT go through the
+existing `update-version` path — the maintainer tool can CLOSE an interval
+(open→closed) but has NO REOPEN (closed→open). Clearing `valid_through_version`
+produces an empty delta (the reopen isn't threaded into the prospective seed), so
+the apply's pre-write validation runs against the still-broken seed → the 9→12 edge
+fails → rejected before any write (verified: backend log "validator rejected the
+edit", no DB change). The user chose to ADD a reopen capability to the data-core,
+then repair through it. The fix is now THREE parts.
+
 | Step | Action | Status |
 |------|--------|--------|
-| 1 | **Validator hardening + test** (data-core): a write-time guard rejecting an UPDATE that closes the LAST open interval of a non-deprecated/non-superseded entity, AND a standing integrity check that every live entity has ≥1 open interval. A test reproduces the kcdx_id=12 close (the write-time guard rejects it) AND asserts the standing check flags an already-broken row. The standing check must be ORDERED in the integrity pass so it does NOT block the legitimate repair (step 2) — i.e. the repair reopens the row, then the check passes; the guard fires on a CLOSE, the standing check on the post-state. | pending |
-| 2 | **Data repair**: reopen kcdx_id=12 via the validated `update-version` path (clear its `valid_through_version`). Verified self-consistent (PROBE E) — the post-commit re-export then resolves the 9→12 edge. | pending |
-| 3 | **Acceptance**: a new-entity `/confirm` succeeds — re-add CCryPak_FOpenRaw (kcdx_id=160, AP18 already approved) cleanly. | pending |
+| 1 | **Reopen capability** (data-core, NEW — the missing maintainer operation): a validated reopen write path (closed→open: clear `valid_through_version` AND thread it into the prospective seed so the apply sees the reopened row), + its test. A mistaken interval-close becomes reversible (a real gap this also closes). | pending |
+| 2 | **Repair kcdx_id=12** through the new reopen path (step 1), reopening its sole interval → it regains a current open form → the 9→12 survival-DAG edge resolves → new-entity `/confirm` unblocks. | pending |
+| 3 | **Validator hardening + test** (AUTHORED, uncommitted, gated on the repair): `check_live_entity_has_open_interval` wired into all 3 integrity-pass sites + a 5-case test (kcdx_id=12 closed-only REJECT, deprecated/superseded EXEMPT, live-with-open ACCEPT). Pure-dict tests PASS now; the 3 fixture-rebuild tests go green ONLY after step 2 cleans the seed. Lands with/after step 2. | authored, gated on step 2 |
+| 4 | **Acceptance**: re-add CCryPak_FOpenRaw (kcdx_id=160, AP18 already approved) cleanly via `/add-db-entity` — a new-entity `/confirm` succeeds. Then the fs-takeover cutover resumes (`../outstanding-work/file-system-takeover/RESUME.md`). | pending |
 
 ## Resolution
 
