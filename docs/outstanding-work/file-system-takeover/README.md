@@ -8,6 +8,12 @@ reading both vanilla paks and loose mod files itself.
 Settled design: [`docs/design/file-system-takeover.md`](../../design/file-system-takeover.md) (`29a21c5`).
 Shared spec + coverage map: [`plan-spec.md`](plan-spec.md).
 
+> **PAUSED at Phase 3 step 3.2 — exact pickup point in [`RESUME.md`](RESUME.md).**
+> Blocked on a pre-existing reference-DB integrity defect ([KI-0025](../../known-issues/KI-0025-refdb-dangling-survival-derives-from-kcdx-id-12.md)) that
+> stops the slot-35 seed add. Decisions already made: merge 3.2+3.3 into one
+> open+read cutover; slot map reconciled (`4ca0bae`); slot 38 is a READ slot.
+> Read `RESUME.md` before resuming.
+
 ## Phase-grain status ledger
 
 The canonical completion surface (`.claude/rules/doc-organization.md`). One row
