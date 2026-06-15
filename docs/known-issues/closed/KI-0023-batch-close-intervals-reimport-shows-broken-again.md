@@ -1,13 +1,15 @@
 ---
 id: KI-0023
 opened: 2026-06-15
-status: open
+status: Closed
+closed: 2026-06-15
+closed_by_commit: 46d3c09
 commit_at_filing: f15ae4f
 ---
 
 # maintainer-tool FE: a confirmed close-intervals batch shows the row broken again on re-import (reconciliation gap)
 
-**Status:** open
+**Status:** Closed 2026-06-15 — fixed by on-import reconciliation (FE `46d3c09`, capture D46 `592ea9d`); user-confirmed repro.
 
 A close-intervals batch action reports "applied" and the WRITE genuinely lands, but
 re-importing the SAME v3 report shows the acted row in an actionable/broken block again
@@ -55,15 +57,19 @@ The mechanism is known; the FIX requires a design decision (how on-import reconc
 
 - **Verdict semantics:** kcdx_id 12 is `failed` (the verification genuinely failed), not a passing row — closing its interval does not make the verification pass. Is "no further action" even the right post-close state for a `failed` row, or does the report correctly show it as still-failing? This bears on whether the fix is "reconcile on import" vs "the current behavior is correct and the UX expectation is the gap." Resolved as part of the surfaced fork.
 
-## Resolution (decision settled — fix not yet landed)
+## Resolution
 
-**Gate A architect-review verdict (2026-06-15, cold, theory withheld):** HALT-escalate → forward-and-wait. Independently confirmed the root cause + that the maintainer's expectation is correct (the s08 screen spec §"Already acted on" PROMISES "No further action" for an already-closed `failed` row — `valid_through == last_verified_at_version`, marker *"interval already closed"*; the current behavior contradicts the spec). Q3 settled: "No further action" ≠ "passed" — the spec already distinguishes them. Three options weighed against the cornerstones; Option A recommended (wins on UX), Option B trades UX for effort (not Recommendable), Option C re-introduces a D39 law-6 violation.
+**Root cause (mechanism):** the s08 already-acted reconciliation never ran on a plain re-import, so the worklist classified every row from the report JSON verdict alone. The `alreadyActed` map — which `reconciledBlocks` (`worklistModel.ts:144-145`) uses to pull a row out to "no further action" — was reset to an empty Map on every import (`VerificationWorklist.tsx:227`, the reset block at 220-228) and was populated ONLY by `onAlreadyActed` (`VerificationWorklist.tsx:411-422`), which fired from a live `/save/reverify-batch` round-trip during a batch action in the current session. A re-import-and-look (no new batch action) never invoked that preview → `alreadyActed` stayed empty → `reconciledBlocks` had nothing to move out → an already-closed `failed` row (kcdx_id 12) re-classified into the actionable `failing` block via `blockForVerdict` (`worklistModel.ts:53-58, 82`). This is a DESIGN GAP, not a code defect: D41 fact 2 deliberately scoped reconciliation's only invocation to the batch-action preview round-trip ("the EXISTING reconciliation point, not new plumbing"); it never covered reconcile-on-import, which is exactly the KI's reproduction. (Candidate mechanism #2 — a resolver attribution gap on `matched_address_version_id: None` — was falsified: close-intervals resolves by the interval-containing row of kcdx_id+version, not by matched id, and the resolver is never even called on a plain re-import.)
 
-**User decision (2026-06-15): Option A — on-import reconciliation.** On import, classify every report row against current DB state before first render, populating the already-acted map so an already-closed row renders in "no further action" without requiring the maintainer to open a batch action. This EXTENDS D41 fact 2 (reconciliation was scoped to the batch-preview round-trip; it now also fires on import).
+**Gate A architect-review (2026-06-15, cold, theory withheld):** HALT-escalate → forward-and-wait. Independently confirmed the mechanism + that the maintainer's expectation is correct (the s08 screen spec §"Already acted on" PROMISES "No further action" for an already-closed `failed` row; current behavior contradicts the spec). Q3 settled: "No further action" ≠ "passed". Three options weighed against the cornerstones; Option A recommended (wins on UX).
 
-**Code fact (verified — Option A's cost):** the `/save/reverify-batch` endpoint ALREADY returns the per-row `already_acted` classification + reason (`routes_save.py:411-414`); the resolver's already-done skip logic exists. No new resolver logic and no new endpoint are strictly required — the FE fires the existing preview per action on import (verify-all over the verified-block rows, close-intervals over the failing-block rows) to populate `alreadyActed`. The only new thing is the invocation point (on import, not just on batch-open). This is a small, read-only wiring addition, NOT the "new plumbing" D41's framing implied.
+**Fix (commit `46d3c09` in the frontend repo `data/maintainer-tool/frontend/`; decision capture D46 in `592ea9d`):** the settled Option A — on-import reconciliation. In `VerificationWorklist.tsx`, `handleFile` now calls a new `reconcileOnImport(rows)` after building the rows and BEFORE `setState({kind:"populated"})`: it splits the actionable blocks (failing → `close-intervals`, verified → `verify-all`), fires the EXISTING `apiClient.previewReverifyBatch` per block (read-only), extracts the `status === "already_acted"` rows via the existing `alreadyActedRows` helper, and populates `setAlreadyActed` before first paint. The FE still READS the classification, never re-derives it (D41 fact 2 holds — the resolver/preview owns the already-done predicate); only the invocation point is new (also on import, not just on batch-open). No new endpoint, no new resolver logic. Degrades gracefully (AP14): a per-block preview failure is logged and that block is left un-reconciled (rows stay actionable, the pre-fix behavior), never blocking the import. The decision is captured as TRD D46 + the s08 screen spec §"Report-vs-DB reconciliation".
 
-**Fix shape (FE-primary, the separate frontend repo `data/maintainer-tool/frontend/`):** in `VerificationWorklist.tsx`, after `openReport` builds the rows, fire the existing reverify-batch preview per actionable block (read-only) and feed the returned `already_acted` rows into `setAlreadyActed` BEFORE first render — the same path `onAlreadyActed` already uses, just triggered on import. Plus the D41 design/spec capture (the on-import reconciliation extension). Cause-test: a re-import of a report with an already-closed row renders that row in "no further action" (the actionable block excludes it) — the KI's exact reproduction, falsifiable (a re-imported already-closed row rendered actionable fails). Gate: `npm run build` exit 0 + `npx vitest run` green. Status stays OPEN until the fix lands + the user confirms the repro.
+This addresses the MECHANISM (not the symptom): the already-acted rows were invisible to `reconciledBlocks` because their classification was never computed on the re-import path; the fix computes it at import time, so the rows the maintainer already acted on are pulled out of the actionable blocks on first paint — exactly the path the spec promised but the as-built D41 invocation could not reach.
+
+**Verification:**
+- **Cause-test (regression):** 3 falsifiable vitest cases in `VerificationWorklist.test.tsx` — (1) an already-closed failing row imports straight into "no further action" (NOT the actionable failing block); (2) a row the preview does NOT mark already_acted stays actionable on import (over-reconciliation guard); (3) a rejecting import-time preview still imports with rows actionable (graceful-degrade/AP14). Falsifiable: a re-imported already-closed row rendered actionable fails (1). Manager-re-run gate: `npm run build` exit 0 + `vitest run` 588/588.
+- **User-confirmed repro (2026-06-15):** re-imported the same 157-row report with NO batch action taken this session (the interval was already closed in the DB from a prior session) — the worklist showed 15 rows under "No further action," confirming on-import reconciliation classifies already-acted rows without requiring a batch action. The exact KI reproduction, fix confirmed.
 
 ## Reproduction
 
