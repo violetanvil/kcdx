@@ -20,7 +20,7 @@ references the FE commit as `FE:<hash>`.
 | Step | Status | Commit |
 |---|---|---|
 | Phase 1 — Probe the two unverified mechanisms (divergent-DLL behavior + per-field attribution) | DONE | dea42f7 |
-| Phase 2 — The `fixDivergence` per-field attribution + diff-model worker (pure logic) | NOT STARTED | — |
+| Phase 2 — The `fixDivergence` per-field attribution + diff-model worker (pure logic) | DONE | FE:3d89897 |
 | Phase 3 — Wire the report's-DLL context + render the inline diff + the banner (UI; milestone UAT) | NOT STARTED | — |
 
 Per-phase step-grain ledgers: [phase-01-probe/](phase-01-probe/README.md) ·
