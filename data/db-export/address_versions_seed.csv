@@ -10,7 +10,7 @@ kcdx_id,valid_from_version,module,rva,kind,signature,last_verified_at_version,ve
 9,1.5.1164953,WHGame.dll,0x0086AD99,instruction_anchor,,1.5.1164953,VioletAnvil,2026-05-28,predecessor_sig,48 8B 0D ?? ?? ?? ??,,12,,,1,,,,,
 10,1.5.1164953,WHGame.dll,0x0492B8A8,data_slot,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,9,disp32@9,,,,,,,
 11,1.5.1164953,WHGame.dll,0x0492B800,data_slot,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,10,10-0xA8,,,,,,,
-12,1.5.1164953,WHGame.dll,0x04095E58,string_anchor,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,exec autoexec.cfg,,,,1,,,,,
+12,1.5.1164953,WHGame.dll,0x04095E58,string_anchor,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,exec autoexec.cfg,,,,1,,,,,1.5.1164953
 13,1.5.1164953,WHGame.dll,0x00B9A2B0,function_no_sig,,1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,,
 14,1.5.1164953,WHGame.dll,0x0100955C,function,"bool (ptr self, cstr sName)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,,
 15,1.5.1164953,WHGame.dll,0x007A5818,function,"void (ptr self, cstr command, bool bSilentMode, bool bDeferExecution)",1.5.1164953,VioletAnvil,2026-05-28,maintainer_ghidra,,,,,,,,,,,
