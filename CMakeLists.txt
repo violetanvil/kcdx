@@ -162,6 +162,18 @@ target_include_directories(safetyhook PUBLIC vendor/safetyhook/include)
 target_link_libraries(safetyhook PUBLIC zydis)
 
 # -----------------------------------------------------------------------------
+# miniz 11.0.2 (vendored single-file, public domain / Unlicense)
+#
+# Standard DEFLATE/inflate + PKZIP reader. Compiled ONCE into a shared static
+# lib linked by BOTH the kcdx engine (its own PKZIP/DEFLATE pak reader — every
+# byte on kcdx's CRT, file-system takeover) and kcdx-watchdog (crash-bundle
+# zip). MSVC_RUNTIME_LIBRARY is forced to MultiThreaded below (same /MT as the
+# other vendored static libs) so the static runtime matches every link.
+# -----------------------------------------------------------------------------
+add_library(miniz STATIC vendor/miniz/miniz.c)
+target_include_directories(miniz PUBLIC vendor/miniz)
+
+# -----------------------------------------------------------------------------
 # rom-borrowed (vendored RoM source files for dynamic_hook bindings)
 # -----------------------------------------------------------------------------
 # add_library(rom_borrowed STATIC
@@ -345,7 +357,7 @@ target_include_directories(kcdx PRIVATE
 # asmjit is linked even when no hook uses lua_callback yet — the
 # typed-marshaling code references it; the linker dead-strips unused
 # asmjit code per-symbol.
-target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 safetyhook version)
+target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 safetyhook miniz version)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE
@@ -361,6 +373,7 @@ if(MSVC)
     set_property(TARGET blake3  PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET zydis      PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
     set_property(TARGET safetyhook PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    set_property(TARGET miniz      PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
     # Emit a PDB beside build/Release/kcdx.dll so a kcdx crash frame
     # symbolicates offline (kcdx+offset crash dumps would otherwise have
@@ -443,9 +456,11 @@ endif()
 
 add_executable(kcdx-watchdog
     src/watchdog/main.cpp
-    vendor/miniz/miniz.c
 )
-target_include_directories(kcdx-watchdog PRIVATE vendor/miniz)
+# miniz is compiled once into the shared `miniz` static lib (above) and linked
+# here AND into the kcdx engine — no per-target re-compile of miniz.c. The lib's
+# PUBLIC include dir puts <miniz.h> on this target's include path.
+target_link_libraries(kcdx-watchdog PRIVATE miniz)
 set_target_properties(kcdx-watchdog PROPERTIES
     OUTPUT_NAME "kcdx-watchdog"
 )

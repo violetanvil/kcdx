@@ -1,0 +1,53 @@
+# CAP-109 — miniz DEFLATE inflater links + inflates on kcdx's own CRT.
+#
+# The regression proof for the file-system-takeover DEFLATE dependency
+# (the file-system-takeover design §6: kcdx reads pak bytes with its OWN
+# PKZIP/DEFLATE reader, every byte on kcdx's CRT; §10: the inflater dependency).
+# This is step 2.1 of that plan — the dependency the Phase-2 pak reader
+# (steps 2.2/2.3) builds on.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-36 shape). The DLL embeds a KNOWN
+# raw-DEFLATE blob + its KNOWN plaintext, inflates it via the vendored miniz
+# inflater (tinfl_decompress_mem_to_mem, flags=0 = raw DEFLATE), and asserts the
+# inflated bytes equal the plaintext. The inflate is pure-CPU work (no engine
+# state), so the row self-checks and reports from kcdxPlugin_Load.
+#
+# The row:
+#
+#   * cap-109-miniz-inflate  boot-only. PASS requires: the vendored miniz
+#     inflater LINKS into the plugin DLL, and inflating the known 74-byte
+#     raw-DEFLATE blob yields exactly the known 79-byte plaintext (byte-equal).
+#     Proves the DEFLATE dependency links + decodes correctly — the prerequisite
+#     for kcdx's own pak reader (every pak byte inflated on kcdx's CRT, no engine
+#     ZipDir). The blob was produced deterministically (Python zlib level 9,
+#     wbits=-15 raw DEFLATE); the recipe is in cap-109.cpp's header so a future
+#     reader can regenerate/verify it.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - tinfl_decompress_mem_to_mem returns FAILED (the inflater did not link, or
+#     could not decode a valid raw-DEFLATE stream), OR
+#   - the inflated output length differs from 79, OR
+#   - the inflated bytes differ from the known plaintext.
+# Not a tautology: the assertion compares the inflater's ACTUAL output against a
+# fixed known plaintext; a broken/mis-linked inflater or a wrong flags value
+# yields a length/byte mismatch, not a pass.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_Load; the aggregator
+# emits the matrix line on the engine lifecycle messages. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_109_miniz_inflate"
+display_name        = "CAP-109 miniz DEFLATE inflate"
+author              = "ts"
+description         = "C++ DLL linking the vendored miniz inflater and inflating a known raw-DEFLATE blob to its known plaintext — the file-system-takeover pak reader's DEFLATE dependency (step 2.1)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-109-miniz-inflate"]
+
+[entrypoints]
+dll = "cap-109.dll"

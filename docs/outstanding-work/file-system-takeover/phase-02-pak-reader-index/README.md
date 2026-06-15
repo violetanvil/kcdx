@@ -14,7 +14,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 
 | Step | Status | Commit |
 |---|---|---|
-| [2.1 — DEFLATE inflater dependency (zlib/miniz pick)](step-1-deflate-dependency.md) | NOT STARTED | — |
+| [2.1 — DEFLATE inflater dependency (zlib/miniz pick)](step-1-deflate-dependency.md) | DONE | (landed) |
 | [2.2 — PKZIP CDR parser + vanilla-pak format check](step-2-pkzip-parser.md) | NOT STARTED | — |
 | [2.3 — DEFLATE read path (kcdx CRT)](step-3-deflate-read.md) | NOT STARTED | — |
 | [2.4 — unified asset index built at load](step-4-unified-index.md) | NOT STARTED | — |
