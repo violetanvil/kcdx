@@ -15,7 +15,7 @@ KI close, or the phase build+gate) is met.
 
 | Step | Status | Commit |
 |---|---|---|
-| 1 — verification-engine Phase 6 milestone UI acceptance (s08 import → 3-block worklist → 2 batch actions → s06 confirm + `[Fix ▸]`) → flips that tree's Phase 6 to DONE | NOT STARTED — UNBLOCKED (KI-0023 closed 2026-06-15); ready for the acceptance re-run | — |
+| 1 — verification-engine Phase 6 milestone UI acceptance (s08 import → 3-block worklist → 2 batch actions → s06 confirm + `[Fix ▸]`) → flips that tree's Phase 6 to DONE | DONE — accepted 2026-06-15 on the real 2026-06-09 production v3 report (name resolution, 3-block split, No-action collapsible, proof-rank chips, 0-failing edge header, KI-0023 on-import reconcile all confirmed; verify-all/close-intervals writes accepted at the prior sweep). Phase 6 flipped to DONE | — (acceptance, no commit hash) |
 | 1a — KI-0023 fix: close-intervals batch re-showed the acted row broken on re-import (design gap — reconciliation only fired on a batch round-trip, never on import). Fixed via `/debug` by on-import reconciliation (FE `46d3c09`, capture D46 `592ea9d`); Gate A + Gate B `land-fix`; user-confirmed. UNBLOCKS step 1 | DONE | FE:46d3c09 |
 | 1b — red-box divergence-emphasis enhancement (make WHAT broke more visible — a red box around the diverged element); its own FE `/design`-fork → `/feature`/`/execute` cycle with its own UAT | NOT STARTED | — |
 | 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | NOT STARTED | — |
@@ -24,11 +24,13 @@ KI close, or the phase build+gate) is met.
 | 5 — db-direct Phase 5: Docker packaging (image serving the built frontend + mounted-checkout + env-injected push-credential seam) via `/feature` | NOT STARTED | — |
 
 **Reshape (2026-06-15):** the Phase 6 acceptance walk-through surfaced a correctness bug
-(KI-0023) + a UX enhancement request (red-box). 1a (KI-0023) is now CLOSED via `/debug`
-(on-import reconciliation, FE `46d3c09`, capture D46), so Step 1 is unblocked — its acceptance
-re-run is the immediate work. 1b (the enhancement) is sequenced after the bug per the user's
-"after the bug, its own cycle" decision. Immediate work: **Step 1 — re-run the verification-engine
-Phase 6 milestone UI acceptance.**
+(KI-0023) + a UX enhancement request (red-box). 1a (KI-0023) closed via `/debug` (on-import
+reconciliation, FE `46d3c09`, capture D46). **Step 1 accepted 2026-06-15** on the real production
+v3 report — the DB was already in its post-acceptance state from the prior session, so the worklist
+correctly showed all acted rows under "no further action," which directly demonstrated the KI-0023
+on-import reconcile; the verify-all/close-intervals writes were accepted at the prior sweep. Phase 6
+is DONE. Immediate work: **Step 1b — the red-box divergence-emphasis enhancement** (its own
+`/design`-fork → `/feature`/`/execute` FE cycle with its own UAT).
 
 The owning trees + their canonical ledgers:
 - Steps 1: [maintainer-tool-verification-engine/](../maintainer-tool-verification-engine/README.md) Phase 6.
