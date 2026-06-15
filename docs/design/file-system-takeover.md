@@ -77,7 +77,7 @@ file call into kcdx with zero per-call interception overhead.
 ## §2 Glossary
 
 - **`CCryPak`** — the engine's filesystem object. One instance, reached at
-  runtime via `*(gEnv+0x50)` (gEnv id 1010; the pCryPak pointer at +0x50, verified
+  runtime via `*(gEnv+0x50)` (gEnv id 11; the pCryPak pointer at +0x50, verified
   id 132). Its vtable (102 slots, VA `0x183A95FA8`, RTTI `.?AVCCryPak@@`) is the
   complete file API the whole engine routes through.
 - **The vtable swap** — kcdx replaces the `CCryPak` object's vtable POINTER (the
@@ -115,8 +115,11 @@ file call into kcdx with zero per-call interception overhead.
   operated by the engine's CRT, because kcdx owns the read family too (§9).
 - **The ready-bracket** — the already-shipping kcdx init mechanism that makes the
   game-init thread WAIT (at the `ModManager_ctor` hook, on `g_kcdxReadyEvent`)
-  until kcdx signals ready. kcdx performs the vtable swap inside this window so it
-  owns the file object before the engine's first file call (§8, P1).
+  until kcdx signals ready. P1 (§8, RESOLVED — static binary read) found
+  `ModManager_ctor` runs AFTER both the CCryPak construction and the engine's first
+  file call, so the swap does NOT seat here — it seats at the CCryPak construction
+  site (`CSystem_pCryPak_construct_store`, id 158; §4.1). The ready-bracket remains
+  the worker-readiness wait mechanism; it is no longer the swap-seating point.
 
 ---
 
@@ -172,7 +175,7 @@ engine-integration level.
 asset-resolution research, captured in `_research/phase8.5-pak-resolver/` —
 `FINDINGS.md`, `front1-full-vtable-surface.md`, `RESOLUTION-OWNERSHIP-synthesis.md`):
 
-- The `CCryPak` object is reached via `*(gEnv+0x50)` (gEnv id 1010, RVA
+- The `CCryPak` object is reached via `*(gEnv+0x50)` (gEnv id 11, RVA
   `0x0492B800`; pCryPak at +0x50, id 132 — both VERIFIED).
 - Its vtable is at VA `0x183A95FA8` (RVA `0x03A95FA8`), 102 slots
   (slot 102 / +0x300 is non-exec = end), RTTI `.?AVCCryPak@@`, reached as
@@ -189,16 +192,25 @@ VERIFIED by the per-call `(*(*pak+off))` shape at every call site), the swap tak
 effect for every subsequent file call process-wide, with zero per-call
 interception cost.
 
-**`assumes` — P1 (CCryPak construction timing, UNVERIFIED — probe before
-building §8):** the swap must happen AFTER the `CCryPak` object exists at
-`*(gEnv+0x50)` and BEFORE the engine's first file call. The init-cycle recon
-(`_research/init-cycle-recon/`) observed `C_ModManager` construction timing — a
-DIFFERENT object. The `CCryPak` object's construction point relative to kcdx's
-ready-bracket is NOT observed this session. P1 (§8) probes: when is
-`*(gEnv+0x50)` first non-null, and does kcdx's ready-bracket run inside the window
-[CCryPak constructed, first file call]? If the window does not align, the seating
-step needs a different anchor (a hook on the CCryPak ctor itself, or the gEnv
-publish) — the design is provisional on P1.
+**P1 — CCryPak construction timing (RESOLVED, outcome (c) — static binary read,
+2026-06-15).** The swap must happen AFTER the `CCryPak` object exists at
+`*(gEnv+0x50)` and BEFORE the engine's first file call. P1 settled this STATICALLY
+from the WHGame.dll binary (not a live launch — static evidence precedes a live
+probe, `.claude/rules/results-driven.md` §4; capture
+`_research/probe-archive/p1-ccrypak-construction-order.md`, recon
+`_research/ccrypak-init-order-recon/`). Boot-order facts (read from the binary):
+inside `CSystem::Init` (RVA `0x7A6C64`), the engine (1) constructs + publishes the
+`CCryPak` pointer into gEnv+0x50 via `CSystem_pCryPak_construct_store` (id 158, RVA
+`0x9B3C0C`) at `0x1807A71CA`, then (2) makes its FIRST `*(gEnv+0x50)` file call at
+`0x1807A723A`, then (3) calls `ModManager_ctor` (the kcdx ready-bracket site) LAST
+at `0x1807A76FE`. The first file call therefore PRECEDES the ready-bracket
+(outcome (c)) — the `CCryPak` constructor itself is id 159 (RVA `0x00D2A570`).
+**Seating decision:** the swap seats at the CCryPak **construction site** (id 158,
+the gEnv+0x50 store point), NOT the late ready-bracket — seating at the
+ready-bracket would miss every file call `CSystem::Init` makes between the publish
+and ModManager_ctor. This SUPERSEDES the earlier "swap in the ready-bracket"
+assumption (§4.1's prior provisional clause + §8 P1's outcome (a)); §4.1's swap
+text below and step 1.4's anchor are updated to the construction site.
 
 **`assumes` — P2 (swap acceptance, UNVERIFIED — probe before building §8):** that
 writing the vtable pointer holds and every consumer dispatches into kcdx. The
@@ -447,14 +459,23 @@ each is ordered BEFORE the build phase that rests on it
 (`.claude/rules/incremental-delivery.md`). Probes are agent-written, built,
 deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.md`).
 
-- **P1 — CCryPak construction timing (gates the seating step).** *Probe:* log
-  `*(gEnv+0x50)` value (null vs non-null) at kcdx's ready-bracket entry, and log
-  the first file-call timestamp. *Outcome map:* (a) non-null at ready-bracket AND
-  first file call is after → swap in the ready-bracket (the design's assumption
-  holds); (b) null at ready-bracket → the CCryPak ctor runs later; anchor the swap
-  on a CCryPak-ctor hook or the gEnv publish instead; (c) first file call precedes
-  ready-bracket → the swap must move earlier (a DllMain/early hook). Falsifies the
-  "swap in the ready-bracket" clause if (b) or (c).
+- **P1 — CCryPak construction timing (RESOLVED — outcome (c), static binary read
+  2026-06-15).** *Probe was:* log `*(gEnv+0x50)` value (null vs non-null) at kcdx's
+  ready-bracket entry, and log the first file-call timestamp. *Answered STATICALLY*
+  by reading WHGame.dll instead of a live launch (static evidence precedes a live
+  probe, `.claude/rules/results-driven.md` §4). *Outcome map:* (a) non-null at
+  ready-bracket AND first file call is after → swap in the ready-bracket; (b) null
+  at ready-bracket → the CCryPak ctor runs later; (c) first file call precedes
+  ready-bracket → the swap must move earlier. **Outcome (c) HELD:** inside
+  `CSystem::Init`, the CCryPak object is constructed + published to gEnv+0x50
+  (`CSystem_pCryPak_construct_store`, id 158, RVA `0x9B3C0C`, called at
+  `0x1807A71CA`), the first `*(gEnv+0x50)` file call fires at `0x1807A723A`, and
+  the `ModManager_ctor` ready-bracket runs LAST at `0x1807A76FE` — so the first
+  file call PRECEDES the ready-bracket. **Decision:** the swap seats at the
+  construction site (id 158), NOT the ready-bracket; §4.1 + step 1.4 updated. The
+  "swap in the ready-bracket" clause (outcome (a)) is FALSIFIED. Capture:
+  `_research/probe-archive/p1-ccrypak-construction-order.md`; recon scripts
+  `_research/ccrypak-init-order-recon/`.
 - **P2 — swap acceptance (gates everything after seating).** *Probe:* after the
   swap, a kcdx marker in slot 36 (`FOpen`) logs on first fire. *Outcome map:* the
   marker fires on the first vanilla open → swap is live, engine dispatches into
@@ -477,9 +498,10 @@ deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.
   slot too, or the swap model needs revisiting. Confirms §4.3's reversibility rests
   on a sound foundation.
 
-P1 and P2 are the load-bearing seating probes (no build proceeds without them).
-P3 and P4 gate the handle-representation and thunk-correctness decisions
-respectively.
+P1 and P2 are the load-bearing seating probes. P1 is RESOLVED (static binary
+read, outcome (c) — swap seats at the construction site, not the ready-bracket);
+P2 still gates everything after seating (no build proceeds without it). P3 and P4
+gate the handle-representation and thunk-correctness decisions respectively.
 
 ---
 

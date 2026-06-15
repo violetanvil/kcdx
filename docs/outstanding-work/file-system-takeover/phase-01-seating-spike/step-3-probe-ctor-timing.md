@@ -7,6 +7,20 @@ init-cycle recon observed `C_ModManager` timing, a DIFFERENT object; CCryPak's
 construction point is unobserved (design §8 P1). This is a probe step — its
 observable IS its deliverable, no production behavior changes.
 
+**Outcome (RESOLVED — outcome (c), 2026-06-15).** P1 was answered STATICALLY by
+reading the WHGame.dll binary, NOT a live launch — static evidence precedes a live
+probe (`.claude/rules/results-driven.md` §4). The live-launch probe in the Scope
+below (an engine-side `PROBE_P1` marker + a `*(gEnv+0x50)` read at the
+ready-bracket) was written, then SUPERSEDED by the static read and removed from
+source (no residue). Outcome (c) held: inside `CSystem::Init`, the CCryPak object
+is constructed + published to gEnv+0x50 (`CSystem_pCryPak_construct_store`, id
+158, RVA `0x9B3C0C`, @ `0x1807A71CA`) BEFORE the first `*(gEnv+0x50)` file call
+(@ `0x1807A723A`) AND BEFORE the `ModManager_ctor` ready-bracket (@ `0x1807A76FE`)
+— so the swap seats at the construction site (id 158), NOT the ready-bracket
+(step 1.4's anchor updated; design §4.1/§8 P1 updated). Capture:
+[`_research/probe-archive/p1-ccrypak-construction-order.md`]; recon scripts
+`_research/ccrypak-init-order-recon/`.
+
 **Scope.** A read-only diagnostic probe (engine-side `// === DIAGNOSTIC (PROBE
 P1)` or a probe plugin) that logs: `*(gEnv+0x50)` null-vs-non-null at the
 ready-bracket entry, and a one-shot marker on the first `CCryPak` file call
@@ -40,5 +54,5 @@ discipline + the no-residue capture).
 
 **Disassembler-test / author-burden.** N/A — engine-internal probe, no
 author-facing surface. (Any game-binary target the probe resolves — gEnv, pCryPak,
-FOpen — resolves by name/id through the Address Library, already-seeded ids 1010 /
+FOpen — resolves by name/id through the Address Library, already-seeded ids 11 /
 132 / 131; no new seed row, no AP18.)

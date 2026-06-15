@@ -3,6 +3,34 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.2 P1 resolved (static binary read): swap seats at the construction site, not the ready-bracket
+
+- **P1 resolved by a STATIC binary read** (WHGame.dll `release_1_5_1164953_841`),
+  not a live launch — static evidence precedes a live probe
+  (`.claude/rules/results-driven.md` §4). Outcome (c): inside `CSystem::Init`, the
+  `CCryPak` object is constructed + published to gEnv+0x50 via
+  `CSystem_pCryPak_construct_store` (id 158, RVA `0x9B3C0C`, call @ `0x1807A71CA`)
+  BEFORE the first `*(gEnv+0x50)` file call (@ `0x1807A723A`) AND BEFORE the
+  `ModManager_ctor` ready-bracket (@ `0x1807A76FE`). The CCryPak ctor itself is
+  id 159 (RVA `0x00D2A570`).
+- **Seating decision (settled):** the vtable swap seats at the CCryPak
+  **construction site** (id 158, the gEnv+0x50 store point), NOT the late
+  ModManager ready-bracket — seating at the ready-bracket would miss the file
+  calls `CSystem::Init` makes between the publish and ModManager_ctor. SUPERSEDES
+  the earlier "swap in the ready-bracket" assumption (§4.1's prior provisional
+  clause + §8 P1 outcome (a)).
+- **Integrated in:** §4.1 (P1 block + the swap text), §8 P1 (outcome recorded),
+  §2 glossary "the ready-bracket" (no longer the swap point), §8 closing line.
+- **Capture:** `_research/probe-archive/p1-ccrypak-construction-order.md` (the
+  finding + reusable recon scripts at `_research/ccrypak-init-order-recon/`); the
+  moot live-launch PROBE_P1 instrumentation removed from `src/asset_overlay.cpp` +
+  `src/mod_absorb/ctor_bracket.cpp` (no residue).
+
+## 2026-06-14 — v1.1 corrected the gEnv Address Library id citation
+
+- corrected the gEnv Address Library id citation (1010 → 11; 1010 was a stale
+  prior-scheme number) in §2/§4.1; no design change.
+
 ## 2026-06-14 — v1 settled (initial authoring)
 
 - **Initial design.** kcdx takes TOTAL ownership of the engine's `CCryPak` file
