@@ -1,0 +1,217 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (591 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Starting cache cleanup: C:\Users\Michael\AppData\Local\ghidra\fscache2 (FileCacheMaintenanceDaemon)  
+INFO  Finished cache cleanup, estimated storage used: 0 (FileCacheMaintenanceDaemon)  
+INFO  Headless startup complete (1918 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: Slot35FOpenRawDump.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\Slot35FOpenRawDump.java (HeadlessAnalyzer)  
+INFO  Slot35FOpenRawDump.java> slot 35 (+0x118) @ vtable+ = 0x182418de4 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> slot 36 (+0x120) @ vtable+ = 0x1804614a0 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> slot 37 (+0x128) @ vtable+ = 0x182418ec8 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+===== DECOMP slot35 FOpenRaw (+0x118) @ 0x182418de4 ===== (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   name: FUN_182418de4  conv: unknown  params: 0 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   entry: 0x182418de4  size: 227 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   signature: undefined FUN_182418de4(void) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+longlong FUN_182418de4(longlong *param_1,undefined8 param_2,undefined8 param_3,undefined8 param_4,
+                      int param_5)
+
+{
+  undefined8 uVar1;
+  longlong lVar2;
+  int iVar3;
+  undefined1 auStack_868 [32];
+  undefined1 local_848 [16];
+  undefined1 local_838 [2048];
+  ulonglong local_38;
+  
+  local_38 = DAT_1848fcfc0 ^ (ulonglong)auStack_868;
+  FUN_1804613d0(local_848,param_1);
+  uVar1 = (**(code **)(*param_1 + 8))(param_1,param_2,local_838,0);
+  iVar3 = 0x800;
+  if (param_5 < 0x801) {
+    iVar3 = param_5;
+  }
+  FUN_180ab5db4(param_4,(longlong)iVar3,uVar1,0xffffffffffffffff);
+  lVar2 = FUN_1809b2b28(uVar1,param_3);
+  (**(code **)(*param_1 + 0x2c8))(param_1,param_2,param_3);
+  if (lVar2 == 0) {
+    FUN_18241bc8c(param_1,param_2);
+  }
+  else {
+    (**(code **)(*param_1 + 0x268))(param_1,lVar2,param_2);
+  }
+  FUN_1804613fc(local_848);
+  return lVar2;
+}
+
+ (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+===== DISASM slot35 FOpenRaw (+0x118) @ 0x182418de4 ===== (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418de4: PUSH RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418de6: PUSH RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418de7: PUSH RSI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418de8: PUSH RDI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418de9: SUB RSP,0x848 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418df0: MOV RAX,qword ptr [0x1848fcfc0] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418df7: XOR RAX,RSP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418dfa: MOV qword ptr [RSP + 0x830],RAX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e02: MOV RBP,RDX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e05: MOV RSI,RCX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e08: MOV RDX,RCX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e0b: MOV RBX,R9 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e0e: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e13: MOV RDI,R8 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e16: CALL 0x1804613d0  -> 0x1804613d0 (FUN_1804613d0) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e1b: MOV RAX,qword ptr [RSI] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e1e: LEA R8,[RSP + 0x30] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e23: XOR R9D,R9D (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e26: MOV RDX,RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e29: MOV RCX,RSI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e2c: CALL qword ptr [RAX + 0x8] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e2f: MOV ECX,0x800 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e34: MOV R8,RAX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e37: CMP dword ptr [RSP + 0x890],ECX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e3e: CMOVLE ECX,dword ptr [RSP + 0x890] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e46: OR R9,-0x1 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e4a: MOVSXD RDX,ECX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e4d: MOV RCX,RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e50: CALL 0x180ab5db4  -> 0x180ab5db4 (FUN_180ab5db4) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e55: MOV RDX,RDI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e58: MOV RCX,R8 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e5b: CALL 0x1809b2b28  -> 0x1809b2b28 (FUN_1809b2b28) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e60: MOV RDX,qword ptr [RSI] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e63: MOV R8,RDI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e66: MOV RCX,RSI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e69: MOV RBX,RAX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e6c: MOV R9,qword ptr [RDX + 0x2c8] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e73: MOV RDX,RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e76: CALL R9 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e79: MOV RCX,RSI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e7c: TEST RBX,RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e7f: JZ 0x182418e96  -> 0x182418e96 (FUN_182418de4) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e81: MOV RDX,qword ptr [RSI] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e84: MOV R8,RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e87: MOV R9,qword ptr [RDX + 0x268] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e8e: MOV RDX,RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e91: CALL R9 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e94: JMP 0x182418e9e  -> 0x182418e9e (FUN_182418de4) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e96: MOV RDX,RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e99: CALL 0x18241bc8c  -> 0x18241bc8c (FUN_18241bc8c) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418e9e: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ea3: CALL 0x1804613fc  -> 0x1804613fc (FUN_1804613fc) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ea8: MOV RAX,RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418eab: MOV RCX,qword ptr [RSP + 0x830] (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418eb3: XOR RCX,RSP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418eb6: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ebb: ADD RSP,0x848 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ec2: POP RDI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ec3: POP RSI (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ec4: POP RBP (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ec5: POP RBX (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   0x182418ec6: RET (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+===== DECOMP FUN_1809b2b28 (open primitive, slot35/37 shared) @ 0x1809b2b28 ===== (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   name: FUN_1809b2b28  conv: unknown  params: 0 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   entry: 0x1809b2b28  size: 188 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   signature: undefined FUN_1809b2b28(void) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+FILE * FUN_1809b2b28(undefined8 param_1,wchar_t *param_2)
+
+{
+  wchar_t *pwVar1;
+  wchar_t *pwVar2;
+  char cVar3;
+  longlong *plVar4;
+  longlong lVar5;
+  FILE *pFVar6;
+  wchar_t *local_res18;
+  wchar_t *local_res20;
+  undefined8 local_18 [2];
+  
+  pFVar6 = (FILE *)0x0;
+  plVar4 = (longlong *)(**(code **)(*DAT_18492b8c0 + 0x1a8))();
+  cVar3 = (**(code **)(*plVar4 + 0x1c8))(plVar4,param_1);
+  if (cVar3 != '\0') {
+    local_res20 = param_2;
+    lVar5 = FUN_1805c3ee8();
+    local_res18 = (wchar_t *)(lVar5 + 0xc);
+    FUN_1809b2be4(&local_res18,&local_res20);
+    local_18[0] = param_1;
+    lVar5 = FUN_1805c3ee8();
+    local_res20 = (wchar_t *)(lVar5 + 0xc);
+    FUN_1809b2be4(&local_res20,local_18);
+    pwVar2 = local_res20;
+    pwVar1 = local_res18;
+    pFVar6 = _wfopen(local_res20,local_res18);
+    FUN_1804fdaf8(pwVar2 + -6);
+    FUN_1804fdaf8(pwVar1 + -6);
+  }
+  return pFVar6;
+}
+
+ (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+===== DECOMP slot37 release-pair (+0x128) @ 0x182418ec8 ===== (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   name: FUN_182418ec8  conv: unknown  params: 0 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   entry: 0x182418ec8  size: 11 (GhidraScript)  
+INFO  Slot35FOpenRawDump.java>   signature: undefined FUN_182418ec8(void) (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+void FUN_182418ec8(undefined8 param_1,undefined8 param_2,undefined8 param_3)
+
+{
+  FUN_1809b2b28(param_2,param_3);
+  return;
+}
+
+ (GhidraScript)  
+INFO  Slot35FOpenRawDump.java> 
+===== Slot35FOpenRawDump COMPLETE ===== (GhidraScript)  
