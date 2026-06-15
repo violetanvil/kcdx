@@ -11,7 +11,16 @@ E5, E6, E7, E8, E9, E10, E11.
 | Step | Status | Commit |
 |---|---|---|
 | [3.1 — Carry the report's-DLL context + the no-DLL link prompt](step-1-carry-context-and-prompt.md) | DONE | FE:6e4786f |
-| [3.2 — Render the inline per-field diff + the extended banner](step-2-render-inline-diff-and-banner.md) | NOT STARTED | — |
+| [3.2 — Render the inline per-field diff + the extended banner](step-2-render-inline-diff-and-banner.md) | DONE | FE:3c53e22 |
+
+3.2 (render): new `FieldDivergenceMarker` renders the inline per-field recorded-vs-actual in
+FieldRow's reserved gutter (law 1, no reflow; glyph+text — law 7); the "What diverged" banner now
+names the diverged field(s) (E7); honest no-divergence-found / cannot-check banner states (E9/E10,
+AP14 — never a silent empty or faked pass); function `signature` renders `cannot-derive` honestly.
+Consumes `computeFixDivergence` (2.1) over the carried report's-DLL context (3.1) — reuse-only. The
+deferred concrete `actual` scalar stays null (no new extraction; the marker lights a "build:" column
+if a future worker populates it). Gate: `npm run build` exit 0 + `npx vitest run` 582/582 (7 new
+falsifiable tests). **Build-DONE; the Phase-3 milestone UAT (below) is the remaining gate.**
 
 3.1 (wiring): `DeepLinkTarget.fixDetail` extended `{detail}` → `{detail, gameVersion}` (the existing
 law-10 channel, no new one); `[Fix ▸]` carries `report.game_version`; FieldEditor renders the no-DLL-
