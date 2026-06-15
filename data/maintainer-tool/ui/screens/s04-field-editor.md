@@ -271,6 +271,14 @@ sends nothing (it was NULL anyway); a shown stray with a value is editable as no
   offered (e.g. a non-selected compare column before `[Edit]`): fields render read-only.
 - **Unverified / resolver-failure** — the advisory `warning banner` (`Alert`) + the override
   carried to save (law 4, D15).
+- **Audit trio locked while unverified (KI-0024)** — while the prospective
+  `last_verified_at_version` is empty, the two manual audit-trio inputs (`verified_by` +
+  `evidence_kind`) are DISABLED, each carrying the hint "Set Last verified at version first — the
+  verification fields fill in together." (text, not color-alone — law 7). This makes the all-or-null
+  trio orphan unreachable by construction: a lone trio cell cannot be written (manually OR by the D29
+  evidence_kind auto-suggest, which is suppressed on an unverified row). Setting the version runs the
+  FIX-1 coupling (auto-fills the empty trio) and re-enables the inputs. `verified_date` is already
+  read-only + hidden-when-unverified, so it is not in the locked set.
 - **Check verdict states** (the `verdict badge`, when a version-matching DLL is linked — TRD
   D24–D31): **no badge** (no matching DLL linked → degraded, the unverified advisory stands);
   **checking** (a brief loading state in the reserved badge region while the per-kind check runs
