@@ -1,6 +1,6 @@
 # file-system-takeover
 
-**Active, not started.** kcdx takes total ownership of the engine's `CCryPak`
+**Active, in progress.** kcdx takes total ownership of the engine's `CCryPak`
 file object — every file call dispatches into kcdx, every handle is operated on
 kcdx's own CRT — eliminating the cross-CRT crash class (KI-0019/KI-0006) and
 reading both vanilla paks and loose mod files itself.
@@ -17,7 +17,7 @@ per phase; flips to `DONE` when its last step lands. `/plan` authored all rows
 | Step | Status | Commit |
 |---|---|---|
 | Phase 1 — seating spike + in-flight cleanup ([phase-01](phase-01-seating-spike/README.md)) | NOT STARTED | — |
-| Phase 2 — pak reader + unified index ([phase-02](phase-02-pak-reader-index/README.md)) | NOT STARTED | — |
+| Phase 2 — pak reader + unified index ([phase-02](phase-02-pak-reader-index/README.md)) | DONE | (landed) |
 | Phase 3 — real file slots + seam subsumption ([phase-03](phase-03-file-slots/README.md)) | NOT STARTED | — |
 | Phase 4 — verification + closure ([phase-04](phase-04-verification-closure/README.md)) | NOT STARTED | — |
 

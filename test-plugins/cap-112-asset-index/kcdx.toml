@@ -1,0 +1,65 @@
+# CAP-112 — kcdx's unified asset index resolves a vpath O(1), overlay wins vanilla.
+#
+# The regression proof for the file-system-takeover unified asset index (the
+# file-system-takeover design §5 — ONE vpath -> ByteSource map built at load,
+# one O(1) lookup per open; §7 — overlay-wins-vanilla precedence computed once).
+# Earlier work located each pak entry (the CDR parse) and read one entry's bytes;
+# this BUILDS the index from the vanilla pak set + the overlay map and RESOLVES a
+# vpath through it.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-110/cap-111 shape) — the DLL compiles the
+# engine's own asset_index.cpp + pak_reader.cpp into itself PLUS the vendored
+# miniz.c (pak_reader.cpp's read path includes miniz), with a log-sink stub for
+# kcdx::log AND an overlay-SEAM stub supplying asset_overlay::NormalizeVPath +
+# GetOverlayMap the test drives. asset_index.cpp is BYTE-IDENTICAL between the
+# engine and this build — the stub supplies only the overlay seam, not the index
+# logic under test. It runs TWO assertions at kcdxPlugin_Load — pure CPU + file
+# reads, no engine lifecycle dependency:
+#
+#   (a) PAK RESOLUTION: build the index over <game>/Data (no overlay yet) and
+#       assert a known vanilla vpath resolves to its Pak ByteSource with correct
+#       {offset,size,method}. The oracle is GeomCaches.pak entry[0]
+#       ('Objects/manmade/common_decorations/flags/flag.cax', method 0,
+#       size 352571, offset 0) — read from the pak's CDR, not assumed.
+#   (b) OVERLAY-WINS-VANILLA: inject a synthetic loose override (via the seam
+#       stub) keyed to that SAME vanilla vpath, rebuild, and assert ResolveVPath
+#       now returns the Loose source (the override won), NOT the Pak source.
+#
+# The row:
+#
+#   * cap-112-asset-index  boot-only. PASS requires BOTH (a) and (b): a vanilla
+#     vpath resolves to its pak source UNLESS a loose override exists, in which
+#     case the override wins.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - the index build over <game>/Data yields no entry for the known vanilla
+#     vpath, OR the resolved source is not a Pak source, OR its {offset,size,
+#     method} differ from the values the CDR recorded, OR
+#   - after injecting the loose override, ResolveVPath returns a Pak source (or
+#     nullptr) instead of the Loose source — i.e. loose did NOT overwrite pak
+#     (broken precedence), OR
+#   - the fixture pak / Data dir is absent at the known path (reported FAIL with
+#     a clear reason — never a silent skip, never a crash).
+# Not a tautology: the override-wins assertion checks the resolved ByteSource
+# KIND flips to Loose when an override is injected. A broken precedence (pak
+# overwrites loose, or loose never inserted) yields the wrong KIND → FAIL.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_Load; the aggregator
+# emits the matrix line on the engine lifecycle messages. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_112_asset_index"
+display_name        = "CAP-112 asset index"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own unified asset index (asset_index.cpp + pak_reader.cpp + vendored miniz) and asserting a vanilla vpath resolves to its pak ByteSource, and that a synthetic loose override wins vanilla — the file-system-takeover unified index."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-112-asset-index"]
+
+[entrypoints]
+dll = "cap-112.dll"
