@@ -3,6 +3,24 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.3 §6 assumes-discharge: vanilla pak format CONFIRMED standard PKZIP (step 2.2)
+
+- **§6 `assumes — vanilla pak format uniformity` is DISCHARGED** — an assumption
+  became confirmed evidence. The clause previously asserted vanilla game paks are
+  standard PKZIP from the engine's ZipDir being a standard-PKZIP parser, without
+  having read a vanilla pak's on-disk bytes. A fresh static on-disk read of real
+  vanilla `<game>/Data/*.pak` files this session confirms it directly: 8 paks all
+  begin `PK\x03\x04`; GeomCaches.pak head + EOCD decode to standard PKZIP
+  (`PK\x05\x06` EOCD, no zip64, no encryption, STORED + DEFLATE, unsigned CDR).
+  Capture: `_research/probe-archive/vanilla-pak-format-confirmed.md`.
+- **Made a STANDING assertion:** the `cap-110-pak-cdr-parse` test plugin's
+  format-uniformity check scans several vanilla paks at boot — a future game
+  version that changes the pak format trips the regression row rather than
+  silently corrupting a read. The one-time static format-confirm read is no longer
+  the only guard.
+- **Integrated in:** §6 (the `assumes` clause marked CONFIRMED with the capture
+  cite + the standing-assertion note).
+
 ## 2026-06-15 — v1.2 P1 resolved (static binary read): swap seats at the construction site, not the ready-bracket
 
 - **P1 resolved by a STATIC binary read** (WHGame.dll `release_1_5_1164953_841`),

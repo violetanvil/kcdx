@@ -415,13 +415,21 @@ engine's ZipDir is not in the path for any kcdx-served byte.
   reverse-engineered engine format. The vanilla paks are the same format (the
   engine's own ZipDir parses standard PKZIP).
 
-**`assumes` — vanilla pak format uniformity:** the recon verified 2 Nexus MOD
-paks are standard PKZIP. That VANILLA game paks are the same standard PKZIP (no
-proprietary CryPak header, no zip64, no encryption) is asserted from the engine's
-ZipDir being a standard-PKZIP parser (front 2) but NOT verified on a vanilla pak's
-on-disk bytes this session. Marked: the build's first step reads a real vanilla
-`<game>/Data/*.pak`'s first bytes + CDR to confirm the format before kcdx commits
-to its reader (a cheap static check, not a live probe).
+**`assumes` — vanilla pak format uniformity (CONFIRMED 2026-06-15, step 2.2):**
+the recon verified 2 Nexus MOD paks are standard PKZIP; this clause asserted the
+same of VANILLA game paks from the engine's ZipDir being a standard-PKZIP parser
+(front 2) but had NOT read a vanilla pak's on-disk bytes. **Now DISCHARGED by a
+fresh static on-disk read of real vanilla `<game>/Data/*.pak` files**
+(`_research/probe-archive/vanilla-pak-format-confirmed.md`): 8 vanilla paks all
+begin `PK\x03\x04` (no proprietary CryPak header prepended), GeomCaches.pak's
+head + EOCD decode to standard PKZIP — `PK\x05\x06` EOCD, no zip64
+(`PK\x06\x06`/`PK\x06\x07`), no encryption flag, STORED (method 0) + DEFLATE
+(method 8) per entry, unsigned CDR. The design's standard-PKZIP reader holds; no
+proprietary-format handling is needed. The `cap-110-pak-cdr-parse` test plugin's
+format-uniformity check (scans several vanilla paks' head + EOCD + zip64-negative
+at boot) makes this a STANDING falsifiable assertion — a future game version that
+changes the pak format trips that regression row rather than silently corrupting
+a read.
 
 ---
 

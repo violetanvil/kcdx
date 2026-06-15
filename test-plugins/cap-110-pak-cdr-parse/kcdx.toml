@@ -1,0 +1,62 @@
+# CAP-110 — kcdx's own PKZIP central-directory parser reads a real vanilla pak.
+#
+# The regression proof for the file-system-takeover pak reader's directory half
+# (the file-system-takeover design §6: kcdx reads pak bytes with its OWN PKZIP
+# central-directory reader, every byte on kcdx's CRT, no engine ZipDir; §5: the
+# per-entry {offset,size,method,crc} feed the unified asset index). This is step
+# 2.2 of that plan — the central-directory parse the read path (2.3) and the
+# unified index (2.4) build on.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-36 / cap-109 shape). The DLL compiles the
+# engine's own pak_reader.cpp into itself (standalone, against include/ + the one
+# engine source under test) and runs TWO assertions at kcdxPlugin_Load — both
+# pure CPU + file reads, no engine lifecycle dependency:
+#
+#   (a) Full CDR parse of a real vanilla pak (<game>/Data/GeomCaches.pak):
+#       parsed entry count == 8 AND entry[0]'s {local-header offset, sizes,
+#       method, crc, name} match the actual on-disk bytes (a falsifiable
+#       fixture derived by a static read; recipe in cap-110.cpp's header).
+#   (b) Format-uniformity: scan several vanilla paks and assert each is standard
+#       PKZIP (PK\x03\x04 head, PK\x05\x06 EOCD, no zip64). The standing
+#       assertion that replaces the one-time static format-confirm probe.
+#
+# The row:
+#
+#   * cap-110-pak-cdr-parse  boot-only. PASS requires BOTH (a) and (b): kcdx's
+#     own central-directory parser extracts correct per-entry
+#     {offset,size,method,crc} from a real vanilla pak, AND the vanilla pak
+#     format remains standard PKZIP.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - the CDR parse of the fixture pak returns false (no EOCD, corrupt count,
+#     zip64 marker, bad record signature, out-of-bounds offset), OR
+#   - the parsed entry count differs from 8, OR
+#   - entry[0]'s {lho, csize, usize, method, crc, name} differ from the known
+#     on-disk bytes, OR
+#   - any scanned vanilla pak is NOT standard PKZIP (wrong head, no EOCD, or a
+#     zip64 marker present), OR
+#   - the fixture pak is absent at the known path (reported FAIL with a clear
+#     "fixture pak not found" reason — never a silent skip, never a crash).
+# Not a tautology: the assertions compare the parser's ACTUAL output against
+# fixed known values read from the real pak; a broken parser yields a wrong
+# count/field/format verdict, not a pass.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_Load; the aggregator
+# emits the matrix line on the engine lifecycle messages. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_110_pak_cdr_parse"
+display_name        = "CAP-110 PKZIP CDR parse"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own PKZIP central-directory parser and parsing a real vanilla pak's directory + asserting the vanilla-pak format stays standard PKZIP — the file-system-takeover pak reader's directory half (step 2.2)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-110-pak-cdr-parse"]
+
+[entrypoints]
+dll = "cap-110.dll"

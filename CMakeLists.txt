@@ -317,6 +317,7 @@ add_library(kcdx SHARED
     src/fs_takeover/vtable_table.cpp
     src/fs_takeover/vtable_swap.cpp
     src/fs_takeover/seating_hook.cpp
+    src/fs_takeover/pak_reader.cpp
     src/version_compat.cpp
     src/refdb.cpp
     src/blake3.cpp
