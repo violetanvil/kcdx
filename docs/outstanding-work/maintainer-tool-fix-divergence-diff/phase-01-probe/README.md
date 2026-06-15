@@ -20,7 +20,14 @@ layer must do.
 
 | Step | Status | Commit |
 |---|---|---|
-| [1.1 — Probe divergent-DLL behavior + per-field attribution](step-1-probe-divergent-dll-attribution.md) | NOT STARTED | — |
+| [1.1 — Probe divergent-DLL behavior + per-field attribution](step-1-probe-divergent-dll-attribution.md) | DONE | (landed) |
+
+Finding captured to `_research/maintainer-tool-fix-divergence-probe/` (FINDINGS.md + the reusable
+`fixDivergenceProbe.spike.ts`). E1: `runVerdictCheck` is divergent-DLL-safe for every kind (no throw,
+no spurious Unchanged). E2: the one body-hash verdict CANNOT split signature-vs-rva for a `function`
+row — `signature` is never hashed, so the worker needs a `cannot-derive` per-field status for it; the
+other kinds attribute their one survival column directly. Third finding: the worker must build the
+check input via `savedSeedRow(row)`, not a bare `{}` prospective dict.
 
 ## Phase gate
 

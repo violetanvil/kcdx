@@ -19,7 +19,7 @@ references the FE commit as `FE:<hash>`.
 
 | Step | Status | Commit |
 |---|---|---|
-| Phase 1 — Probe the two unverified mechanisms (divergent-DLL behavior + per-field attribution) | NOT STARTED | — |
+| Phase 1 — Probe the two unverified mechanisms (divergent-DLL behavior + per-field attribution) | DONE | (landed) |
 | Phase 2 — The `fixDivergence` per-field attribution + diff-model worker (pure logic) | NOT STARTED | — |
 | Phase 3 — Wire the report's-DLL context + render the inline diff + the banner (UI; milestone UAT) | NOT STARTED | — |
 
