@@ -90,11 +90,18 @@ into:
   **`collapsible section`** (collapsed by default — it is informational, not the work surface), the
   rows fully visible + auditable when expanded, never silently dropped (law 4 / no silent-success).
 
-**Report-vs-DB reconciliation — an already-acted-on row shows no-further-action (TRD D41).** The
+**Report-vs-DB reconciliation — an already-acted-on row shows no-further-action (TRD D41, D46).** The
 worklist is NOT stateless against the DB: the data-core reconciles each report row against the
 CURRENT database state and derives whether the report's recommended action is ALREADY reflected
 (it reads the row's live state for the report's `(kcdx_id, version)` — the `/save/reverify-batch`
-preview already reads per-row DB state). A row whose recommended action already landed —
+preview already reads per-row DB state). **Reconciliation fires on IMPORT, not only on a batch
+action (TRD D46):** when a report is imported, the tool runs the `/save/reverify-batch` preview
+per actionable block (failing → close-intervals, verified → verify-all) and applies the returned
+already-acted classification BEFORE the worklist's first paint — so a re-imported, partly-acted
+report shows already-acted rows in "no further action" immediately, without the maintainer first
+opening a batch. (An import-time reconciliation failure degrades gracefully — that block's rows
+stay actionable, the import is never blocked; the classification still comes from the preview, the
+FE never re-derives it.) A row whose recommended action already landed —
 a `failed` row whose interval is already closed to `last_verified_at_version`
 (`valid_through == last_verified_at_version`, non-NULL); a verified-block row already covered
 (`last_verified_at_version >= report version`) — **moves out of its actionable block into a
