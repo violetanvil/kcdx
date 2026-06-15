@@ -55,6 +55,18 @@ or wrapping the Mantine `Notifications` state update in `act(...)`. Owner: the
 test-infra change in the FE repo (gated by `npm run build` + `npx vitest run`), committed there with
 an `FE:<hash>` ledger reference, not a kcdx engine change.
 
+## Update 2026-06-14 (divergence-diff Phase 3.1)
+
+Phase 3.1 added new tests to `src/App.test.tsx` (the no-DLL `[Fix ▸]`-arrival end-to-end tests). The
+added load RAISED the flake frequency — `App.test.tsx` now occasionally reds even in isolation (it was
+13/13 alone before), and the full-suite flake fires more often (observed across consecutive runs: a
+mix of 575/575 green and a single s09/back-stack test red, the failing test VARYING run-to-run —
+`auto-open ONE-SHOT`, `on return the view RE-QUERIES`, `RESETS to a fresh needs-action root`). Still
+the SAME defect (a real-timer race in the s09/back-stack `App.test.tsx` assertions), still
+non-deterministic (the failing tests pass in isolation; the suite passes 575/575 on clean runs), NOT a
+3.1 logic regression — 3.1's own no-DLL-arrival tests never fail. The raised frequency makes the
+hardening cycle more urgent: the gate now reds intermittently on most full runs.
+
 ## Resolution
 
 _(open — to be filled when the flake is hardened in its own cycle)_

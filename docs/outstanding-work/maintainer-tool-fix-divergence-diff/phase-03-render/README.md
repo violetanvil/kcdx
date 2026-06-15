@@ -10,8 +10,16 @@ E5, E6, E7, E8, E9, E10, E11.
 
 | Step | Status | Commit |
 |---|---|---|
-| [3.1 — Carry the report's-DLL context + the no-DLL link prompt](step-1-carry-context-and-prompt.md) | NOT STARTED | — |
+| [3.1 — Carry the report's-DLL context + the no-DLL link prompt](step-1-carry-context-and-prompt.md) | DONE | FE:6e4786f |
 | [3.2 — Render the inline per-field diff + the extended banner](step-2-render-inline-diff-and-banner.md) | NOT STARTED | — |
+
+3.1 (wiring): `DeepLinkTarget.fixDetail` extended `{detail}` → `{detail, gameVersion}` (the existing
+law-10 channel, no new one); `[Fix ▸]` carries `report.game_version`; FieldEditor renders the no-DLL-
+yet advisory prompt prefilled from the carried version (law 4 — never gates `[Review changes]`). The
+inline per-field diff render + the extended banner + the milestone UAT are 3.2. NOTE: 3.1's added
+App.test.tsx tests raised the KI-0020 s09/back-stack timing-flake frequency (still non-deterministic;
+the suite passes 575/575 on clean runs; the failing tests pass in isolation) — same tracked defect,
+not a 3.1 regression.
 
 ## Phase gate
 
