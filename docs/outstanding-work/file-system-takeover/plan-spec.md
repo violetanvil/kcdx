@@ -56,9 +56,12 @@ design is provisional on each until its probe lands.
   file call]. Gates the swap-seating step.
 - **P2 — vtable-swap acceptance** (step 1.4) — the swap holds + every consumer
   dispatches into kcdx. Gates the real-slot build.
-- **P3 — off-vtable raw-handle access** (step 3.1) — whether any engine code
-  bypasses the vtable to operate a handle directly (a streamer / DirectStorage
-  path). Settles the kcdx handle representation. Gates the open/read slots.
+- **P3 — off-vtable raw-handle access** (step 3.1) — RESOLVED (static binary read,
+  outcome 1): no off-vtable access to a `FOpen`-class handle (the read family
+  dispatches on the handle tag through the vtable; the one off-vtable raw op is on an
+  engine-minted pak-MOUNT handle, not `FOpen`). Settled the kcdx handle
+  representation = a kcdx handle-id (design §4.4). Capture:
+  `_research/probe-archive/p3-off-vtable-handle-rep.md`.
 - **P4 — thunked-slot `this`-compat** (step 1.4, proven alongside P2) — a thunked
   original slot runs correctly against the swapped object (the object layout is
   preserved because kcdx swaps only the vtable pointer). Gates the thunk approach.
@@ -68,6 +71,13 @@ design is provisional on each until its probe lands.
 - **No kcdx handle is ever operated by the engine's CRT** — the load-bearing
   invariant the whole takeover protects (design §9). A step that mints a kcdx
   handle the engine could `fseek`/`fclose` reintroduces the crash class.
+- **The kcdx handle is a handle-id honoring the engine's tagged-union tag; the read
+  family is kcdx-owned, never thunked** (P3-resolved, design §4.4). 3.2 mints a kcdx
+  handle-id distinguishable by the engine's dispatch test (`index+1` = pak entry;
+  else = real-`FILE*`-class); every handle-operating read slot (3.3/3.5) stays
+  `KCDX`, never `THUNK` — a thunked read slot would `fread` the kcdx handle-id on the
+  ENGINE's CRT (the cross-CRT straddle). This is the one §4.3 thunk-flip the per-slot
+  table forbids while the handle is a kcdx-minted id.
 - **The per-slot table is the single point of slot ownership** — no code outside
   the table assumes "slot N is the engine's" (design §4.3). Reviewed each slot
   step.

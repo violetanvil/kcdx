@@ -3,6 +3,40 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.4 P3 resolved (static binary read): kcdx handle-id is safe; read family stays kcdx-owned (step 3.1)
+
+- **P3 resolved by a STATIC binary read** from the primary-evidence asset-resolution
+  recon already on disk — not a live launch. P3 (does any engine code operate a
+  handle off-vtable, bypassing the read slots?) is a static call-graph question;
+  static evidence settles it and precedes a live probe
+  (`.claude/rules/results-driven.md` §4), so the step-3.1 Scope's "then a live
+  probe" was not needed. Outcome 1 holds: **no off-vtable access to a
+  `FOpen`-class (slot 36) handle exists.**
+  - The read family (FRead 40 / FSeek 38 / FEof 39 / FWrite 41 / FClose 55)
+    dispatches purely on the handle tag THROUGH the vtable; the loose-vs-pak decision
+    bites at `FOpen`-time, never off-vtable
+    (`front3-handle-consume-read-path.md`).
+  - The ONE off-vtable raw-handle operation (the streaming engine's
+    `SetFilePointer`/`ReadFile` on `m_zipFile`) operates an ENGINE-minted pak-MOUNT
+    handle (`CreateFileA`, archive factory slot 72), NEVER a `FOpen` per-file handle
+    (`F5-streaming-engine-bypass.md`); DirectStorage is default-OFF and dead at the
+    shipped default (`step2-directstorage-bypass-finding.md`).
+- **Handle-representation decision (settled):** a kcdx `FOpen` handle is a lightweight
+  **kcdx handle-id** — opaque to the engine, operated only by kcdx's own read slots.
+  Outcome 2 (forced to a real `FILE*`-shaped object) is FALSIFIED. The handle-id MUST
+  honor the engine's tagged-union dispatch contract (`index+1` = pak entry; else =
+  real-`FILE*`-class) so any reused/thunked read slot dispatches it correctly.
+- **The load-bearing constraint P3 imposes:** the read family is **kcdx-owned, never
+  thunked** — a thunked read slot's OS arm would `fread` the kcdx handle-id on the
+  ENGINE's CRT (the cross-CRT straddle §9 removes). Every handle-operating slot stays
+  `KCDX`; this is the one §4.3 thunk-flip the per-slot table forbids while the handle
+  is a kcdx-minted id. Binds 3.2 (mints the id), 3.3 (the kcdx-owned read family),
+  3.5 (the table keeps handle-operating slots `KCDX`).
+- **Integrated in:** §4.4 (handle-representation settled + the tagged-union contract +
+  the kcdx-owns-the-read-family constraint), §8 P3 (outcome recorded), §8 closing line.
+- **Capture:** `_research/probe-archive/p3-off-vtable-handle-rep.md` (the finding +
+  the cited recon; no in-source probe was written, so no residue to remove).
+
 ## 2026-06-15 — v1.3 §6 assumes-discharge: vanilla pak format CONFIRMED standard PKZIP (step 2.2)
 
 - **§6 `assumes — vanilla pak format uniformity` is DISCHARGED** — an assumption

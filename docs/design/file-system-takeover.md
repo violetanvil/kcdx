@@ -1,6 +1,6 @@
 # File-system takeover — kcdx IS the engine filesystem (the settled design)
 
-**Status:** v1 (settled 2026-06-14; changelog `file-system-takeover-changelog.md`).
+**Status:** v1.4 (settled 2026-06-14; P1/P3 resolved 2026-06-15; changelog `file-system-takeover-changelog.md`).
 **Supersedes:** the asset-resolution *seam* settled in
 [`asset-replacement.md`](asset-replacement.md) §7 (the two-hook
 `AdjustFileName`-replace + `FOpen`-overlay mechanism) — that seam is a PARTIAL
@@ -290,21 +290,42 @@ recon did NOT observe (the recon shows the engine `fseek`s the `FILE*` directly)
 it is moot under total ownership anyway, since kcdx, not the engine, operates the
 handle.
 
-**kcdx handle representation:** kcdx owns the whole read family, so it is free to
-choose. The simplest representation that satisfies any residual engine assumption
-is a **kcdx-side handle table** — `FOpen` returns a small kcdx handle id (or a
-kcdx-tagged pointer into a kcdx handle pool); kcdx's read family maps it to the
-open byte-source state (loose `FILE*`, or pak read cursor). The engine treats it
-as opaque. **`assumes` — P3 (residual raw-handle access, UNVERIFIED — probe
-before building §8):** any engine code that BYPASSES the vtable and touches a
-handle directly (e.g. a streamer that stashed a raw `FILE*` and `fseek`s it itself
-off-vtable) would break a kcdx handle-id. The recon's read-path map showed the
-read family is the consumer; P3 probes whether any off-vtable raw-handle access
-exists (a streamer / DirectStorage path — `asset-loadpath-map-recon/F5-streaming-
-engine-bypass.md` + `step2-directstorage-bypass-finding.md` are the leads to read
-at probe-design time). If such a path exists, kcdx's handle representation must be
-a real `FILE*`-shaped object that off-vtable code can operate on kcdx's CRT — a
-representation constraint P3 settles.
+**kcdx handle representation (SETTLED — P3 RESOLVED, outcome 1, static binary read
+2026-06-15):** a kcdx `FOpen` handle is a lightweight **kcdx handle-id** — opaque to
+the engine, operated only by kcdx's own read slots; `FOpen` returns a small kcdx
+handle id (or a kcdx-tagged pointer into a kcdx handle pool) and kcdx's read family
+maps it to the open byte-source state (loose `FILE*`, or pak read cursor). P3
+asked whether any engine code BYPASSES the vtable and operates a handle directly
+off-vtable, which would break a handle-id. **It does not, for a `FOpen`-class
+handle.** The read family (FRead/FSeek/FEof/FWrite/FClose) dispatches purely on the
+handle tag through the vtable, and the loose-vs-pak decision bites at `FOpen`-time,
+never off-vtable (`front3-handle-consume-read-path.md`). The ONE off-vtable
+raw-handle operation in the engine — the streaming engine's `SetFilePointer`/
+`ReadFile` on `m_zipFile` — operates a handle the ENGINE minted via `CreateFileA`
+during pak-MOUNT (archive factory slot 72), NEVER a `FOpen` (slot 36) per-file
+handle (`F5-streaming-engine-bypass.md`); DirectStorage (the only other off-vtable
+open candidate) is default-OFF and dead at the shipped default
+(`step2-directstorage-bypass-finding.md`). So a kcdx handle-id is safe; kcdx is NOT
+forced into a real-`FILE*`-shaped representation (the outcome-2 path is falsified).
+Full capture: `_research/probe-archive/p3-off-vtable-handle-rep.md`.
+
+**The tagged-union contract the handle-id must honor.** A reused or thunked read
+slot still dispatches on the engine's tag test — a small `index+1` value = a pak
+entry in `[this+0x40]`; anything else = a real-`FILE*`-class handle (the OS arm). A
+kcdx handle that is neither tag would crash the dispatch (out-of-bounds pak index,
+or `fread` of a non-`FILE*`). So the representation kcdx mints must be
+distinguishable in the same way the engine's is, routing deterministically to a
+kcdx-owned arm.
+
+**The load-bearing constraint P3 imposes — the read family is kcdx-owned, never
+thunked.** The handle-id is safe ONLY because kcdx owns the read family (§4.5; the
+read slots are all `KCDX(&…)`). If a handle-operating read slot were left THUNKED to
+the engine original, that thunked body's OS arm would `fread`/`fseek`/`fclose` the
+kcdx handle-id on the ENGINE's CRT — the exact cross-CRT straddle §9 removes. So:
+**kcdx owns the read family, full stop** — every handle-operating slot stays `KCDX`,
+the one §4.3 thunk-flip the per-slot table forbids while the handle is a kcdx-minted
+id. This binds 3.2 (mints the handle-id), 3.3 (the kcdx-owned read family that
+operates it), and 3.5 (the table keeps every handle-operating slot `KCDX`).
 
 ### §4.5 The kcdx-owned slot set (the file family)
 
@@ -489,14 +510,24 @@ deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.
   marker fires on the first vanilla open → swap is live, engine dispatches into
   kcdx (proceed); no marker but file calls happen → swap did not take (engine
   cached the vtable / integrity check) → fall back to per-function detours (§4.2).
-- **P3 — residual off-vtable raw-handle access (gates the handle representation).**
-  *Probe:* read `asset-loadpath-map-recon/F5-streaming-engine-bypass.md` +
-  `step2-directstorage-bypass-finding.md` (static leads), then a live probe: does
-  any asset read reach bytes WITHOUT going through a vtable read slot? *Outcome
-  map:* no off-vtable raw-handle access → a kcdx handle-id representation is safe;
-  an off-vtable streamer operates a raw handle → kcdx's handle must be a real
-  `FILE*`-shaped object operable on kcdx's CRT off-vtable. Settles §4.4's
-  representation.
+- **P3 — residual off-vtable raw-handle access (RESOLVED — outcome 1, static binary
+  read 2026-06-15).** *Probe was:* read the static leads, then a live probe — does
+  any asset read reach bytes WITHOUT going through a vtable read slot? *Answered
+  STATICALLY* from the primary-evidence recon already on disk
+  (`front3-handle-consume-read-path.md` + `F5-streaming-engine-bypass.md` +
+  `step2-directstorage-bypass-finding.md`); static evidence settles the call-graph
+  question and precedes a live probe (`.claude/rules/results-driven.md` §4), so the
+  live launch is not needed. *Outcome map:* (1) no off-vtable raw-handle access → a
+  kcdx handle-id is safe; (2) an off-vtable streamer operates a raw handle → kcdx's
+  handle must be a real `FILE*`-shaped object operable on kcdx's CRT off-vtable.
+  **Outcome 1 HELD:** the read family dispatches on the handle tag through the
+  vtable (the loose-vs-pak decision bites at `FOpen`-time, never off-vtable); the
+  one off-vtable raw-handle operation (the streamer's `ReadFile` on `m_zipFile`)
+  operates an ENGINE-minted pak-MOUNT handle (archive factory slot 72), NEVER a
+  `FOpen` per-file handle; DirectStorage is default-OFF. Outcome 2 is FALSIFIED.
+  **Decision:** a kcdx handle-id (honoring the tagged-union contract; the read
+  family kcdx-owned, never thunked) — §4.4 settled. Capture:
+  `_research/probe-archive/p3-off-vtable-handle-rep.md`.
 - **P4 — thunked-slot `this` compatibility (gates the thunk approach).** *Probe:*
   with the vtable swapped on the existing object, call one thunked internal slot
   (a pool accessor or CRC) and confirm it runs correctly against the kcdx-vtable'd
@@ -508,8 +539,9 @@ deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.
 
 P1 and P2 are the load-bearing seating probes. P1 is RESOLVED (static binary
 read, outcome (c) — swap seats at the construction site, not the ready-bracket);
-P2 still gates everything after seating (no build proceeds without it). P3 and P4
-gate the handle-representation and thunk-correctness decisions respectively.
+P2 still gates everything after seating (no build proceeds without it). P3 is
+RESOLVED (static binary read, outcome 1 — a kcdx handle-id is safe; the read family
+is kcdx-owned; §4.4 settled). P4 still gates the thunk-correctness decision.
 
 ---
 
