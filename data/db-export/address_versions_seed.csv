@@ -157,3 +157,4 @@ kcdx_id,valid_from_version,module,rva,kind,signature,last_verified_at_version,ve
 156,1.5.1164953,WHGame.dll,0x01A72450,function,i32 (ptr self),1.5.1164953,VioletAnvil,2026-06-03,maintainer_ghidra,,,,,,,,,2,16,
 157,1.5.1164953,WHGame.dll,0x01A73680,function,f32 (ptr self),1.5.1164953,VioletAnvil,2026-06-03,maintainer_ghidra,,,,,,,,,4,32,
 158,1.5.1164953,WHGame.dll,0x009B3C0C,function,void (ptr csystem_this),,,,,,,,,,,,,,,
+159,1.5.1164953,WHGame.dll,0x00D2A570,function_no_sig,,1.5.1164953,VioletAnvil,2026-06-14,maintainer_ghidra,,,,,,,,,,,
