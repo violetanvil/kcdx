@@ -42,6 +42,12 @@
                                          // ModManager_ctor, synthesizing the
                                          // C_ModManager and writing the
                                          // kcdx-built enabled list directly.
+#include "fs_takeover/seating_hook.h"     // Filesystem takeover: seats the
+                                         // CCryPak vtable swap at the
+                                         // construction site (after-hook on the
+                                         // construct-store helper), so kcdx owns
+                                         // the engine filesystem object before
+                                         // the first file call.
 
 DWORD WINAPI WorkerThread(LPVOID) {
     // paths::Init is also called from DllMain (idempotent). Calling it
@@ -285,6 +291,24 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // PRODUCTION (no dev-mode gate) — this IS the feature.
     kcdx::mod_absorb::InstallCtorBracket();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::CtorBracketInstalled);
+
+    // Filesystem-takeover seating hook — armed at the SAME race-critical early
+    // slot as the ctor bracket above, and for the same reason: the engine's
+    // CSystem::Init thread races this worker. Inside CSystem::Init the engine
+    // constructs + publishes the CCryPak object, makes its FIRST file call
+    // through it, then (last) reaches the ModManager ctor the bracket hooks. So
+    // the CCryPak construct-store site is reached BEFORE the bracket's site;
+    // both hooks must be in place before CSystem::Init runs. This after-hook
+    // lets the construct-store helper run (it publishes the CCryPak pointer
+    // into the global env slot), then swaps kcdx's vtable pointer onto the
+    // published object — seating kcdx as the engine filesystem owner the instant
+    // the object exists, before any consumer dispatches a file call through it.
+    // INSTALL is here (early, on the worker); the swap FIRES later, inside
+    // CSystem::Init on the game's main thread, when the helper runs. Resolves
+    // its targets by curated name (after RefdbOpened above). Independent of the
+    // ctor bracket — a distinct site, a distinct hook (the bracket replaces the
+    // ModManager ctor; this lets the CCryPak helper run and only swaps).
+    kcdx::fs_takeover::InstallSeatingHook();
 
     // Register the deferred-apply handlers for the registry Kinds the C++
     // plugin interfaces queue (Kind::Hook via kcdxHookInterface, Kind::Bytes

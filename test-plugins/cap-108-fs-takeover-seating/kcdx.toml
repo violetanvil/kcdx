@@ -1,0 +1,49 @@
+# CAP-108 — filesystem-takeover seating spike (CCryPak vtable swap).
+#
+# The behavior under test is ENGINE machinery, not an author surface: the
+# CCryPak vtable swap seated at the construction site. kcdx builds a 102-entry
+# CCryPak vtable from a per-slot table (all slots forward to the engine's
+# original body EXCEPT slot 36, FOpen, which carries a one-shot marker), and
+# swaps it onto the live CCryPak object the instant the engine publishes it.
+#
+# This kcdx.toml is a MANIFEST-ONLY STUB — no plugin.lua, no DLL — whose sole
+# job is to pre-register the matrix row so it shows PENDING until the engine
+# self-reports. The engine reports the verdict directly (the swap + marker fire
+# engine-side, before any plugin runs), the manifest stub holds the name (the
+# engine-self-report stub pattern).
+#
+# The row proves two runtime mechanisms the takeover rests on:
+#
+#   cap-108-fs-takeover-seating  PASS requires BOTH, reported from the slot-36
+#     marker's first fire:
+#       - the slot-36 (FOpen) marker fires on the first vanilla open — the
+#         engine reads kcdx's swapped vtable pointer and dispatches a file call
+#         into kcdx (the swap is LIVE; the engine did not cache the original
+#         vtable or reject the write);
+#       - the boot reaches that first open by running a chain of thunked
+#         original slot bodies against the swapped (layout-preserved) object
+#         without crashing — the thunked slots are sound against the swapped
+#         object.
+#
+# FALSIFIABLE — this row FAILS (never reaches PASS) if:
+#   - the marker never fires (the swap did not take: no report, row stays
+#     PENDING in the suite roll-up), OR
+#   - the boot crashes with the swap active (a thunked body misbehaved against
+#     the swapped object: the game never reaches a lifecycle message that emits
+#     a PASS roll-up).
+# A clean boot reaching the world WITH the marker logged is the only path to
+# PASS. (Confirmed by the user's launch + the agent's log read after this build;
+# the row lands [unverified — pending launch].)
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_108_fs_takeover_seating"
+display_name        = "CAP-108 Filesystem-takeover seating (CCryPak vtable swap)"
+author              = "ts"
+description         = "Engine-self-reported seating spike: the CCryPak vtable swap at the construction site fires a slot-36 FOpen marker on first open (the swap is live) and the boot reaches the world through thunked slots (thunks sound against the swapped object)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-108-fs-takeover-seating"]

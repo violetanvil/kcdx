@@ -302,6 +302,9 @@ add_library(kcdx SHARED
     src/mod_absorb/order_persist.cpp
     src/mod_absorb/order_persist_selftest.cpp
     src/mod_absorb/mod_absorb_e2e_selftest.cpp
+    src/fs_takeover/vtable_table.cpp
+    src/fs_takeover/vtable_swap.cpp
+    src/fs_takeover/seating_hook.cpp
     src/version_compat.cpp
     src/refdb.cpp
     src/blake3.cpp
