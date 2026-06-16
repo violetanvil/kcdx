@@ -23,7 +23,7 @@ Shared spec: [`../plan-spec.md`](../plan-spec.md).
 | Step | Status | Commit |
 |---|---|---|
 | [3.1 — probe P3 (off-vtable raw-handle access) + handle rep](step-1-probe-handle-rep.md) | DONE | 4f2c32d |
-| [3.2 — open + read cutover (slot 1/35/36 open + 38/39/40/41/53/54/55/56 read, flipped together) + wire BuildAssetIndex](step-2-open-read-cutover.md) | NOT STARTED | — |
+| [3.2 — open + read cutover (slot 1/35/36 open + 38/39/40/41/53/54/55/56 read, flipped together) + wire BuildAssetIndex](step-2-open-read-cutover.md) | DONE | 842e5d5 |
 | [3.3 — existence/metadata + enumeration slots](step-3-existence-enum-slots.md) | NOT STARTED | — |
 | [3.4 — pak-mgmt/search-path/delete + finalize table](step-4-mgmt-slots-table.md) | NOT STARTED | — |
 | [3.5 — subsume the asset_overlay.cpp seam](step-5-subsume-overlay-seam.md) | NOT STARTED | — |
