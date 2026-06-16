@@ -4,7 +4,8 @@
 #include <cstring>
 
 #include "vtable_table.h"
-#include "open_slots.h"  // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
+#include "open_slots.h"      // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
+#include "metadata_slots.h"  // SetMetadataOriginals (the 8 metadata-slot originals captured for the miss thunk)
 #include "../log.h"
 #include "../test.h"
 
@@ -152,6 +153,15 @@ bool SwapVtableOnObject(void* pCryPak) {
                 g_kcdxVtable[i] = originalVtable[row.slot];
             }
         }
+        // Capture the 8 metadata-slot originals (13/45/67/68/69/70/92/93) from
+        // the SAME live original vtable, for the metadata slots' index-MISS
+        // thunk (§5 — each miss arm calls its own original, which consults the
+        // engine pak-dir AND disk; a value, no handle, no CRT — §-safe). One
+        // combined call stores all 8 (mirrors the slot-1 SetOriginalAdjustFileName
+        // capture above). The KCDX metadata rows above already wired the kcdx
+        // impls into g_kcdxVtable; this captures the originals those impls thunk.
+        SetMetadataOriginals(
+            reinterpret_cast<const void* const*>(originalVtable));
         LOG_INFO_KV(kCat, "kcdx_vtable_built",
             kcdx::log::KV("slots", static_cast<uint64_t>(count)),
             kcdx::log::KV("kcdx_owned", static_cast<uint64_t>(kcdxOwned)),
@@ -159,10 +169,12 @@ bool SwapVtableOnObject(void* pCryPak) {
                 "built the kcdx CCryPak vtable from the per-slot table — every "
                 "THUNK slot points at the engine's original body (captured from "
                 "the live object); the KCDX slots (the open family 1/35/36 + the "
-                "read family 38/39/40/41/43/44/46/47/53/54/55/56/57/58/59/66) "
-                "point at the kcdx impls. kcdx owns every file open + read on "
-                "its own CRT; the slot-1 original is captured for the index-miss "
-                "resolution thunk."));
+                "read family 38/39/40/41/43/44/46/47/53/54/55/56/57/58/59/66 + "
+                "the metadata family 13/45/67/68/69/70/92/93) point at the kcdx "
+                "impls. kcdx owns every file open + read on its own CRT; the "
+                "slot-1 original is captured for the index-miss resolution thunk, "
+                "and the 8 metadata-slot originals for each metadata slot's "
+                "index-miss thunk (engine pak-dir AND disk)."));
     }
 
     // The swap: write the kcdx vtable's address into [pCryPak+0x00] on the

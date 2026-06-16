@@ -1,0 +1,910 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (576 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1683 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\_research\fs-takeover-slot101-callers-recon
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: dump_realconsumers.java  (HeadlessAnalyzer)  
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\_research\fs-takeover-slot101-callers-recon\dump_realconsumers.java (HeadlessAnalyzer)  
+INFO  dump_realconsumers.java> ========== +0x328 consumers ALSO touching CryPak-distinctive slots (CCryPak-this corroborated) ========== (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_180aacd64 @0x180aacd64  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_180b7728c @0x180b7728c  co-slots=[0x100, 0x118] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_180c54620 @0x180c54620  co-slots=[0x70, 0x90] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_180c54c7c @0x180c54c7c  co-slots=[0x70, 0x90] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_181938e6c @0x181938e6c  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_181e7f3f0 @0x181e7f3f0  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_182eaa254 @0x182eaa254  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_183585d8c @0x183585d8c  co-slots=[0x100, 0x110, 0x90] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_183614988 @0x183614988  co-slots=[0x70, 0x90] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_1836c9740 @0x1836c9740  co-slots=[0x70, 0x90] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_18386e228 @0x18386e228  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   STRONG fn FUN_183873e44 @0x183873e44  co-slots=[0x100, 0x70] (GhidraScript)  
+INFO  dump_realconsumers.java>   scanned fns: 321120   with +0x328: 345   strongly-CryPak (>=2 co-slots): 12 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #1 @ 0x180aacd64 ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_180aacd64  size: 1218 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+void FUN_180aacd64(longlong param_1)
+
+{
+  float fVar1;
+  char cVar2;
+  char cVar3;
+  char *pcVar4;
+  code *pcVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  undefined4 uVar8;
+  short sVar9;
+  int iVar10;
+  longlong lVar11;
+  longlong *plVar12;
+  longlong *plVar13;
+  undefined8 *puVar14;
+  longlong *plVar15;
+  float *pfVar16;
+  char *pcVar17;
+  longlong lVar18;
+  int iVar19;
+  float fVar20;
+  float fVar21;
+  float fVar22;
+  float fVar23;
+  undefined4 local_res10 [2];
+  float local_198 [4];
+  undefined8 local_188;
+  undefined8 uStack_180;
+  undefined8 local_178;
+  undefined8 uStack_170;
+  undefined4 local_168;
+  undefined4 uStack_164;
+  undefined4 uStack_160;
+  undefined4 uStack_15c;
+  undefined4 local_158;
+  undefined4 local_154;
+  undefined4 local_150;
+  undefined4 local_14c;
+  undefined4 local_148;
+  undefined4 local_144;
+  undefined4 local_140;
+  undefined4 local_13c;
+  undefined4 local_138;
+  undefined8 local_134;
+  undefined4 local_12c;
+  float local_128;
+  float local_124;
+  float local_120;
+  float local_11c;
+  undefined8 local_118;
+  undefined4 local_110;
+  float local_108;
+  float fStack_104;
+  float fStack_100;
+  float fStack_fc;
+  float local_f8 [4];
+  float fStack_e8;
+  float fStack_e4;
+  float fStack_e0;
+  undefined1 local_d8 [16];
+  undefined1 local_c8 [160];
+  
+  lVar11 = FUN_180aacebc();
+  if (*(int *)(lVar11 + 8) != 0) {
+    lVar11 = FUN_180aacebc();
+    lVar18 = -1;
+    pcVar4 = *(char **)(lVar11 + 0x10);
+    do {
+      lVar18 = lVar18 + 1;
+    } while (pcVar4[lVar18] != '\0');
+    plVar12 = *(longlong **)(*(longlong *)(param_1 + 0x18) + 0x18);
+    plVar12 = (longlong *)(**(code **)(*plVar12 + 0x328))(plVar12,0);
+    if (plVar12 != (longlong *)0x0) {
+      plVar13 = (longlong *)(**(code **)(*plVar12 + 0x38))(plVar12);
+      if (plVar13 != (longlong *)0x0) {
+        plVar12 = (longlong *)(**(code **)(*plVar12 + 0x48))(plVar12);
+        if (plVar12 != (longlong *)0x0) {
+          puVar14 = (undefined8 *)
+                    (**(code **)(**(longlong **)(*(longlong *)(param_1 + 0x18) + 0x18) + 0x100))();
+          iVar19 = 0;
+          local_188 = *puVar14;
+          uStack_180 = puVar14[1];
+          local_178 = puVar14[2];
+          uStack_170 = puVar14[3];
+          local_168 = *(undefined4 *)(puVar14 + 4);
+          uVar6 = *(undefined4 *)((longlong)puVar14 + 0x24);
+          uVar7 = *(undefined4 *)(puVar14 + 5);
+          uVar8 = *(undefined4 *)((longlong)puVar14 + 0x2c);
+          uStack_164 = uVar6;
+          uStack_160 = uVar7;
+          uStack_15c = uVar8;
+          while( true ) {
+            iVar10 = (**(code **)(*plVar12 + 0x68))(plVar12);
+            if (iVar10 <= iVar19) break;
+            plVar15 = (longlong *)(**(code **)(*plVar12 + 0x48))(plVar12,iVar19);
+            if (lVar18 == 0) {
+LAB_182271e62:
+              (**(code **)(*plVar15 + 0x70))(plVar15,local_d8);
+              pcVar5 = *(code **)(*plVar13 + 0xd8);
+              sVar9 = (**(code **)(*plVar15 + 200))(plVar15);
+              pfVar16 = (float *)(*pcVar5)(plVar13,(int)sVar9);
+              local_158 = (undefined4)local_188;
+              local_154 = local_188._4_4_;
+              local_150 = (undefined4)uStack_180;
+              local_14c = (undefined4)local_178;
+              local_148 = local_178._4_4_;
+              local_144 = (undefined4)uStack_170;
+              local_140 = local_168;
+              local_13c = uVar6;
+              local_138 = uVar7;
+              FUN_18053dbc0(local_f8 + 3,&local_158);
+              fVar21 = pfVar16[4];
+              fVar1 = pfVar16[5];
+              local_f8[0] = uStack_180._4_4_;
+              local_f8[1] = (float)uStack_170._4_4_;
+              local_f8[2] = (float)uVar8;
+              local_108 = local_f8[3];
+              fStack_104 = fStack_e8;
+              fStack_100 = fStack_e4;
+              fStack_fc = fStack_e0;
+              fVar23 = (local_f8[3] * fVar1 - fStack_e8 * fVar21) + fStack_e0 * pfVar16[6];
+              fVar22 = (fStack_e4 * fVar21 - local_f8[3] * pfVar16[6]) + fStack_e0 * fVar1;
+              fVar20 = fStack_e8 * fVar23 - fStack_e4 * fVar22;
+              local_198[0] = fVar20 + fVar21 + fVar20;
+              fVar20 = (fStack_e8 * pfVar16[6] - fStack_e4 * fVar1) + fStack_e0 * fVar21;
+              lVar11 = 0;
+              fVar21 = fStack_e4 * fVar20 - local_f8[3] * fVar23;
+              fVar20 = local_f8[3] * fVar22 - fStack_e8 * fVar20;
+              local_198[1] = fVar21 + fVar1 + fVar21;
+              local_198[2] = fVar20 + pfVar16[6] + fVar20;
+              do {
+                *(float *)((longlong)&local_134 + lVar11) =
+                     *(float *)((longlong)local_f8 + lVar11) +
+                     *(float *)((longlong)local_198 + lVar11);
+                lVar11 = lVar11 + 4;
+              } while (lVar11 < 0xc);
+              fVar21 = pfVar16[2];
+              fVar1 = pfVar16[1];
+              fVar20 = *pfVar16;
+              fVar22 = pfVar16[3];
+              local_110 = local_12c;
+              local_128 = (fStack_e8 * fVar21 - fStack_e4 * fVar1) + fStack_e0 * fVar20 +
+                          local_f8[3] * fVar22;
+              local_124 = (fStack_e4 * fVar20 - local_f8[3] * fVar21) + fStack_e0 * fVar1 +
+                          fStack_e8 * fVar22;
+              local_120 = (local_f8[3] * fVar1 - fStack_e8 * fVar20) + fStack_e0 * fVar21 +
+                          fStack_e4 * fVar22;
+              local_118 = local_134;
+              local_11c = fStack_e0 * fVar22 -
+                          (fStack_e8 * fVar1 + local_f8[3] * fVar20 + fStack_e4 * fVar21);
+              (**(code **)(*plVar15 + 0x10))(plVar15);
+              plVar15 = (longlong *)(**(code **)(*DAT_18492b908 + 0x638))();
+              local_res10[0] = 0xffefffff;
+              (**(code **)(*plVar15 + 0x108))(plVar15,&local_118,local_c8,local_res10);
+            }
+            else {
+              lVar11 = (**(code **)(*plVar15 + 0x10))(plVar15);
+              pcVar17 = pcVar4;
+              do {
+                cVar2 = *pcVar17;
+                cVar3 = pcVar17[lVar11 - (longlong)pcVar4];
+                if (cVar2 != cVar3) break;
+                pcVar17 = pcVar17 + 1;
+              } while (cVar3 != '\0');
+              if (cVar2 == cVar3) goto LAB_182271e62;
+            }
+            iVar19 = iVar19 + 1;
+          }
+        }
+      }
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #2 @ 0x180b7728c ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_180b7728c  size: 1656 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_180b7728c(longlong *param_1,undefined8 param_2,float param_3,char *param_4,
+                  undefined4 param_5)
+
+{
+  float fVar1;
+  code *pcVar2;
+  undefined4 *puVar3;
+  char cVar4;
+  short sVar5;
+  undefined4 uVar6;
+  longlong lVar7;
+  longlong *plVar8;
+  float *pfVar9;
+  longlong *plVar10;
+  undefined8 uVar11;
+  char *pcVar12;
+  longlong *plVar13;
+  longlong lVar14;
+  char *pcVar15;
+  longlong lVar16;
+  undefined4 uVar17;
+  float fVar18;
+  undefined1 auVar19 [16];
+  float fVar20;
+  float fVar21;
+  undefined1 auStack_1e8 [32];
+  undefined8 local_1c8;
+  float local_1c0;
+  char *local_1b8;
+  undefined8 local_1b0;
+  float local_1a0 [4];
+  float local_190;
+  float local_18c;
+  float local_184;
+  float local_180;
+  float local_17c;
+  float local_174;
+  float local_170;
+  float local_16c;
+  ushort local_158 [26];
+  undefined8 local_124;
+  float local_11c;
+  undefined8 local_118;
+  float local_110;
+  float local_e8;
+  undefined4 local_e0;
+  float local_d8;
+  float local_d4;
+  float local_d0;
+  ulonglong local_78;
+  
+  local_78 = DAT_1848fcfc0 ^ (ulonglong)auStack_1e8;
+  lVar7 = (**(code **)(*param_1 + 0x6e8))();
+  plVar13 = *(longlong **)(*(longlong *)(lVar7 + 0x18) + 0x18);
+  plVar8 = (longlong *)(**(code **)(*plVar13 + 0x328))(plVar13,0);
+  plVar10 = (longlong *)0x0;
+  plVar13 = plVar10;
+  if (plVar8 != (longlong *)0x0) {
+    plVar13 = (longlong *)(**(code **)(*plVar8 + 0x28))(plVar8);
+  }
+  fVar20 = 0.0;
+  uVar6 = 0;
+  if (0.0 < param_3) {
+    auVar19 = rcpss(ZEXT416((uint)param_3),ZEXT416((uint)param_3));
+    fVar21 = (DAT_184099158 - auVar19._0_4_ * param_3) * auVar19._0_4_;
+    pfVar9 = (float *)(**(code **)(*plVar13 + 0x118))(plVar13);
+    fVar20 = pfVar9[1];
+    fVar1 = pfVar9[3];
+    fVar18 = fVar20 * fVar20 + fVar1 * fVar1;
+    fVar20 = fVar20 * *pfVar9 - fVar1 * pfVar9[2];
+    fVar20 = atan2f((float)((uint)(fVar20 + fVar20) ^ DAT_184098db0),
+                    (fVar18 + fVar18) - DAT_184098dc4);
+    fVar20 = (float)((uint)(fVar20 * DAT_18409e430) & DAT_1840990a0) * fVar21;
+    lVar7 = (**(code **)(*plVar13 + 0x118))(plVar13);
+    local_1c8 = *(undefined4 **)(lVar7 + 0x10);
+    local_1c0 = *(float *)(lVar7 + 0x18);
+    lVar7 = (**(code **)(*plVar13 + 0x100))(plVar13,local_1a0);
+    plVar13 = plVar10;
+    do {
+      *(float *)((longlong)&local_1b0 + (longlong)plVar13 * 4) =
+           param_3 * *(float *)(lVar7 + (longlong)plVar13 * 4);
+      plVar13 = (longlong *)((longlong)plVar13 + 1);
+      plVar8 = plVar10;
+    } while ((longlong)plVar13 < 3);
+    do {
+      *(float *)((longlong)local_1a0 + (longlong)plVar8) =
+           *(float *)((longlong)&local_1c8 + (longlong)plVar8) -
+           *(float *)((longlong)&local_1b0 + (longlong)plVar8);
+      plVar8 = (longlong *)((longlong)plVar8 + 4);
+      plVar13 = plVar10;
+    } while ((longlong)plVar8 < 0xc);
+    do {
+      *(float *)((longlong)&local_1c8 + (longlong)plVar13) =
+           fVar21 * *(float *)((longlong)local_1a0 + (longlong)plVar13);
+      plVar13 = (longlong *)((longlong)plVar13 + 4);
+    } while ((longlong)plVar13 < 0xc);
+    local_1b0 = local_1c8;
+    puVar3 = local_1b0;
+    local_1b0._4_4_ = (undefined4)((ulonglong)local_1c8 >> 0x20);
+    uVar6 = local_1b0._4_4_;
+    local_1b0 = puVar3;
+  }
+  FUN_180b790a4(local_158);
+  lVar7 = FUN_18091c138();
+  if (*(int *)(*(longlong *)(lVar7 + 0x20) + 0x4b8) == 0) {
+    local_e0 = 0;
+  }
+  else {
+    local_e0 = (undefined4)param_1[6];
+  }
+  lVar7 = (**(code **)(*(longlong *)param_1[7] + 0x178))((longlong *)param_1[7],local_1a0);
+  local_e8 = *(float *)(lVar7 + 8) + DAT_184099170;
+  lVar7 = (**(code **)(*param_1 + 0x6e8))(param_1);
+  plVar13 = *(longlong **)(*(longlong *)(lVar7 + 0x18) + 0x18);
+  plVar13 = (longlong *)(**(code **)(*plVar13 + 0x328))(plVar13,0);
+  if (plVar13 != (longlong *)0x0) {
+    plVar10 = (longlong *)(**(code **)(*plVar13 + 0x38))(plVar13);
+  }
+  lVar7 = (**(code **)(*plVar10 + 0xd8))(plVar10,param_5);
+  pfVar9 = (float *)(**(code **)(*(longlong *)param_1[7] + 0x2d8))((longlong *)param_1[7],0);
+  fVar1 = *(float *)(lVar7 + 0x14);
+  fVar18 = *(float *)(lVar7 + 0x10);
+  fVar21 = *(float *)(lVar7 + 0x18);
+  local_11c = fVar1 * pfVar9[9] + fVar18 * pfVar9[8] + fVar21 * pfVar9[10] + pfVar9[0xb];
+  local_124 = CONCAT44(fVar1 * pfVar9[5] + fVar18 * pfVar9[4] + fVar21 * pfVar9[6] + pfVar9[7],
+                       fVar1 * pfVar9[1] + fVar18 * *pfVar9 + fVar21 * pfVar9[2] + pfVar9[3]);
+  local_118 = local_124;
+  local_110 = local_11c;
+  uVar17 = (**(code **)(*param_1 + 0x430))(param_1);
+  FUN_180b77dc8(local_158,"speed",uVar17);
+  FUN_180b77dc8(local_158,&DAT_183e70bc8,fVar20);
+  FUN_180b77dc8(local_158,"acceleration",uVar6);
+  uVar11 = (**(code **)(*(longlong *)param_1[7] + 0x100))();
+  FUN_18077aff0(local_1a0 + 3,uVar11);
+  pfVar9 = (float *)(**(code **)(*(longlong *)param_1[7] + 0x170))((longlong *)param_1[7],local_1a0)
+  ;
+  lVar7 = 3;
+  lVar14 = (longlong)&local_124 - (longlong)pfVar9;
+  lVar16 = (longlong)&local_1c8 - (longlong)pfVar9;
+  do {
+    *(float *)(lVar16 + (longlong)pfVar9) = *(float *)((longlong)pfVar9 + lVar14) - *pfVar9;
+    pfVar9 = pfVar9 + 1;
+    lVar7 = lVar7 + -1;
+  } while (lVar7 != 0);
+  local_d8 = local_190 * local_1c8._4_4_ + local_1a0[3] * (float)local_1c8 + local_18c * local_1c0;
+  local_d4 = local_180 * local_1c8._4_4_ + local_184 * (float)local_1c8 + local_17c * local_1c0;
+  local_d0 = local_170 * local_1c8._4_4_ + local_174 * (float)local_1c8 + local_16c * local_1c0;
+  cVar4 = (**(code **)(*param_1 + 0x240))(param_1);
+  local_158[0] = (ushort)(cVar4 == '\0');
+  uVar6 = (**(code **)(*(longlong *)param_1[0xcd] + 0x1b8))();
+  plVar13 = DAT_18492b920;
+  lVar7 = *(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8);
+  if ((*(int *)(lVar7 + 0x18) < DAT_18547b02c) &&
+     (FUN_181c1e988(&DAT_18547b02c), DAT_18547b02c == -1)) {
+    FUN_1819dc1a8(&DAT_18547b030);
+    _Init_thread_footer(&DAT_18547b02c);
+  }
+  local_1b8 = (char *)&DAT_18547b03c;
+  FUN_1804f778c(&local_1b8,7);
+  if (local_1b8 != "default") {
+    *(undefined4 *)local_1b8 = s_default_183a37318._0_4_;
+    *(undefined2 *)(local_1b8 + 4) = s_default_183a37318._4_2_;
+    local_1b8[6] = s_default_183a37318[6];
+  }
+  if (*param_4 != '\0') {
+    FUN_1804f6ac8(&local_1b8,param_4);
+  }
+  pcVar12 = strstr(local_1b8,"_mat");
+  pcVar15 = local_1b8;
+  if (pcVar12 == (char *)0x0) {
+    pcVar2 = *(code **)(*plVar13 + 0x20);
+    FUN_180b79328(param_1);
+    sVar5 = (*pcVar2)(plVar13,*(undefined8 *)(param_1[0x38] + 0x38),pcVar15);
+  }
+  else {
+    if ((*(int *)(lVar7 + 0x18) < DAT_18547b02c) &&
+       (FUN_181c1e988(&DAT_18547b02c), DAT_18547b02c == -1)) {
+      FUN_1819dc1a8(&DAT_18547b030);
+      _Init_thread_footer(&DAT_18547b02c);
+    }
+    local_1c8 = &DAT_18547b03c;
+    FUN_1804fd134(&local_1c8,local_1b8,(longlong)pcVar12 - (longlong)local_1b8);
+    cVar4 = FUN_1804a8f40(param_1);
+    pcVar15 = "_player";
+    if (cVar4 == '\0') {
+      pcVar15 = "_npc";
+    }
+    FUN_1804fd134(&local_1c8,pcVar15,(-(cVar4 != '\0') & 3U) + 4);
+    puVar3 = local_1c8;
+    sVar5 = (**(code **)(*plVar13 + 0x30))(plVar13,local_1c8,uVar6);
+    FUN_1804fdaf8(puVar3 + -3);
+  }
+  if (sVar5 != 0) {
+    (**(code **)(*plVar13 + 0x50))(plVar13,sVar5,local_158);
+  }
+  FUN_1804fdaf8(local_1b8 + -0xc);
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #3 @ 0x180c54620 ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_180c54620  size: 324 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+void FUN_180c54620(longlong param_1)
+
+{
+  longlong *plVar1;
+  longlong lVar2;
+  float local_res8 [2];
+  float local_res10 [2];
+  undefined4 local_res18 [2];
+  float local_res20;
+  float fStackX_24;
+  longlong local_38;
+  float *local_30;
+  float *local_28;
+  undefined4 *local_20;
+  
+  *(undefined8 *)(param_1 + 0x18) = 0;
+  plVar1 = (longlong *)
+           (**(code **)(**(longlong **)(param_1 + 8) + 0x328))(*(longlong **)(param_1 + 8),0);
+  if (plVar1 != (longlong *)0x0) {
+    plVar1 = (longlong *)(**(code **)(*plVar1 + 0x38))(plVar1);
+    if (plVar1 != (longlong *)0x0) {
+      lVar2 = (**(code **)(*plVar1 + 0x160))(plVar1);
+      *(longlong *)(param_1 + 0x18) = lVar2;
+      if (lVar2 != 0) {
+        local_30 = local_res8;
+        *(undefined4 *)(param_1 + 0x40) = 0x3e4ccccd;
+        local_28 = local_res10;
+        *(undefined1 *)(param_1 + 0x44) = 1;
+        local_20 = local_res18;
+        local_res8[0] = 360.0;
+        local_res10[0] = 360.0;
+        local_res18[0] = 0;
+        local_38 = param_1;
+        FUN_181e80610(&local_38);
+        local_res20 = local_res8[0] * DAT_184099308;
+        fStackX_24 = local_res10[0] * DAT_184099308;
+        *(ulonglong *)(param_1 + 0x38) = CONCAT44(fStackX_24,local_res20);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x80))
+                  (*(longlong **)(param_1 + 0x18),*(undefined1 *)(param_1 + 0x44));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x88))
+                  (*(longlong **)(param_1 + 0x18),*(undefined4 *)(param_1 + 0x40));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x90))
+                  (*(longlong **)(param_1 + 0x18),param_1 + 0x38);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x68))
+                  (*(longlong **)(param_1 + 0x18),*(undefined4 *)(param_1 + 0x30));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x60))
+                  (*(longlong **)(param_1 + 0x18),*(undefined4 *)(param_1 + 0x34));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x70))
+                  (*(longlong **)(param_1 + 0x18),local_res18[0]);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x40))(*(longlong **)(param_1 + 0x18),0);
+      }
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #4 @ 0x180c54c7c ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_180c54c7c  size: 354 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+void FUN_180c54c7c(longlong param_1)
+
+{
+  longlong *plVar1;
+  longlong lVar2;
+  float local_res8 [2];
+  float local_res10 [2];
+  undefined4 local_res18 [2];
+  undefined4 local_res20 [2];
+  undefined4 local_58;
+  float local_54;
+  float fStack_50;
+  longlong local_48;
+  float *local_40;
+  float *local_38;
+  undefined4 *local_30;
+  undefined4 *local_28;
+  undefined4 *local_20;
+  
+  *(undefined8 *)(param_1 + 0x18) = 0;
+  plVar1 = (longlong *)
+           (**(code **)(**(longlong **)(param_1 + 8) + 0x328))(*(longlong **)(param_1 + 8),0);
+  if (plVar1 != (longlong *)0x0) {
+    plVar1 = (longlong *)(**(code **)(*plVar1 + 0x38))(plVar1);
+    if (plVar1 != (longlong *)0x0) {
+      lVar2 = (**(code **)(*plVar1 + 0x150))(plVar1);
+      *(longlong *)(param_1 + 0x18) = lVar2;
+      if (lVar2 != 0) {
+        local_40 = local_res8;
+        *(undefined4 *)(param_1 + 0x38) = 0x3dcccccd;
+        local_38 = local_res10;
+        *(undefined1 *)(param_1 + 0x3c) = 1;
+        local_30 = local_res18;
+        local_28 = local_res20;
+        local_20 = &local_58;
+        local_res8[0] = 360.0;
+        local_res10[0] = 360.0;
+        local_res18[0] = 0x3e800000;
+        local_res20[0] = 0x3e800000;
+        local_58 = 0;
+        local_48 = param_1;
+        FUN_181e805d0(&local_48);
+        local_54 = local_res8[0] * DAT_184099308;
+        fStack_50 = local_res10[0] * DAT_184099308;
+        *(ulonglong *)(param_1 + 0x30) = CONCAT44(fStack_50,local_54);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x80))
+                  (*(longlong **)(param_1 + 0x18),*(undefined1 *)(param_1 + 0x3c));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x88))
+                  (*(longlong **)(param_1 + 0x18),*(undefined4 *)(param_1 + 0x38));
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x90))
+                  (*(longlong **)(param_1 + 0x18),param_1 + 0x30);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x68))
+                  (*(longlong **)(param_1 + 0x18),local_res18[0]);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x60))
+                  (*(longlong **)(param_1 + 0x18),local_res20[0]);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x70))
+                  (*(longlong **)(param_1 + 0x18),local_58);
+        (**(code **)(**(longlong **)(param_1 + 0x18) + 0x40))(*(longlong **)(param_1 + 0x18),0);
+      }
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #5 @ 0x181938e6c ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_181938e6c  size: 761 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+void FUN_181938e6c(longlong param_1)
+
+{
+  undefined4 uVar1;
+  code *pcVar2;
+  char cVar3;
+  undefined2 uVar4;
+  int iVar5;
+  undefined8 uVar6;
+  undefined8 uVar7;
+  float *pfVar8;
+  longlong lVar9;
+  longlong *plVar10;
+  longlong lVar11;
+  float fVar12;
+  float fVar13;
+  float fVar14;
+  float fVar15;
+  float fVar16;
+  float local_c8 [4];
+  float local_b8 [4];
+  float local_a8;
+  float fStack_a4;
+  float fStack_a0;
+  float fStack_9c;
+  float local_98 [4];
+  float local_88;
+  undefined1 local_80 [120];
+  
+  uVar1 = *(undefined4 *)(param_1 + 0x154);
+  uVar6 = (**(code **)(*DAT_18492b8a0 + 0x70))(DAT_18492b8a0,*(undefined4 *)(param_1 + 0x28));
+  uVar7 = (**(code **)(*DAT_18492b8a0 + 0x70))(DAT_18492b8a0,uVar1);
+  FUN_180948f0c(local_b8);
+  iVar5 = FUN_180d5c968(uVar7,local_b8);
+  lVar9 = CONCAT44(local_b8[1],local_b8[0]);
+  if ((iVar5 != 0x15) && (*(int *)(lVar9 + -8) != 0)) {
+    cVar3 = FUN_180b374bc(uVar6,lVar9,local_80,0);
+    if (cVar3 != '\0') {
+      pfVar8 = (float *)(**(code **)(**(longlong **)(*(longlong *)(param_1 + 0x18) + 0x38) + 0x100))
+                                  ();
+      local_a8 = *pfVar8;
+      fStack_a4 = pfVar8[1];
+      fStack_a0 = pfVar8[2];
+      local_98[0] = pfVar8[5];
+      fStack_9c = pfVar8[4];
+      local_98[2] = pfVar8[8];
+      local_98[1] = pfVar8[6];
+      local_88 = pfVar8[10];
+      local_98[3] = pfVar8[9];
+      FUN_18053dbc0(local_b8,&local_a8);
+      local_98[0] = pfVar8[3];
+      local_98[1] = pfVar8[7];
+      local_98[2] = pfVar8[0xb];
+      local_a8 = local_b8[0];
+      fStack_a4 = local_b8[1];
+      fStack_a0 = local_b8[2];
+      fStack_9c = local_b8[3];
+      lVar9 = (**(code **)(**(longlong **)(param_1 + 0x18) + 0x6e8))();
+      plVar10 = *(longlong **)(*(longlong *)(lVar9 + 0x18) + 0x18);
+      plVar10 = (longlong *)(**(code **)(*plVar10 + 0x328))(plVar10,0);
+      if (plVar10 == (longlong *)0x0) {
+        plVar10 = (longlong *)0x0;
+      }
+      else {
+        plVar10 = (longlong *)(**(code **)(*plVar10 + 0x58))(plVar10);
+      }
+      pcVar2 = *(code **)(*plVar10 + 0x40);
+      uVar6 = (**(code **)(**(longlong **)(param_1 + 0x18) + 0x6e8))();
+      uVar4 = FUN_1806413b8(uVar6,0x2d);
+      lVar9 = (*pcVar2)(plVar10,uVar4);
+      fVar13 = *(float *)(lVar9 + 0x10);
+      fVar16 = (local_b8[1] * *(float *)(lVar9 + 0x18) - local_b8[2] * *(float *)(lVar9 + 0x14)) +
+               local_b8[3] * fVar13;
+      fVar15 = (local_b8[2] * fVar13 - local_b8[0] * *(float *)(lVar9 + 0x18)) +
+               local_b8[3] * *(float *)(lVar9 + 0x14);
+      fVar14 = (local_b8[0] * *(float *)(lVar9 + 0x14) - local_b8[1] * fVar13) +
+               local_b8[3] * *(float *)(lVar9 + 0x18);
+      fVar12 = local_b8[1] * fVar14 - local_b8[2] * fVar15;
+      fVar14 = local_b8[2] * fVar16 - local_b8[0] * fVar14;
+      local_c8[0] = fVar12 + fVar13 + fVar12;
+      fVar13 = local_b8[0] * fVar15 - local_b8[1] * fVar16;
+      local_c8[1] = fVar14 + *(float *)(lVar9 + 0x14) + fVar14;
+      lVar11 = 0;
+      local_c8[2] = fVar13 + *(float *)(lVar9 + 0x18) + fVar13;
+      do {
+        *(float *)((longlong)local_b8 + lVar11) =
+             *(float *)((longlong)local_98 + lVar11) + *(float *)((longlong)local_c8 + lVar11);
+        lVar11 = lVar11 + 4;
+      } while (lVar11 < 0xc);
+      FUN_1823b3920(lVar9);
+      return;
+    }
+  }
+  FUN_1804fdaf8(lVar9 + -0xc);
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== DECOMP STRONG CryPak FindFirst consumer #6 @ 0x181e7f3f0 ===== (GhidraScript)  
+INFO  dump_realconsumers.java>   name: FUN_181e7f3f0  size: 3221 (GhidraScript)  
+INFO  dump_realconsumers.java> 
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_181e7f3f0(longlong *param_1)
+
+{
+  code *pcVar1;
+  short sVar2;
+  longlong *plVar3;
+  undefined8 uVar4;
+  longlong *plVar5;
+  longlong *plVar6;
+  float *pfVar7;
+  undefined8 *puVar8;
+  undefined4 *puVar9;
+  float fVar10;
+  float fVar11;
+  float fVar12;
+  float fVar13;
+  float fVar14;
+  float fVar15;
+  float fVar16;
+  float fVar17;
+  float fVar18;
+  float fVar19;
+  float fVar20;
+  float fVar21;
+  float fVar22;
+  float fVar23;
+  float fVar24;
+  float fVar25;
+  float fVar26;
+  float fVar27;
+  float fVar28;
+  float fVar29;
+  float local_res20;
+  float local_188;
+  float local_184;
+  undefined8 local_178;
+  undefined8 uStack_170;
+  undefined8 local_168;
+  uint local_160;
+  undefined4 local_15c;
+  undefined4 local_158;
+  undefined8 local_150;
+  undefined8 uStack_148;
+  undefined8 local_140;
+  float local_138;
+  float local_130;
+  float local_128;
+  float local_124;
+  float local_120;
+  float local_11c;
+  float local_118;
+  float local_114;
+  float local_110;
+  undefined4 local_108;
+  undefined4 local_104;
+  undefined4 local_100;
+  undefined4 local_fc;
+  undefined4 local_f8;
+  undefined4 local_f4;
+  undefined4 local_f0;
+  undefined4 local_ec;
+  undefined4 local_e8;
+  
+  if (((*(byte *)(*(longlong *)(*param_1 + 0x20) + 0x9b2) & 0x40) == 0) &&
+     (plVar3 = (longlong *)(**(code **)(*DAT_18492b8a0 + 0x70))(DAT_18492b8a0,(int)param_1[1]),
+     plVar3 != (longlong *)0x0)) {
+    uVar4 = (**(code **)(**(longlong **)(*param_1 + 0x20) + 0x6e8))();
+    plVar5 = (longlong *)FUN_1809e65dc(uVar4,plVar3,param_1[2]);
+    if (plVar5 != (longlong *)0x0) {
+      if ((char)param_1[6] == '\0') {
+        local_168 = 0;
+        local_160 = 0;
+        local_178 = _DAT_1840990c0;
+        uStack_170 = _UNK_1840990c8;
+        FUN_180b374bc(plVar3,param_1[3],&local_178,1);
+        fVar10 = *(float *)((longlong)param_1 + 0x24);
+        fVar11 = *(float *)(param_1 + 5);
+        fVar12 = *(float *)((longlong)param_1 + 0x2c);
+        fVar14 = *(float *)(param_1 + 4);
+        fVar22 = fVar12 * uStack_170._4_4_ -
+                 (local_178._4_4_ * fVar10 + fVar14 * (float)local_178 + (float)uStack_170 * fVar11)
+        ;
+        fVar23 = (float)local_178 * fVar12 + fVar14 * uStack_170._4_4_ +
+                 (local_178._4_4_ * fVar11 - (float)uStack_170 * fVar10);
+        fVar21 = local_178._4_4_ * fVar12 + fVar10 * uStack_170._4_4_ +
+                 (fVar14 * (float)uStack_170 - (float)local_178 * fVar11);
+        fVar20 = (float)(local_160 ^ DAT_184098db0);
+        fVar16 = (float)(local_168._4_4_ ^ DAT_184098db0);
+        fVar25 = (float)uStack_170 * fVar12 + fVar11 * uStack_170._4_4_ +
+                 ((float)local_178 * fVar10 - fVar14 * local_178._4_4_);
+        local_150 = CONCAT44((uint)fVar21 ^ DAT_184098db0,(uint)fVar23 ^ DAT_184098db0);
+        fVar14 = (float)((uint)local_168 ^ DAT_184098db0);
+        uStack_148 = CONCAT44(fVar22,(uint)fVar25 ^ DAT_184098db0);
+        fVar18 = (fVar16 * fVar25 - fVar20 * fVar21) + fVar22 * fVar14;
+        fVar12 = (fVar20 * fVar23 - fVar14 * fVar25) + fVar22 * fVar16;
+        fVar11 = (fVar14 * fVar21 - fVar16 * fVar23) + fVar22 * fVar20;
+        fVar10 = fVar12 * fVar25 - fVar11 * fVar21;
+        fVar11 = fVar11 * fVar23 - fVar18 * fVar25;
+        local_138 = fVar18 * fVar21 - fVar12 * fVar23;
+        local_138 = local_138 + fVar20 + local_138;
+        local_140 = CONCAT44(fVar11 + fVar16 + fVar11,fVar10 + fVar14 + fVar10);
+        (**(code **)(*plVar5 + 0x58))(plVar5,&local_150);
+      }
+      else {
+        plVar6 = *(longlong **)(*(longlong *)(*param_1 + 0x20) + 0x38);
+        plVar6 = (longlong *)(**(code **)(*plVar6 + 0x328))(plVar6,0);
+        plVar6 = (longlong *)(**(code **)(*plVar6 + 0x38))(plVar6);
+        pcVar1 = *(code **)(*plVar6 + 0xd8);
+        sVar2 = (**(code **)(*plVar5 + 200))(plVar5);
+        pfVar7 = (float *)(*pcVar1)(plVar6,(int)sVar2);
+        puVar8 = (undefined8 *)
+                 (**(code **)(**(longlong **)(*(longlong *)(*param_1 + 0x20) + 0x38) + 0x100))();
+        local_178 = *puVar8;
+        local_160 = *(uint *)(puVar8 + 4);
+        uStack_170 = CONCAT44(*(undefined4 *)(puVar8 + 2),*(undefined4 *)(puVar8 + 1));
+        local_168 = *(undefined8 *)((longlong)puVar8 + 0x14);
+        local_158 = *(undefined4 *)(puVar8 + 5);
+        local_15c = *(undefined4 *)((longlong)puVar8 + 0x24);
+        FUN_18053dbc0(&local_150,&local_178);
+        fVar10 = *(float *)((longlong)puVar8 + 0xc);
+        fVar11 = *(float *)((longlong)puVar8 + 0x1c);
+        fVar12 = *(float *)((longlong)puVar8 + 0x2c);
+        puVar9 = (undefined4 *)(**(code **)(*plVar3 + 0x100))(plVar3);
+        local_108 = *puVar9;
+        local_104 = puVar9[1];
+        local_100 = puVar9[2];
+        local_f8 = puVar9[5];
+        local_fc = puVar9[4];
+        local_f0 = puVar9[8];
+        local_f4 = puVar9[6];
+        local_e8 = puVar9[10];
+        local_ec = puVar9[9];
+        FUN_18053dbc0(&local_178,&local_108);
+        local_res20 = (float)puVar9[0xb];
+        local_188 = (float)puVar9[3];
+        local_184 = (float)puVar9[7];
+        fVar20 = uStack_148._4_4_;
+        fVar18 = (float)uStack_148;
+        fVar16 = local_150._4_4_;
+        fVar14 = (float)local_150;
+        if ((char)param_1[6] == '\x02') {
+          local_140 = 0;
+          local_138 = 0.0;
+          local_150 = _DAT_1840990c0;
+          uStack_148 = _UNK_1840990c8;
+          FUN_180b374bc(plVar3,param_1[3],&local_150,0);
+          fVar21 = pfVar7[4];
+          fVar22 = pfVar7[5];
+          fVar23 = pfVar7[6];
+          fVar19 = (fVar16 * fVar23 - fVar18 * fVar22) + fVar20 * fVar21;
+          fVar17 = (fVar18 * fVar21 - fVar14 * fVar23) + fVar20 * fVar22;
+          fVar25 = (fVar14 * fVar22 - fVar16 * fVar21) + fVar20 * fVar23;
+          fVar13 = fVar16 * fVar25 - fVar18 * fVar17;
+          fVar15 = fVar18 * fVar19 - fVar14 * fVar25;
+          fVar25 = fVar14 * fVar17 - fVar16 * fVar19;
+          local_188 = ((fVar13 + fVar21 + fVar13 + fVar10) - (float)local_140) + local_188;
+          local_184 = ((fVar15 + fVar22 + fVar15 + fVar11) - local_140._4_4_) + local_184;
+          local_res20 = ((fVar25 + fVar23 + fVar25 + fVar12) - local_138) + local_res20;
+        }
+        fVar10 = (float)((uint)fVar10 ^ DAT_184098db0);
+        fVar11 = (float)((uint)fVar11 ^ DAT_184098db0);
+        fVar12 = (float)((uint)fVar12 ^ DAT_184098db0);
+        fVar13 = (float)((uint)fVar16 ^ DAT_184098db0);
+        fVar17 = (float)((uint)fVar18 ^ DAT_184098db0);
+        fVar15 = (float)((uint)fVar14 ^ DAT_184098db0);
+        fVar23 = (fVar11 * fVar18 - fVar12 * fVar16) + fVar20 * fVar10;
+        fVar22 = (fVar12 * fVar14 - fVar18 * fVar10) + fVar11 * fVar20;
+        fVar21 = (fVar16 * fVar10 - fVar11 * fVar14) + fVar12 * fVar20;
+        fVar25 = fVar16 * fVar23 - fVar14 * fVar22;
+        fVar22 = fVar18 * fVar22 - fVar16 * fVar21;
+        fVar23 = fVar14 * fVar21 - fVar18 * fVar23;
+        fVar18 = (fVar13 * local_res20 - fVar17 * local_184) + fVar20 * local_188;
+        fVar21 = (fVar17 * local_188 - fVar15 * local_res20) + fVar20 * local_184;
+        fVar14 = (fVar15 * local_184 - fVar13 * local_188) + fVar20 * local_res20;
+        fVar16 = fVar14 * fVar13 - fVar21 * fVar17;
+        fVar14 = fVar18 * fVar17 - fVar14 * fVar15;
+        fVar21 = fVar21 * fVar15 - fVar18 * fVar13;
+        fVar16 = fVar22 + fVar10 + fVar22 + fVar16 + local_188 + fVar16;
+        fVar18 = fVar11 + fVar23 + fVar23 + fVar14 + local_184 + fVar14;
+        fVar21 = fVar12 + fVar25 + fVar25 + fVar21 + local_res20 + fVar21;
+        fVar25 = uStack_170._4_4_ * fVar20 -
+                 (local_178._4_4_ * fVar13 + (float)local_178 * fVar15 + (float)uStack_170 * fVar17)
+        ;
+        fVar22 = ((float)uStack_170 * fVar13 - local_178._4_4_ * fVar17) + (float)local_178 * fVar20
+                 + uStack_170._4_4_ * fVar15;
+        fVar23 = ((float)local_178 * fVar17 - (float)uStack_170 * fVar15) + local_178._4_4_ * fVar20
+                 + uStack_170._4_4_ * fVar13;
+        fVar13 = (local_178._4_4_ * fVar15 - (float)local_178 * fVar13) + (float)uStack_170 * fVar20
+                 + uStack_170._4_4_ * fVar17;
+        fVar10 = *pfVar7;
+        fVar11 = pfVar7[1];
+        fVar26 = (float)((uint)fVar10 ^ DAT_184098db0);
+        fVar12 = pfVar7[2];
+        fVar14 = pfVar7[3];
+        fVar27 = (float)((uint)fVar11 ^ DAT_184098db0);
+        local_130 = (float)((uint)pfVar7[6] ^ DAT_184098db0);
+        fVar19 = (float)((uint)fVar12 ^ DAT_184098db0);
+        fVar24 = (float)((uint)pfVar7[4] ^ DAT_184098db0);
+        fVar28 = (float)((uint)pfVar7[5] ^ DAT_184098db0);
+        fVar29 = (fVar28 * fVar12 - local_130 * fVar11) + fVar24 * fVar14;
+        fVar20 = (local_130 * fVar10 - fVar24 * fVar12) + fVar28 * fVar14;
+        fVar17 = (fVar24 * fVar11 - fVar28 * fVar10) + local_130 * fVar14;
+        fVar15 = fVar20 * fVar12 - fVar17 * fVar11;
+        fVar17 = fVar17 * fVar10 - fVar29 * fVar12;
+        fVar29 = fVar29 * fVar11 - fVar20 * fVar10;
+        fVar11 = (fVar27 * fVar21 - fVar19 * fVar18) + fVar14 * fVar16;
+        fVar20 = (fVar19 * fVar16 - fVar21 * fVar26) + fVar14 * fVar18;
+        fVar10 = (fVar18 * fVar26 - fVar27 * fVar16) + fVar14 * fVar21;
+        fVar12 = fVar10 * fVar27 - fVar20 * fVar19;
+        fVar20 = fVar20 * fVar26 - fVar11 * fVar27;
+        fVar10 = fVar11 * fVar19 - fVar10 * fVar26;
+        local_128 = (fVar27 * fVar13 - fVar19 * fVar23) + fVar14 * fVar22 + fVar25 * fVar26;
+        local_124 = (fVar19 * fVar22 - fVar13 * fVar26) + fVar14 * fVar23 + fVar27 * fVar25;
+        local_120 = (fVar23 * fVar26 - fVar27 * fVar22) + fVar14 * fVar13 + fVar19 * fVar25;
+        local_11c = fVar14 * fVar25 - (fVar27 * fVar23 + fVar22 * fVar26 + fVar19 * fVar13);
+        local_118 = fVar15 + fVar24 + fVar15 + fVar12 + fVar16 + fVar12;
+        local_114 = fVar17 + fVar28 + fVar17 + fVar10 + fVar18 + fVar10;
+        local_110 = fVar29 + local_130 + fVar29 + fVar20 + fVar21 + fVar20;
+        (**(code **)(*plVar5 + 0x58))(plVar5,&local_128);
+      }
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  dump_realconsumers.java> (>6, stopping) (GhidraScript)  
+INFO  dump_realconsumers.java> 
+===== dump_realconsumers COMPLETE ===== (GhidraScript)  

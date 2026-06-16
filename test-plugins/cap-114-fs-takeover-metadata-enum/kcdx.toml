@@ -1,0 +1,76 @@
+# CAP-114 — the file-system-takeover existence/metadata + enumeration slots
+# answer from kcdx's unified asset index.
+#
+# The regression proof for the existence/metadata-by-name slots (slots 13/45/67/
+# 68/69/70/92/93 — IsFolder/GetFileSize/IsFileExist/GetFileAttributes/GetFileStat/
+# GetFileSizeOnDisk/GetFileSizeCompressed) and the directory-enumeration slot
+# (slot 14 ForEachFile) flipped THUNK→KCDX this step. Those slots answer from the
+# unified asset index (file-system-takeover design §4.5 + §5): existence = an
+# index hit; size = the entry's size; enumeration walks the index's vpaths for a
+# directory prefix. The slots' index-HIT arms are PURE functions of the resolved
+# ByteSource, so this row tests that resolution + size-derivation core HEADLESS.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-110 shape). The DLL compiles the engine's
+# own asset_index.cpp into itself (standalone, against include/ + the one engine
+# source under test, with standalone stubs for asset_index.cpp's external deps —
+# NormalizeVPath real, the rest link-completeness), builds an AssetIndex by hand,
+# and runs FIVE assertions at kcdxPlugin_Load — all pure CPU, no engine
+# lifecycle dependency:
+#
+#   (a) a vanilla pak vpath resolves with the expected size/compressed/kind;
+#   (b) a loose override WINS over a pak entry at the same vpath (loose-over-pak);
+#   (c) a non-existent vpath MISSES (ResolveVPath == nullptr);
+#   (d) a mixed-case/backslashed query normalizes to the same entry;
+#   (e) the single-level enum prefix-match selects exactly the same-level pak
+#       vpaths under the prefix (not a sub-level, not a sibling).
+#
+# The row:
+#
+#   * cap-114-fs-takeover-metadata-enum  boot-only. PASS requires ALL FIVE: the
+#     index-resolution + size-derivation core the existence/metadata slots' HIT
+#     arms and ForEachFile's index walk rest on is correct.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (a) the vanilla vpath misses, or its kind/size/compressed differ from the
+#     known inserted values; OR
+#   - (b) the pak source still wins after a loose override is inserted at the
+#     same vpath (loose-over-pak precedence broken); OR
+#   - (c) a non-existent vpath returns a non-null ByteSource (a phantom hit); OR
+#   - (d) a mixed-case/backslashed query does NOT resolve to the normalized
+#     entry (the key fold is wrong — a real asset would be missed); OR
+#   - (e) the enum prefix match includes a deeper-subdir or sibling vpath, or
+#     misses a same-level one (the unified-enum delta selection is wrong).
+# Not a tautology: each assertion compares ResolveVPath's / the prefix-match's
+# ACTUAL output against fixed known values; a broken index/derivation yields a
+# wrong verdict, not a pass.
+#
+# Test mode: boot-only (HEADLESS). The row self-verifies at kcdxPlugin_Load via
+# the compiled-in engine asset_index.cpp; NO console gestures, NO save/load, NO
+# in-game action, NO live swapped vtable needed.
+#
+# LIVE-VTABLE-ONLY (NOT asserted by this row — declared, not claimed to run):
+# the FULL slot dispatch — the metadata/enum slot functions' `void* self`
+# member-call entry, the index MISS → slot-1 (kcdx_AdjustFileName) resolve + the
+# OS metadata op, and the ForEachFile per-file callback firing through the
+# object's vtable+0x78 — runs only against the live swapped CCryPak vtable
+# in-game (those paths read the process-lifetime GetBuiltIndex() set at the seat
+# and the captured-original AdjustFileName). They are exercised by the existing
+# live-launch fs-takeover acceptance (the swap going live), confirmed by the
+# FS_META / FS_ENUM first-fire DEBUG markers in kcdx-dev.log on a real launch —
+# this row does not assert that path.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_114_fs_takeover_metadata_enum"
+display_name        = "CAP-114 FS-takeover metadata+enum index resolution"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own asset_index.cpp and asserting the index-resolution + size-derivation core the file-system-takeover existence/metadata slots (13/45/67/68/69/70/92/93) and the enumeration slot (14) answer from — the unified asset index (design §4.5/§5)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-114-fs-takeover-metadata-enum"]
+
+[entrypoints]
+dll = "cap-114.dll"
