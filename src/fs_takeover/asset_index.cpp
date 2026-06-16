@@ -1,5 +1,6 @@
 #include "asset_index.h"
 
+#include <atomic>      // set-once latch for the process-lifetime built index
 #include <cwchar>      // _wcsicmp — case-insensitive .pak extension match
 #include <filesystem>  // vanilla-pak discovery: <gameDataDir>/*.pak
 #include <string>
@@ -139,6 +140,46 @@ const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath
     // resolves it; a later step wires the fall-through). No search, no bisection.
     const auto found = index.find(asset_overlay::NormalizeVPath(vpath));
     return found == index.end() ? nullptr : &found->second;
+}
+
+namespace {
+
+// The process-lifetime built index. Filled once by SetBuiltIndex at the seat,
+// read on every file open by the slot impls (next sub-step) for the life of the
+// process. A function-local static so its storage outlives every caller and is
+// never freed — the same process-lifetime ownership g_kcdxVtable requires (the
+// engine dispatches file calls through the swapped object forever, so what those
+// calls read can never be reclaimed). Empty until SetBuiltIndex runs (a lookup
+// simply misses — no crash).
+AssetIndex& BuiltIndexStore() {
+    static AssetIndex* g_builtIndex = new AssetIndex();  // never freed — process lifetime
+    return *g_builtIndex;
+}
+
+// Set-once latch — SetBuiltIndex takes ownership on the first call only.
+std::atomic<bool> g_builtIndexSet{false};
+
+}  // namespace
+
+void SetBuiltIndex(AssetIndex&& index) {
+    bool expected = false;
+    if (!g_builtIndexSet.compare_exchange_strong(expected, true,
+                                                 std::memory_order_acq_rel)) {
+        // Already set this session — the seat latches its build, so this is the
+        // defensive no-op path. Do NOT overwrite the live store a reader may be
+        // dispatching against.
+        LOG_DEBUG_KV(kCat, "asset_index_set_skipped",
+                     kcdx::log::KV::BareStr("detail",
+                         "SetBuiltIndex called after the index was already set "
+                         "this session — keeping the first (live) index, "
+                         "ignoring the duplicate build"));
+        return;
+    }
+    BuiltIndexStore() = std::move(index);
+}
+
+const AssetIndex& GetBuiltIndex() {
+    return BuiltIndexStore();
 }
 
 }  // namespace kcdx::fs_takeover

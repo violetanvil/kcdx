@@ -1,6 +1,6 @@
 # File-system takeover — kcdx IS the engine filesystem (the settled design)
 
-**Status:** v1.6 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; changelog `file-system-takeover-changelog.md`).
+**Status:** v1.7 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; v1.7 §5 index-build cross-thread sequencing — the seat gates on a dedicated overlay-ready event; changelog `file-system-takeover-changelog.md`).
 **Supersedes:** the asset-resolution *seam* settled in
 [`asset-replacement.md`](asset-replacement.md) §7 (the two-hook
 `AdjustFileName`-replace + `FOpen`-overlay mechanism) — that seam is a PARTIAL
@@ -454,6 +454,29 @@ discovery (the init-cycle takeover, `init-cycle-ownership` memory); vanilla-pak
 discovery (the game's own `Data/*.pak` set + any patch paks) is the additive piece
 — a checkable list (enumerate `<game>/Data/*.pak`), not a runtime-mechanism
 assumption. Stated here as an index-build input the build resolves, not a probe.
+
+**Index-build sequencing — the seat gates on a dedicated overlay-ready event,
+never a timing margin.** The index is built ON THE GAME THREAD, at the CCryPak
+construct-store seat (§4.3 P1), AFTER the worker has finished building the
+overlay map it ingests. The worker (which fills the overlay map in
+`BuildOverlayMap`) and the game thread (which builds the index off that map) are
+INDEPENDENT — parallel by default, with one explicit wait point — so the seat
+could otherwise reach the construct-store site and build the index BEFORE the
+worker finished the overlay map, producing an index missing every loose override.
+The ordering is an explicit cross-thread happens-before edge: the worker SIGNALS
+a **dedicated overlay-ready event** the instant `BuildOverlayMap` returns (the
+RELEASE edge — the overlay map is fully built before the signal); the seat WAITS
+on that event before building the index (the ACQUIRE edge). The event is the
+overlay map's OWN gate (a sibling of the ctor-bracket's ready event, not a reuse)
+so the seat unblocks as early as correctness allows — gated on EXACTLY its
+dependency (the overlay map), not coupled to the later enabled-list build. This
+is the kcdx threading discipline (`init-cycle-ownership` memory; the ctor-bracket
+ready event, the C++-wave-end signal): a cross-thread dependency is gated by an
+explicit event + wait, NEVER by a wall-clock margin (`.claude/rules/concurrency.md`).
+A wait that fails to resolve fails LOUD and the index is not built (no silent
+build against a possibly-empty overlay map). Because the gate is a happens-before
+edge, the engine's first file call — which P1 places AFTER the seat — sees a
+fully-populated index regardless of thread interleaving.
 
 ---
 

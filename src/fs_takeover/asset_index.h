@@ -94,4 +94,28 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir);
 // engine resolves it (the fall-through a later step wires); here, return nullptr.
 const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath);
 
+// === The process-lifetime built index — set once at the seat, read forever ===
+//
+// The seat (seating_hook.cpp, game's main thread, inside CSystem::Init) builds
+// the index ONCE after the overlay-ready gate resolves and stores it here; the
+// resolution/open slots (a later sub-step) read it on every file open for the
+// life of the process. The store mirrors g_kcdxVtable's ownership model
+// (vtable_swap.cpp): a process-lifetime static, filled once, never freed — the
+// index is read on every file call forever, so the storage can never be
+// reclaimed. Producer-only this step: SetBuiltIndex is wired into the seat;
+// GetBuiltIndex exists for the slot impls the NEXT sub-step adds (nothing reads
+// it yet).
+
+// Move the seat-built index into the process-lifetime store. Set-once: the FIRST
+// call takes ownership; a second call is a no-op (the seat latches the build, so
+// this fires exactly once, but the guard keeps it honest). The seat calls this
+// after the overlay-ready gate resolves and BuildAssetIndex returns.
+void SetBuiltIndex(AssetIndex&& index);
+
+// Read the process-lifetime built index. Returns the stored index; before
+// SetBuiltIndex has run it is an empty index (a lookup misses — no crash). The
+// reference is stable for the process lifetime (the store is never freed).
+// Read by the slot impls (next sub-step) on every file open.
+const AssetIndex& GetBuiltIndex();
+
 }  // namespace kcdx::fs_takeover

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <windows.h>  // HANDLE — the overlay-ready cross-thread gate
+
 #include <string>
 #include <unordered_map>
 
@@ -104,5 +106,53 @@ void BuildOverlayMap();
 // Read-only access to the built map (for the resolver hook + the test-bar
 // dev-log observation). Empty until BuildOverlayMap runs.
 const OverlayMap& GetOverlayMap();
+
+// === Overlay-ready cross-thread gate (worker → game thread) =================
+//
+// A dedicated happens-before edge between the WORKER (which builds the overlay
+// map) and the GAME THREAD's filesystem seat (which builds the asset index off
+// GetOverlayMap()). The seat-time asset-index build MUST NOT read an empty
+// overlay map: the worker is fully independent of the main thread (parallel by
+// default, one explicit wait point), so the seat could otherwise reach the
+// CCryPak construct-store site and build the index BEFORE the worker finished
+// BuildOverlayMap. This event is the gate that orders them — release on the
+// worker's signal (overlay map fully built), acquire on the seat's wait. It is
+// a SIBLING of mod_absorb's g_kcdxReadyEvent (the ctor-bracket gate), NOT a
+// reuse: the seat gates on EXACTLY its dependency (the overlay map), so it
+// unblocks as early as correctness allows rather than coupling to the later
+// enabled-list build. Same mechanism — a manual-reset Win32 event, an
+// atomic<HANDLE> with release/acquire ordering — never a timing margin
+// (.claude/rules/concurrency.md; "threads must be CLEARLY GATED, never timed").
+//
+// The event is OWNED by the asset_overlay unit (the producer that signals it),
+// end-to-end: created here, signaled here right after BuildOverlayMap, and read
+// (waited on) by the consumer through GetOverlayReadyEventHandle.
+
+// Create the overlay-ready event. MUST be called once on the worker thread
+// BEFORE InstallSeatingHook — the seat goes live the moment the seating hook is
+// installed, and the game thread can reach the construct-store site shortly
+// after; the handle must already exist so the seat's wait gate observes a
+// non-null handle (the same discipline mod_absorb::CreateReadyEvent uses ahead
+// of InstallCtorBracket). Idempotent — a second call returns immediately.
+// Manual-reset, initially unsignaled; SignalOverlayReady signals it after
+// BuildOverlayMap completes. Logs LOUD on CreateEventW failure and leaves the
+// handle null (the seat's wait gate then falls back to the defensive path).
+void CreateOverlayReadyEvent();
+
+// SetEvent the overlay-ready event — the RELEASE edge. Called on the worker
+// IMMEDIATELY after BuildOverlayMap() returns (the overlay map is fully built
+// before this fires), so a consumer that acquired through the wait observes the
+// complete map. Manual-reset: once signaled it stays signaled, so a seat that
+// arrives after the signal returns from its wait immediately. Logs LOUD on a
+// SetEvent failure or a null handle (CreateOverlayReadyEvent did not run /
+// failed) — never silent. Idempotent in effect (manual-reset).
+void SignalOverlayReady();
+
+// Accessor for the overlay-ready event handle the seat waits on (the ACQUIRE
+// side). Returns the handle CreateOverlayReadyEvent built, or null if it has
+// not run / its CreateEventW failed (already logged loud). Crosses the
+// worker→game boundary; the underlying storage is atomic<HANDLE> with
+// release/acquire ordering.
+HANDLE GetOverlayReadyEventHandle();
 
 }  // namespace kcdx::asset_overlay

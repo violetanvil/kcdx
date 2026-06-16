@@ -51,6 +51,21 @@ constexpr const char* kCat = "ASSET_OVERLAY";
 // the resolver hook first consults it; not mutated after build.
 OverlayMap g_overlayMap;
 
+// The overlay-ready cross-thread gate (worker → game-thread filesystem seat).
+// Manual-reset, initially unsignaled. CreateOverlayReadyEvent (worker, BEFORE
+// InstallSeatingHook) creates the handle and release-stores it; the seat's
+// HookedConstructStore acquire-loads it before waiting. atomic<HANDLE>
+// establishes the happens-before edge so the worker's BuildOverlayMap writes to
+// g_overlayMap are visible to the seat after its wait returns — without relying
+// on hardware memory-model accidents. SignalOverlayReady fires once after
+// BuildOverlayMap; the event stays signaled (manual-reset) for the rest of the
+// session so a seat arriving after the signal returns from its wait at once.
+std::atomic<HANDLE> g_overlayReadyEvent{nullptr};
+
+// One-shot guard for CreateOverlayReadyEvent — the event is created exactly once
+// per session; a second call is a no-op.
+std::atomic<bool> g_overlayReadyCreatedOnce{false};
+
 // Canonical refdb name for the resolution-decision root. Seed row kcdx_id 152
 // (CCryPak_AdjustFileName, vtable slot 1) exists — resolve by NAME, no RVA
 // literal, no new seed row (AP1, no-hardcoded-addresses.md).
@@ -942,5 +957,96 @@ void BuildOverlayMap() {
 }
 
 const OverlayMap& GetOverlayMap() { return g_overlayMap; }
+
+// === Overlay-ready cross-thread gate ========================================
+
+void CreateOverlayReadyEvent() {
+    // Idempotent — a second call is a no-op (created exactly once per session).
+    bool expected = false;
+    if (!g_overlayReadyCreatedOnce.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+
+    // Manual-reset, initially unsignaled. Created HERE — on the worker thread,
+    // BEFORE InstallSeatingHook goes live — so the seat's wait gate observes a
+    // non-null handle the moment the seating hook can fire. If creation were
+    // deferred to SignalOverlayReady (which runs AFTER InstallSeatingHook, after
+    // DiscoverAndLoad), a game-thread seat arriving in the install→build window
+    // would see g_overlayReadyEvent == null, skip the wait, and build the asset
+    // index against a not-yet-built (empty) overlay map. Co-locating creation
+    // with the producer + sequencing it before the install closes that window.
+    HANDLE h = CreateEventW(nullptr, /*manualReset=*/TRUE,
+                            /*initialState=*/FALSE, nullptr);
+    if (!h) {
+        const DWORD err = GetLastError();
+        LOG_ERROR_KV(kCat, "overlay_ready_event_create_failed",
+            kcdx::log::KV::BareStr("stage", "CreateEventW"),
+            kcdx::log::KV("win32_err", (uint64_t)err),
+            kcdx::log::KV::BareStr("detail",
+                "CreateEventW for the overlay-ready gate failed — the "
+                "filesystem seat will skip its wait and build the asset index "
+                "against whatever the overlay map holds at that moment (empty "
+                "if BuildOverlayMap has not run yet). The asset index may be "
+                "missing every loose override this boot."));
+        // Leave g_overlayReadyEvent null; the seat's acquire-load observes null
+        // and falls back to the defensive (no-wait) path.
+        return;
+    }
+
+    // Release-store so the seat's acquire-load on the game thread observes the
+    // fully-initialized handle (cross-thread visibility).
+    g_overlayReadyEvent.store(h, std::memory_order_release);
+
+    LOG_INFO_KV(kCat, "overlay_ready_event_created",
+        kcdx::log::KV("tid", (uint64_t)GetCurrentThreadId()),
+        kcdx::log::KV::BareStr("detail",
+            "overlay-ready gate created (manual-reset, unsignaled) on the "
+            "worker thread BEFORE InstallSeatingHook — the seat's wait gate "
+            "will observe a non-null handle the moment the seating hook can "
+            "fire"));
+}
+
+void SignalOverlayReady() {
+    // The RELEASE edge: SetEvent the overlay-ready gate so a seat that acquired
+    // through its wait observes the fully-built overlay map. Called on the
+    // worker immediately after BuildOverlayMap returns.
+    HANDLE h = g_overlayReadyEvent.load(std::memory_order_acquire);
+    if (!h) {
+        LOG_ERROR_KV(kCat, "overlay_ready_event_missing",
+            kcdx::log::KV::BareStr("detail",
+                "SignalOverlayReady ran with a null overlay-ready handle — "
+                "CreateOverlayReadyEvent was not called before this point (or "
+                "its CreateEventW failed and was already logged). The seat's "
+                "wait gate falls back to the defensive (no-wait) path; if the "
+                "seat races ahead of this build, the asset index is built "
+                "against an empty overlay map."));
+        return;
+    }
+
+    if (SetEvent(h)) {
+        LOG_INFO_KV(kCat, "overlay_map_built_signaled",
+            kcdx::log::KV("entries", (uint64_t)g_overlayMap.size()),
+            kcdx::log::KV::BareStr("detail",
+                "overlay map built; signaled overlay-ready — the filesystem "
+                "seat may now build the asset index (it reads GetOverlayMap "
+                "after acquiring this gate)"));
+    } else {
+        const DWORD err = GetLastError();
+        LOG_ERROR_KV(kCat, "overlay_ready_event_signal_failed",
+            kcdx::log::KV::BareStr("stage", "SetEvent"),
+            kcdx::log::KV("win32_err", (uint64_t)err),
+            kcdx::log::KV::BareStr("detail",
+                "SetEvent on the overlay-ready gate failed — the seat's wait "
+                "will not be released by this signal; with INFINITE it would "
+                "block forever, so the seat treats a wait failure as a loud "
+                "degradation (it does not build the index against a possibly-"
+                "empty overlay map silently)."));
+    }
+}
+
+HANDLE GetOverlayReadyEventHandle() {
+    return g_overlayReadyEvent.load(std::memory_order_acquire);
+}
 
 }  // namespace kcdx::asset_overlay

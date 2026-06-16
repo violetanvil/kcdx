@@ -308,6 +308,22 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // its targets by curated name (after RefdbOpened above). Independent of the
     // ctor bracket — a distinct site, a distinct hook (the bracket replaces the
     // ModManager ctor; this lets the CCryPak helper run and only swaps).
+    //
+    // Create the overlay-ready gate NOW — BEFORE InstallSeatingHook below, for
+    // the SAME reason CreateReadyEvent precedes InstallCtorBracket above: the
+    // seat goes live the instant InstallSeatingHook returns, and the game thread
+    // can reach the CCryPak construct-store site shortly after. The seat (inside
+    // CSystem::Init, on the game's main thread) WAITS on this gate before
+    // building the asset index — the index build reads the overlay map, which
+    // this worker fills in BuildOverlayMap (later, inside DiscoverAndLoad). If
+    // the event were created later, a seat arriving in the install→build window
+    // would observe a null handle, skip the wait, and build the index against an
+    // empty overlay map. CreateOverlayReadyEvent + InstallSeatingHook are paired
+    // on this same worker thread; SignalOverlayReady fires right after
+    // BuildOverlayMap (inside DiscoverAndLoad below). A SIBLING of the ctor
+    // bracket's g_kcdxReadyEvent, NOT a reuse — the seat gates on EXACTLY its
+    // dependency (the overlay map), unblocking as early as correctness allows.
+    kcdx::asset_overlay::CreateOverlayReadyEvent();
     kcdx::fs_takeover::InstallSeatingHook();
 
     // Register the deferred-apply handlers for the registry Kinds the C++

@@ -7,8 +7,11 @@
 
 #include "MinHook.h"
 
+#include "asset_index.h"
 #include "vtable_swap.h"
+#include "../asset_overlay.h"
 #include "../log.h"
+#include "../paths.h"
 #include "../refdb.h"
 
 namespace kcdx::fs_takeover {
@@ -43,6 +46,16 @@ std::atomic<ConstructStoreFn_t> g_originalHelper{nullptr};
 // idempotent anyway (SwapVtableOnObject re-swaps but never rebuilds), but the
 // latch keeps the post-publish swap to the first, race-free, publish.
 std::atomic<bool> g_swapped{false};
+
+// One-shot: the asset index is built + stored exactly once, after the swap
+// takes, on the first publish — mirroring g_swapped. The index build is cold
+// (cold path, at load — asset_index.h §5; memory.md allows allocation off the
+// hot path). A re-fire of the single-call helper does not rebuild.
+std::atomic<bool> g_indexBuilt{false};
+
+// Defined below HookedConstructStore (which calls it): gate on overlay-ready,
+// then build + store the asset index.
+void BuildAssetIndexAtSeat();
 
 // Read the published CCryPak pointer from the global pCryPak slot. The slot's
 // VA is resolved by curated name (its row carries the gEnv+0x50 offset, so no
@@ -111,7 +124,99 @@ void __fastcall HookedConstructStore(void* csystem) {
                 "FS_TAKEOVER error for the reason) — kcdx does NOT own the "
                 "engine filesystem this boot; boot proceeds with the engine's "
                 "own CCryPak vtable."));
+        // No swap → no kcdx dispatch → no asset index needed this boot. The
+        // slots stay the engine's; skip the index build entirely.
+        return;
     }
+
+    // The swap took. Build the asset index BEFORE returning — the engine's first
+    // file call through the swapped object comes AFTER this helper returns (P1:
+    // the construct-store store point PRECEDES the first *(gEnv+0x50) file call),
+    // so the index must exist by the time this callback returns. Build exactly
+    // once (g_indexBuilt latch, mirroring g_swapped).
+    bool indexExpected = false;
+    if (g_indexBuilt.compare_exchange_strong(indexExpected, true,
+                                             std::memory_order_acq_rel)) {
+        BuildAssetIndexAtSeat();
+    }
+}
+
+// Gate on the overlay-ready event, then build + store the asset index. The seat
+// (game's main thread) must NOT build the index off an empty overlay map: the
+// worker fills the overlay map in BuildOverlayMap and SIGNALS overlay-ready
+// after it; this WAITS on that gate (the ACQUIRE edge — an explicit
+// happens-before edge, never a timing margin; concurrency.md). INFINITE is
+// correct: the worker WILL signal unless it hangs entirely (same as the ctor
+// bracket's wait). On a wait failure the index is NOT built against a possibly-
+// empty overlay map — that degradation is logged LOUD (AP14), never silent.
+void BuildAssetIndexAtSeat() {
+    HANDLE gate = kcdx::asset_overlay::GetOverlayReadyEventHandle();
+    if (!gate) {
+        // CreateOverlayReadyEvent did not run / its CreateEventW failed (already
+        // logged loud at creation). Without the gate the seat cannot know the
+        // overlay map is complete — building the index now risks an empty
+        // overlay map. Fail loud + skip the build (AP14: no silent vanilla-only
+        // index).
+        LOG_ERROR_KV(kCat, "seat_index_no_gate",
+            kcdx::log::KV::BareStr("detail",
+                "the overlay-ready gate handle is null at the seat — "
+                "CreateOverlayReadyEvent did not run before InstallSeatingHook "
+                "(or its CreateEventW failed, already logged). The asset index "
+                "is NOT built (it could only be built against a possibly-empty "
+                "overlay map); kcdx's file slots will resolve nothing this boot "
+                "until the index exists. This is a loud degradation, not a "
+                "silent vanilla-only index."));
+        return;
+    }
+
+    LOG_INFO_KV(kCat, "seat_index_wait_enter",
+        kcdx::log::KV::BareStr("detail",
+            "waiting on overlay-ready gate (INFINITE) before building the asset "
+            "index — the worker signals it right after BuildOverlayMap, so this "
+            "blocks only until the overlay map is complete (typically already "
+            "signaled by the time the seat reaches here)."));
+
+    const DWORD wr = WaitForSingleObject(gate, INFINITE);
+    if (wr != WAIT_OBJECT_0) {
+        // INFINITE should only ever return WAIT_OBJECT_0 or WAIT_FAILED. A
+        // failure means the gate did not resolve — do NOT build the index
+        // against a possibly-empty overlay map (AP14).
+        LOG_ERROR_KV(kCat, "seat_index_gate_failed",
+            kcdx::log::KV("wait_result", (uint64_t)wr),
+            kcdx::log::KV("win32_err", (uint64_t)GetLastError()),
+            kcdx::log::KV::BareStr("detail",
+                "WaitForSingleObject on the overlay-ready gate did not return "
+                "WAIT_OBJECT_0 — the asset index could NOT be built because the "
+                "overlay-ready gate did not resolve. The index is NOT built (no "
+                "silent build against a possibly-empty overlay map); kcdx's file "
+                "slots resolve nothing this boot. Loud degradation, not a silent "
+                "vanilla-only index."));
+        return;
+    }
+
+    // Gate resolved — the overlay map is complete. Build the full index over
+    // <game-root>/Data and store it process-lifetime where the slot impls read
+    // it (the next sub-step wires the slots). BuildAssetIndex emits its own
+    // "asset_index_built" DEBUG summary (entry/pak/loose counts).
+    LOG_INFO_KV(kCat, "seat_index_building",
+        kcdx::log::KV::BareStr("detail",
+            "overlay-ready; building asset index over <game-root>/Data (the "
+            "overlay map is complete — loose overrides will overwrite their pak "
+            "entries)."));
+
+    const std::wstring dataDir =
+        (kcdx::paths::GameRootDirPath() / L"Data").wstring();
+    AssetIndex index = BuildAssetIndex(dataDir);
+    const size_t entryCount = index.size();
+    SetBuiltIndex(std::move(index));
+
+    LOG_INFO_KV(kCat, "seat_index_stored",
+        kcdx::log::KV("entries", (uint64_t)entryCount),
+        kcdx::log::KV::BareStr("detail",
+            "asset index built + stored at seat (process-lifetime) — kcdx's "
+            "file slots will resolve against it on every open. The first engine "
+            "file call through the swapped object (which follows this helper's "
+            "return) sees the complete index."));
 }
 
 }  // namespace

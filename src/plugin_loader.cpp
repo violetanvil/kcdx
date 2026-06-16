@@ -879,6 +879,16 @@ void DiscoverAndLoad(const std::wstring& pluginsDir) {
     // and far before any menu/save asset read consults it.
     kcdx::asset_overlay::BuildOverlayMap();
 
+    // Signal the overlay-ready gate — the RELEASE edge. BuildOverlayMap has just
+    // returned, so the overlay map is fully built; SetEvent here lets the
+    // filesystem-takeover seat (game's main thread, inside CSystem::Init) return
+    // from its wait and build the asset index off a COMPLETE overlay map. An
+    // explicit happens-before edge (the same mechanism as g_kcdxReadyEvent),
+    // never a wall-clock margin. BuildOverlayMap is the last mutation of the
+    // overlay map this boot (it is built once, here; GetOverlayMap is stable
+    // after), so signaling right after it returns is the correct release point.
+    kcdx::asset_overlay::SignalOverlayReady();
+
     // Step 7 — Lifecycle: fire kcdxMessage_PostLoad, then kcdxMessage_PostPostLoad.
     // Plugin B's PostLoad handler can confirm plugin A is loaded (its Load
     // returned). Plugin B's PostPostLoad handler can confirm plugin A's

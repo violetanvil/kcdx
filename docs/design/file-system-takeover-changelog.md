@@ -3,6 +3,33 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.7 §5 pins the index-build cross-thread sequencing: the seat gates on a dedicated overlay-ready event
+
+- **What this settles (a sequencing gap §5 left open, surfaced at the step-3.2
+  build):** §5 said the index is "built at load" but did NOT pin the cross-thread
+  ordering between the worker (which builds the overlay map the index ingests) and
+  the game thread (which builds the index at the construct-store seat, §4.3 P1).
+  The two are independent (parallel by default, one wait point), so the seat could
+  build the index before the worker finished the overlay map — an index missing
+  every loose override.
+- **The settled resolution:** the worker SIGNALS a **dedicated overlay-ready
+  event** immediately after `BuildOverlayMap` returns (release edge); the seat
+  WAITS on that event before building the index (acquire edge) — an explicit
+  happens-before edge, never a timing margin (`.claude/rules/concurrency.md`; the
+  kcdx threads-must-be-gated discipline). A DEDICATED event (a sibling of the
+  ctor-bracket's `g_kcdxReadyEvent`, NOT a reuse) so the seat gates on EXACTLY its
+  dependency (the overlay map) and unblocks as early as correctness allows. A wait
+  that fails to resolve fails LOUD; the index is not built against a possibly-empty
+  overlay map. The first engine file call (which P1 places after the seat) sees a
+  fully-populated index regardless of interleaving.
+- **§5 addendum** records the model (a new paragraph after the `assumes`
+  vanilla-pak-discovery note). The event is OWNED by the asset-overlay unit (the
+  producer that signals it): created on the worker before `InstallSeatingHook`,
+  signaled right after `BuildOverlayMap`, waited on by the seat.
+- **No scope change:** this pins an ordering the design already implied ("built at
+  load", the index ingests the overlay map); it adds no deferral and narrows
+  nothing.
+
 ## 2026-06-15 — v1.6 §5 states the COMPLETE resolution model: kcdx owns every FOpen, not just indexed assets
 
 - **The defect this fixes (a design-text trap, caught at the step-3.2 build audit):**
