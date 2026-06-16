@@ -1,0 +1,80 @@
+# CAP-113 — kcdx owns the full open->read->close lifecycle on its own CRT.
+#
+# The end-to-end regression proof for the file-system-takeover open+read slot
+# cutover (file-system-takeover design §4.4/§4.5/§5/§9): kcdx resolves every name,
+# mints a kcdx HANDLE-ID (an odd-tagged integer opaque to the engine), and reads
+# every byte on kcdx's own statically-linked CRT — structurally removing the
+# cross-CRT FILE* crash class. cap-112 proved the index RESOLVES a vpath; this
+# proves the LIFECYCLE through the ACTUAL kcdx slot impls (kcdx_FOpen /
+# kcdx_FOpenRaw / the read family / kcdx_FClose).
+#
+# Shape: NATIVE C++ DLL plugin (the cap-112 standalone-stub shape, extended) —
+# the DLL compiles the engine's own open_slots.cpp + read_slots.cpp +
+# file_handle.cpp (the slot impls + the handle pool) + asset_index.cpp +
+# pak_reader.cpp + vendored miniz.c into itself, with a log-sink stub for
+# kcdx::log AND an overlay-SEAM stub (NormalizeVPath + GetOverlayMap + a test-only
+# SetTestOverlayMap driver). Every engine TU is byte-identical between the engine
+# and this build — the stubs supply only the log + overlay seams, not the slot
+# logic under test. It runs four checks at kcdxPlugin_Load — file reads + pure CPU
+# + pool ops, no engine lifecycle dependency:
+#
+#   (1) PAK FULL LIFECYCLE: resolve a known vanilla pak vpath -> kcdx_FOpen mints
+#       a kcdx handle (IsKcdxHandle) -> read the FULL entry through the kcdx read
+#       family -> the bytes are byte-correct (CRC-32 of the read-back == the
+#       entry's CDR-recorded CRC-32, computed independently with mz_crc32) ->
+#       kcdx_FClose. STORED oracle: GeomCaches.pak entry[0]
+#       (Objects/manmade/common_decorations/flags/flag.cax, size 352571,
+#       crc 0xd7b807ab). A DEFLATE sub-check additionally runs the same lifecycle
+#       on a method-8 entry (the inflate path) when one is found in the CDR.
+#   (2) LOOSE FULL LIFECYCLE: a synthetic loose override (a temp file of 256 known
+#       bytes, keyed to a synthetic vpath) -> kcdx_FOpen mints a kcdx handle ->
+#       read back -> the bytes match what was written -> close. Proves the Loose
+#       arm opens + reads on kcdx's CRT (_wfopen_s / fread / fclose).
+#   (3) FOpenRaw (slot 35) MINTS + RESOLVES: kcdx_FOpenRaw on the same pak vpath
+#       with a caller outResolvedBuf returns a kcdx handle AND writes the resolved
+#       name into the buffer.
+#   (4) BAD-HANDLE FAILS LOUD: a foreign (fabricated even-tagged) handle + a
+#       freshly-closed handle return the documented fail value across the read
+#       family (0 bytes / non-zero seek / -1 tell / non-zero close), never a
+#       success-shaped wrong-bytes result.
+#
+# The row:
+#
+#   * cap-113-fs-takeover-lifecycle  boot-only. PASS requires ALL of (1)-(4); the
+#     reason names which sub-check failed (cap-112's folded-row shape).
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (1) kcdx_FOpen returns 0 / a non-kcdx handle for the vanilla pak vpath, the
+#     read family returns a wrong byte count, OR the read-back CRC-32 mismatches
+#     the CDR-recorded CRC-32 (a wrong seek/inflate/copy), OR
+#   - (2) the loose override does not open / returns a non-kcdx handle / the read
+#     bytes differ from the written bytes, OR
+#   - (3) kcdx_FOpenRaw returns 0 / a non-kcdx handle, OR leaves outResolvedBuf
+#     untouched, OR
+#   - (4) a foreign or closed handle yields a success-shaped return from any read-
+#     family op, OR
+#   - the fixture pak / Data dir is absent at the known path (reported FAIL with a
+#     clear reason — never a silent skip, never a crash).
+# Not a tautology: each claim asserts an outcome a broken open/read/close path
+# would get WRONG — a miss-tagged handle, a wrong byte count, a CRC mismatch, a
+# success-shaped bad-handle return.
+#
+# Test mode: boot-only. The row self-verifies at kcdxPlugin_Load; the aggregator
+# emits the matrix line on the engine lifecycle messages. NO console gestures, NO
+# save/load, NO in-game action.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_113_fs_takeover_lifecycle"
+display_name        = "CAP-113 fs-takeover lifecycle"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own open/read slot impls (open_slots.cpp + read_slots.cpp + file_handle.cpp) + the asset index + pak reader + vendored miniz, asserting the full open->read->close lifecycle on kcdx's own CRT: a vanilla pak asset opens via kcdx_FOpen (mints a kcdx handle-id) and reads byte-correct; a loose override opens+reads on kcdx's CRT; FOpenRaw mints+resolves; a foreign/closed handle fails loud."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-113-fs-takeover-lifecycle"]
+
+[entrypoints]
+dll = "cap-113.dll"
