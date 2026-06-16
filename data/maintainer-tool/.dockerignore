@@ -1,0 +1,42 @@
+# kcdx maintainer-tool -- Docker build-context exclusions (step 16b).
+#
+# The build context is data/maintainer-tool/. The two stages COPY only:
+#   stage 1 -- frontend/package.json + frontend/package-lock.json, then frontend/
+#   stage 2 -- backend/requirements.txt, then backend/
+# Everything excluded here is host build/cache cruft, a secret, or a stale artifact
+# that stage 1 rebuilds fresh. Keep the context tight -- it carries only what the
+# COPYs need.
+
+# --- frontend: never ship host deps or a host-built bundle into the context ---
+frontend/node_modules
+# stage 1 rebuilds dist/ from source -- a host-built dist/ would be a silent
+# stale-bundle foot-gun (the rejected pre-built-COPY fork, step-16 doc).
+frontend/dist
+# the nested repo's git dir (frontend/ is a separate gitignored repo, D23).
+frontend/.git
+
+# --- backend: build/cache cruft + the local virtualenv + the test suite ---
+backend/.venv
+backend/__pycache__
+backend/**/__pycache__
+backend/**/*.pyc
+backend/.pytest_cache
+# the test suite need not ship in the runtime image (the container serves the app;
+# pytest is dev-only). Excluding it keeps the runtime image lean.
+backend/tests
+
+# --- secrets / env files: never enter the build context (security-invariants.md) ---
+# the push credential is env-injected at RUN, never read from a context file.
+**/.env
+**/.env.*
+*.pem
+*.key
+
+# --- misc host cruft ---
+**/.DS_Store
+**/*.log
+# the docker docs dir is operator-facing reference, not part of either stage's COPY.
+docker/
+# the Dockerfile + this file are not COPYed into either stage.
+Dockerfile
+.dockerignore

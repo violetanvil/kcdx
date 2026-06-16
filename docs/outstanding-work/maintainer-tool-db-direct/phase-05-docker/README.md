@@ -22,8 +22,8 @@ agent reads the `ACCEPT-SUITE` result (`.claude/rules/acceptance-signal.md` / `h
 
 | Step | Status | Commit |
 |---|---|---|
-| 16 backend static-serving — uvicorn serves the built frontend `dist/` as the SPA + the API (single image, same-origin); API routes keep priority, deep-link fallback to `index.html`. pytest-gated (agent-run) | DONE | (pending) |
-| 16b Docker image + env/volume contract — multi-stage Dockerfile (in-image `npm ci && npm run build` of the nested frontend → backend runtime + copied `dist/`) + `.dockerignore` + the documented env-var/volume/`git lfs` contract (D14/D18) | NOT STARTED | — |
+| 16 backend static-serving — uvicorn serves the built frontend `dist/` as the SPA + the API (single image, same-origin); API routes keep priority, deep-link fallback to `index.html`. pytest-gated (agent-run, 88 passed) | DONE | 079774d |
+| 16b Docker image + env/volume contract — multi-stage Dockerfile (in-image `npm ci && npm run build` of the nested frontend → backend runtime + copied `dist/`) + `.dockerignore` + the documented env-var/volume/`git lfs` contract (D14/D18). Single image (node:22.12 + python:3.12 slim, pinned); `ENV KCDX_STATIC_DIR=/app/static`; uvicorn `0.0.0.0:8000`; token run-injected, never baked. step-review PROCEED (no Docker daemon here — `docker build` is 16c's user gate) | DONE | (pending) |
 | 16c container smoke test — `docker build` + run with a mounted test checkout + a throwaway local bare remote (the `KCDX_PUSH_TOKEN` seam); asserts API+frontend serve, a read returns the curated set, a save commits+pushes; emits `ACCEPT-RESULT`/`ACCEPT-SUITE` (user-run gate, agent reads) | NOT STARTED | — |
 
 A top-level Step 5 / the sequence-ledger row flips DONE when 16 + 16b + 16c are DONE (16c's
