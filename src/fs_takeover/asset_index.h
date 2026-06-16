@@ -46,8 +46,18 @@ struct ByteSource {
     // Offset of the entry's LOCAL FILE HEADER from the pak's start
     // (PakEntry::local_header_offset). ReadPakEntry seeks here.
     uint64_t offset = 0;
-    // Uncompressed size of the entry (PakEntry::uncompressed_size).
+    // Uncompressed size of the entry (PakEntry::uncompressed_size). The size the
+    // read family reports + the inflate target buffer size.
     uint64_t size = 0;
+    // STORED/COMPRESSED size of the entry (PakEntry::compressed_size) — how many
+    // bytes ReadPakEntry reads from the data start before inflating. REQUIRED to
+    // read a DEFLATE entry (it differs from `size`); a STORED entry has
+    // compressed == uncompressed. The open+read cutover (step 3.2) reads this to
+    // serve a vanilla pak entry — without it a DEFLATE read would read the wrong
+    // byte count. (§5 lists the ByteSource pak fields illustratively; §6's
+    // "kcdx reads the pak entry itself" REQUIRES the compressed extent — this
+    // field completes the §6 invariant, it does not add scope.)
+    uint64_t compressed = 0;
     // PKZIP compression method: 0 = STORED, 8 = DEFLATE (PakEntry::method).
     uint16_t method = 0;
     // CRC-32 of the uncompressed bytes (PakEntry::crc32).

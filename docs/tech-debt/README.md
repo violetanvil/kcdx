@@ -43,6 +43,7 @@ engine capability (`FIX-A`, `Phase-11`), or a named source-fix mechanism.
 | [TD-0012](TD-0012-statement-carrier-conflict-engine-footprint.md) | 2026-06-11 | Open | statement carriers bypass the conflict engine (not in g_patches) — a statement-vs-statement clobber rejects loud but UNNAMED; conflict report omits statement writes (KI-0017 fork-3; the loud reject already prevents silent clobber) | the next statement-surface or conflict-engine cycle registers a WriteFootprint for the statement carrier |
 | [TD-0013](TD-0013-lua-early-stop-window-law-fixture.md) | 2026-06-11 | Open | behavior window-law wall built (9.5 P1 s4) but its LUA early-stop trip has no caller — no Lua early stop exists; the Lua out-of-window fixture leg is bucket-2 deferred (C++ leg rides P2 s2) | Phase 11 P5's lua_before slot lands; then the Lua early-stop out-of-window fixture leg is written + this TD closed |
 | [TD-0014](TD-0014-outfit-swap-catalog-entry-deferred.md) | 2026-06-12 | Open | the canonical address-backed catalog case study `kcdx.behavior.outfit_swap_in_combat` is not in the v1 (console-driven) catalog | a future cycle builds the byte-patch catalog entry (fact verified — DB id 5, no AP18) |
+| [TD-0015](TD-0015-pak-asset-modification-time-zero.md) | 2026-06-15 | Open | slot-66 FGetModificationTime returns 0 for a PAK source (loose arm returns real mtime); DOS time is in the CDR but not threaded through the index | a confirmed consumer of a pak asset's mtime; then thread DOS time → CDR parse + ByteSource + slot-66 pak arm |
 
 ## Closed
 

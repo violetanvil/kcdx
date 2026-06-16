@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "vtable_table.h"
+#include "open_slots.h"  // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
 #include "../log.h"
 #include "../test.h"
 
@@ -38,25 +39,26 @@ constexpr size_t kVtablePtrOffset = 0x00;
 void* g_kcdxVtable[kCCryPakSlotCount] = {0};
 std::atomic<bool> g_vtableBuilt{false};
 
-// The captured original FOpen body (slot kSlotFOpen) — the marker thunks
-// through to it. Captured from the live object's original vtable at swap time.
-// A member-call shape: (this, pName, szMode, nFlags) → file handle.
-using FOpenFn_t = void* (*)(void* self, const char* pName, const char* szMode,
-                            uint32_t nFlags);
-std::atomic<FOpenFn_t> g_originalFOpen{nullptr};
+// The original AdjustFileName body (slot kSlotAdjustFileName), captured from the
+// live object's original vtable at swap time and handed to the slot-1 impl
+// (open_slots) for its index-MISS resolution thunk (§5). Member-call shape:
+// (this, pName, outBuf, nFlags) → resolved path string.
+using AdjustFileNameFn_t = void* (*)(void* self, const char* pName, void* outBuf,
+                                     uint32_t nFlags);
 
-// One-shot latch for the seating marker: FOpen is hot, so the marker logs +
-// reports exactly once (the FIRST fire), never per-call.
+// One-shot latch for the seating marker: FOpen is hot, so the marker emits the
+// cap-108 signal exactly once (the FIRST fire), never per-call.
 std::atomic<bool> g_markerFired{false};
 
 }  // namespace
 
-// Slot-36 impl: the seating marker. On its FIRST fire it logs + self-reports
-// the seating row PASS (the engine dispatched into kcdx — the swap is
-// live), then forwards to the captured original FOpen so the engine's open
-// behaves exactly as vanilla. Every subsequent fire is a straight thunk (the
-// latch is already set) — zero added per-call cost beyond one relaxed atomic
-// load.
+// Slot-36 impl: the seating marker IN FRONT OF the real kcdx FOpen. On its FIRST
+// fire it logs + self-reports the cap-108 seating row PASS (the engine
+// dispatched into kcdx — the swap is live), then on EVERY fire delegates to the
+// real kcdx FOpen impl (open_slots.cpp — resolve via the index, open on kcdx's
+// CRT, mint a kcdx handle). The marker is a thin first-fire shim, NOT a thunk to
+// the original — slot 36 is a real kcdx open. Per-call cost beyond the first is
+// one relaxed atomic load + the real open.
 void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
                       uint32_t nFlags) {
     bool expected = false;
@@ -69,8 +71,9 @@ void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
                 "slot 36 (FOpen) dispatched into kcdx on the first vanilla "
                 "open — the vtable swap on the CCryPak object is LIVE; the "
                 "engine reads kcdx's vtable pointer and routes file calls "
-                "into kcdx. The marker now thunks through to the original "
-                "FOpen body so the open behaves exactly as vanilla."),
+                "into kcdx. The marker now delegates to the real kcdx FOpen "
+                "(resolve via the index, open on kcdx's CRT, mint a kcdx "
+                "handle) — slot 36 is a real kcdx open, not a thunk."),
             kcdx::log::KV::BareStr("first_vpath", pName ? pName : "<null>"));
 
         // The marker firing during boot also evidences the thunked slots: the
@@ -82,21 +85,13 @@ void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
             "kcdx) and boot reached the first open through thunked slots");
     }
 
-    // Thunk through to the captured original body — the marker is marker-THEN-
-    // thunk, never a replacement. If the original was somehow not captured
-    // (cannot happen on a completed swap), fail loud rather than return a
-    // silent null handle.
-    FOpenFn_t orig = g_originalFOpen.load(std::memory_order_acquire);
-    if (!orig) {
-        LOG_ERROR_KV(kCat, "marker_no_original",
-            kcdx::log::KV::BareStr("detail",
-                "slot-36 marker fired but the captured original FOpen body is "
-                "null — the swap completed without capturing the original "
-                "(a programming error). Returning null; the engine sees a "
-                "failed open rather than a silently broken handle."));
-        return nullptr;
-    }
-    return orig(self, pName, szMode, nFlags);
+    // Delegate to the real kcdx FOpen — EVERY fire (the cap-108 signal is the
+    // only first-fire-only work). The real impl resolves via the unified index,
+    // opens the byte-source on kcdx's CRT, and mints a kcdx handle-id (§5: every
+    // FOpen mints a kcdx handle — asset, non-asset, write alike). 0 = a failed
+    // open (loud in the impl), which the engine reads as a null open exactly as
+    // its own FOpen returns null — never a silent broken handle (AP14).
+    return kcdx_FOpen(self, pName, szMode, nFlags);
 }
 
 bool SwapVtableOnObject(void* pCryPak) {
@@ -140,12 +135,17 @@ bool SwapVtableOnObject(void* pCryPak) {
             if (row.impl == Impl::Kcdx) {
                 g_kcdxVtable[i] = row.kcdx_fn;
                 ++kcdxOwned;
-                // Capture the original body the slot-36 marker thunks through
-                // to, from the live object's original vtable at this slot.
-                if (row.slot == kSlotFOpen) {
-                    g_originalFOpen.store(
-                        reinterpret_cast<FOpenFn_t>(originalVtable[row.slot]),
-                        std::memory_order_release);
+                // Capture the ORIGINAL AdjustFileName body (slot 1) for the
+                // slot-1 impl's index-MISS resolution thunk (§5 — the safe
+                // long-tail resolution: a string, no handle, no CRT). This is
+                // the ONE captured-original a KCDX slot needs this cutover; the
+                // open slots (35/36) and the read slots (38..66) are FULL impls
+                // that operate kcdx handles — they need no original. (Mirrors how
+                // the prior spike captured slot 36's original; the captured slot
+                // moves from 36 to 1 because slot 36 is now a full impl.)
+                if (row.slot == kSlotAdjustFileName) {
+                    SetOriginalAdjustFileName(reinterpret_cast<AdjustFileNameFn_t>(
+                        originalVtable[row.slot]));
                 }
             } else {
                 // THUNK: forward to the engine's original body for this slot.
@@ -157,9 +157,12 @@ bool SwapVtableOnObject(void* pCryPak) {
             kcdx::log::KV("kcdx_owned", static_cast<uint64_t>(kcdxOwned)),
             kcdx::log::KV::BareStr("detail",
                 "built the kcdx CCryPak vtable from the per-slot table — every "
-                "THUNK slot points at the engine's original body (captured "
-                "from the live object), the one KCDX slot (36, FOpen) points "
-                "at the kcdx seating marker"));
+                "THUNK slot points at the engine's original body (captured from "
+                "the live object); the KCDX slots (the open family 1/35/36 + the "
+                "read family 38/39/40/41/43/44/46/47/53/54/55/56/57/58/59/66) "
+                "point at the kcdx impls. kcdx owns every file open + read on "
+                "its own CRT; the slot-1 original is captured for the index-miss "
+                "resolution thunk."));
     }
 
     // The swap: write the kcdx vtable's address into [pCryPak+0x00] on the

@@ -13,11 +13,16 @@
 // rows. A reviewer checks that nothing downstream hardcodes "slot N is the
 // engine's" or "slot N is kcdx's" — the table is the sole source of that fact.
 //
-// THIS spike: all 102 rows are THUNK except slot 36 (FOpen), which is
-// KCDX(&kcdx_fopen_marker) — a one-shot marker-then-thunk that proves the swap
-// is live (the engine dispatched into kcdx). The real per-slot impls (the file
-// family) are a later build; the table SCAFFOLD here is permanent (it is filled
-// in, not replaced).
+// THE OPEN+READ CUTOVER (step 3.2): the OPEN family (slots 1/35/36) and the
+// READ family (slots 38/39/40/41/43/44/46/47/53/54/55/56/57/58/59/66) are KCDX
+// — kcdx owns every file open + read on its own CRT (design §4.4/§4.5/§5). Every
+// other slot stays THUNK (the pure-internal plumbing). The slot-36 row carries
+// KcdxFOpenMarker, which fires the cap-108 seating signal on its first fire then
+// delegates to the real kcdx FOpen impl (open_slots.cpp) — so the seating row
+// stays PASS while slot 36 is a real kcdx open. The §4.4 load-bearing
+// constraint: every handle-operating READ slot MUST be KCDX, never THUNK (a
+// thunked read slot would fread the kcdx handle-id on the ENGINE's CRT — the
+// cross-CRT straddle the takeover removes).
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +40,12 @@ constexpr size_t kCCryPakSlotCount = 102;
 // game-binary target — verified by static analysis of the binary's vtable
 // surface, not assumed from a header.
 constexpr size_t kSlotFOpen = 36;
+
+// Slot 1 = AdjustFileName, the resolution chokepoint. The swap captures its
+// ORIGINAL body (the same way it captures slot 36's original) for kcdx's slot-1
+// impl to thunk through on an index MISS (the §5 long-tail resolution). A vtable
+// slot INDEX (table data), not a game-binary target.
+constexpr size_t kSlotAdjustFileName = 1;
 
 // How a slot is served in the built kcdx vtable.
 enum class Impl {
@@ -60,11 +71,14 @@ struct SlotRow {
     void*       kcdx_fn;
 };
 
-// The slot-36 kcdx impl for this spike: logs a one-shot marker on its first
-// fire, then forwards to the captured original FOpen body. Defined in
-// vtable_swap.cpp (it needs the captured-original storage the swap owns).
-// Signature mirrors the engine's FOpen as the swap dispatches it — a member
-// call shape: (this, pName, szMode, nFlags) returning the file handle.
+// The slot-36 kcdx impl: on its FIRST fire it emits the cap-108 seating signal
+// (the swap is live — the engine dispatched into kcdx), then on EVERY fire it
+// delegates to the real kcdx FOpen impl (open_slots.cpp kcdx_FOpen — resolve via
+// the index, open on kcdx's CRT, mint a kcdx handle). The seating marker is now
+// the cap-108 first-fire shim in front of the real open (NOT a thunk to the
+// original — slot 36 is a real kcdx open). Defined in vtable_swap.cpp (it owns
+// the cap-108 marker latch + report). Member-call shape: (this, pName, szMode,
+// nFlags) returning the kcdx handle-id.
 void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
                       uint32_t nFlags);
 

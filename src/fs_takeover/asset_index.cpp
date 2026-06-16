@@ -84,10 +84,11 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir) {
                 ByteSource src;
                 src.kind    = ByteSource::Kind::Pak;
                 src.pakFile = pakPath;
-                src.offset  = pe.local_header_offset;
-                src.size    = pe.uncompressed_size;
-                src.method  = pe.method;
-                src.crc     = pe.crc32;
+                src.offset     = pe.local_header_offset;
+                src.size       = pe.uncompressed_size;
+                src.compressed = pe.compressed_size;  // the byte count ReadPakEntry reads (DEFLATE != size)
+                src.method     = pe.method;
+                src.crc        = pe.crc32;
                 // LAST-pak-wins on a vanilla-vs-vanilla collision: operator[]
                 // INSERTS-OR-OVERWRITES, so a later pak in iteration order
                 // replaces an earlier one at the same vpath. This is a

@@ -319,6 +319,9 @@ add_library(kcdx SHARED
     src/fs_takeover/seating_hook.cpp
     src/fs_takeover/pak_reader.cpp
     src/fs_takeover/asset_index.cpp
+    src/fs_takeover/file_handle.cpp
+    src/fs_takeover/open_slots.cpp
+    src/fs_takeover/read_slots.cpp
     src/version_compat.cpp
     src/refdb.cpp
     src/blake3.cpp
