@@ -114,6 +114,7 @@ from seeds_shared import (   # noqa: E402,F401
     check_every_entity_covered,
     check_survival_derives_from_known,
     check_address_version_intervals,
+    check_live_entity_has_open_interval,
     resolve_and_check_name_refs,
     check_supersession_acyclic,
     resolve_version,
@@ -614,6 +615,9 @@ def build_rows(dump_dir, dicts):
     # NOT fronted here -- it is the DB ix_av_open_unique index + the write-time close
     # (a create-version's prospective seed legitimately carries two open rows).
     ss.check_address_version_intervals(versions_seed)
+    # Every LIVE entity keeps >=1 open interval -- the counterpart the interval check
+    # above deliberately omits + the DB index does not enforce (KI-0025).
+    ss.check_live_entity_has_open_interval(versions_seed, names_seed)
 
     # rva -> kcdx_id (curated only) for the DEV-only tables' kcdx_id column.
     # rva -> av_id (universal) for the DEV-only tables' address_version_id column.
@@ -1269,6 +1273,8 @@ def _build_curated_overlay(rows, dicts, n_functions, rva_to_av_id,
     # among EXPLICITLY-CLOSED intervals. Open-row uniqueness is NOT fronted here (the
     # DB index + write-time close own it; a create-version seed carries two open rows).
     ss.check_address_version_intervals(versions_seed)
+    # Every LIVE entity keeps >=1 open interval (KI-0025).
+    ss.check_live_entity_has_open_interval(versions_seed, names_seed)
 
     rva_to_kcdx_id = {v["rva"]: v["kcdx_id"]
                       for v in versions_by_av_id.values()
@@ -1728,6 +1734,10 @@ def _validate_full_seed_state():
     # legitimately presents two open rows transiently for a create-version. Shared with
     # rebuild; the apply-time _db_tag_to_id is the real-DB FK backstop.
     check_address_version_intervals(versions_seed)
+    # Every LIVE entity keeps >=1 open interval -- the standing invariant that, on the
+    # PROSPECTIVE seed, both rejects a write closing a live entity's last open row AND
+    # flags an already-broken committed row on the next confirm's pass (KI-0025).
+    check_live_entity_has_open_interval(versions_seed, names_seed)
 
     # Cross-row name/tag resolution + supersession acyclicity over the full
     # name seed. Build the same pre-resolution name rows build_rows constructs.
@@ -2184,14 +2194,30 @@ def _present_row_non_trio_differs(con, av_id, a, *, module_id_fn, kind_id_fn):
         'FROM address_versions WHERE id = ?', (av_id,)).fetchone()
     if fold is not None:
         db_aob, db_anchor, db_rule, db_slot, db_eu, db_derives = fold
-        a_derives = _resolve_derives_from_av_id(
-            con, a["survival_derives_from_kid"])
+        # KI-0025: compare the derives-from edge in kcdx_id space, NOT av_id space, so
+        # this read-only no-op detector NEVER requires the dependency's OPEN-interval row.
+        # The stored `derives_from` is the dependency's av_id; map it back to its kcdx_id
+        # via a PRIMARY-KEY lookup (no `valid_through IS NULL` predicate -> cannot raise).
+        # The seed's `survival_derives_from_kid` is already a kcdx_id. The WRITE paths
+        # (_full_column_update_one / the add path) still resolve the open av_id via
+        # _resolve_derives_from_av_id -- they must write the FK and so legitimately need
+        # the open row -- but they run only for a row that is actually changing. Using the
+        # eager open-row resolution HERE coupled a no-op comparison of an UNCHANGED row
+        # (e.g. kcdx_id=9, edge -> 12) to a dependency's interval state, so a dependency
+        # whose only interval was closed made this comparison raise during EVERY apply pass
+        # over the baseline set -- blocking the very repair that would reopen it (KI-0025
+        # chicken-and-egg). Comparing kcdx_id-to-kcdx_id removes that false precondition.
+        db_derives_kid = (
+            con.execute("SELECT kcdx_id FROM address_versions WHERE id = ?",
+                        (db_derives,)).fetchone()[0]
+            if db_derives is not None else None)
+        a_derives_kid = a["survival_derives_from_kid"]
         if (a["survival_aob"] != db_aob
                 or a["survival_anchor_string"] != db_anchor
                 or a["survival_rule"] != db_rule
                 or a["survival_slot_count"] != db_slot
                 or a["survival_expect_unique"] != db_eu
-                or a_derives != db_derives):
+                or a_derives_kid != db_derives_kid):
             return True
     return False
 

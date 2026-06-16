@@ -639,6 +639,62 @@ def check_address_version_intervals(versions_seed):
                     f"next begins)")
 
 
+def check_live_entity_has_open_interval(versions_seed, names_seed):
+    """Every LIVE entity (not deprecated, not superseded) MUST have at least one
+    OPEN interval (a row with empty valid_through_version) -- its current curated
+    form. This is the counterpart check_address_version_intervals deliberately does
+    NOT make: that gate fronts CLOSED-interval consistency (FK, ordering, overlap)
+    and the DB ix_av_open_unique index caps an entity at <=1 open row -- but NOTHING
+    asserted an entity keeps >=1 open row, so a UPDATE that closed a live entity's
+    LAST open interval produced an entity with ZERO open rows (no current form),
+    which then breaks the survival-DAG open-row resolution (_resolve_derives_from_av_id
+    in import_to_sqlite.py demands `valid_through IS NULL`) and the whole-DB integrity
+    gate at /confirm refuses every new add (KI-0025).
+
+    A DEPRECATED or SUPERSEDED entity legitimately has no open interval (its last
+    interval is closed at its deprecation/supersession version -- it has no current
+    form by design), so it is EXEMPT. A live entity with >=1 open row passes (the
+    transient 2-open create-version state passes too: 2 >= 1). Only a live entity
+    with ZERO open rows fails -- the exact KI-0025 state.
+
+    Runs over the FULL versions seed + the names seed (for the live/deprecated/
+    superseded status), shared by rebuild and apply. The check is on the PROSPECTIVE
+    seed, so a closing UPDATE that would zero a live entity's open rows is rejected
+    at the write's integrity pass, AND an already-broken committed row is flagged on
+    the next confirm's pass (the standing-invariant half).
+    """
+    # The set of entities that are NOT live -- deprecated or superseded -- read from
+    # the names seed. These are EXEMPT (no current form is correct for them).
+    not_live = set()
+    for ns in names_seed:
+        kid = int(ns["id"])
+        dep = (ns.get("is_deprecated") or "").strip().lower() in ("1", "true", "yes")
+        sup = bool((ns.get("superseded_by") or "").strip())
+        if dep or sup:
+            not_live.add(kid)
+
+    # Per entity: does it have at least one OPEN row (empty valid_through_version)?
+    has_open = {}
+    for r in versions_seed:
+        kid = int(r["kcdx_id"])
+        vt = (r.get("valid_through_version") or "").strip()
+        has_open[kid] = has_open.get(kid, False) or (vt == "")
+
+    for kid, open_present in sorted(has_open.items()):
+        if open_present:
+            continue
+        if kid in not_live:
+            continue  # deprecated/superseded -- a closed-only entity is correct here.
+        raise RuntimeError(
+            f"address_versions_seed.csv (kcdx_id={kid}): a LIVE entity (not "
+            f"deprecated, not superseded) has NO open interval -- every one of its "
+            f"address_versions rows carries a valid_through_version, so it has no "
+            f"current curated form. A live entity must keep >=1 open row (empty "
+            f"valid_through_version). Either reopen the last interval (clear its "
+            f"valid_through_version) or deprecate/supersede the entity if it is "
+            f"genuinely retired (KI-0025).")
+
+
 def check_survival_derives_from_known(versions_seed, valid_kcdx_ids):
     """A non-empty survival_derives_from on an address_versions_seed row must
     reference an existing address_names_seed entity (the same FK closure as

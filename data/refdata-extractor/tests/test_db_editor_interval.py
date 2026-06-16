@@ -79,6 +79,7 @@ sys.path.insert(0, PYDIR)
 import import_to_sqlite as imp  # noqa: E402
 from seeds_shared import db_editor  # noqa: E402
 from seeds_shared import check_address_version_intervals  # noqa: E402
+from seeds_shared import check_live_entity_has_open_interval  # noqa: E402
 
 GVT = imp.GAME_VERSION_TAG   # "1.5.1164953"
 SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
@@ -312,6 +313,19 @@ def _extend_and_close_land(b):
         assert _valid_through_id(user_db, ext_kid, ext_vf) is None, "EXTEND target not open"
         assert _valid_through_id(user_db, clo_kid, clo_vf) is None, "CLOSE target not open"
 
+        # KI-0025: fully closing an entity's SOLE interval leaves it with no open row.
+        # The standing invariant `check_live_entity_has_open_interval` (correctly) rejects
+        # that for a LIVE entity -- the only LEGAL way to close a last interval is to
+        # retire the entity. So deprecate ext + clo first (a deprecated entity is EXEMPT
+        # from the open-interval requirement). This models the real legal path AND keeps
+        # the assertion narrow: does the batch write path emit `valid_through`? Deprecate
+        # at GVT (always-registered) -- the deprecation tag is independent of WHERE the
+        # interval closes (EXTEND->LATER, CLOSE->GVT); only the exemption matters here.
+        db_editor.deprecate_entity(
+            out, DLL_PATH, ext_kid, is_deprecated=True, deprecated_at_version=GVT)
+        db_editor.deprecate_entity(
+            out, DLL_PATH, clo_kid, is_deprecated=True, deprecated_at_version=GVT)
+
         from seeds_shared import commit
         # EXTEND ext -> close at LATER_TAG (valid_through = LATER > valid_from = v1.5).
         # CLOSE clo -> close at its OWN version GVT (valid_through == valid_from).
@@ -476,12 +490,184 @@ def _validator_accepts_and_rejects():
     return results
 
 
+# --------------------------------------------------------------------------
+# Case 4b: the LIVE-entity-has-open-interval validator (KI-0025) -- a live entity
+# must keep >=1 open interval; a deprecated/superseded entity is EXEMPT. Pure
+# in-memory seed-row dicts; no fixture needed.
+# --------------------------------------------------------------------------
+def _nrow(kid, *, is_deprecated=False, superseded_by=""):
+    """A minimal names-seed row dict the live-entity check reads (id, the
+    deprecation + supersession status). name is required by the reader shape."""
+    return {"id": str(kid),
+            "name": f"entity_{kid}",
+            "is_deprecated": "1" if is_deprecated else "",
+            "superseded_by": superseded_by}
+
+
+def _live_open_interval_validator_accepts_and_rejects():
+    results = []
+
+    # (a) ACCEPTS a live entity WITH an open interval (the normal current form).
+    v = [_vrow(1, "1.5.1164953", "")]
+    n = [_nrow(1)]
+    try:
+        check_live_entity_has_open_interval(v, n)
+        results.append(("live-open-accepts-live-with-open", True, ""))
+    except Exception as e:   # noqa: BLE001
+        results.append(("live-open-accepts-live-with-open", False,
+                        f"a live entity with an open interval was rejected: {e}"))
+
+    # (b) REJECTS a LIVE entity whose ONLY row is CLOSED (the exact KI-0025 state:
+    # kcdx_id=12's sole row closed at its own version -> no current form). AP14: names
+    # the entity.
+    v = [_vrow(12, "1.5.1164953", "1.5.1164953")]   # closed at its own version
+    n = [_nrow(12)]                                  # live: not deprecated/superseded
+    raised = _expect_raise(check_live_entity_has_open_interval, v, n)
+    results.append((
+        "live-open-rejects-live-closed-only",
+        raised is not None and "12" in str(raised),
+        "" if raised is not None else
+        "a live entity with ONLY a closed interval was ACCEPTED (KI-0025 recurs)"))
+
+    # (c) ACCEPTS a DEPRECATED entity with only a closed interval (EXEMPT -- a retired
+    # entity legitimately has no current form). FALSIFIABLE: if the check ignored
+    # deprecation, this would raise.
+    v = [_vrow(5, "1.5.1164953", "1.5.1164953")]
+    n = [_nrow(5, is_deprecated=True)]
+    try:
+        check_live_entity_has_open_interval(v, n)
+        results.append(("live-open-accepts-deprecated-closed-only", True, ""))
+    except Exception as e:   # noqa: BLE001
+        results.append(("live-open-accepts-deprecated-closed-only", False,
+                        f"a deprecated entity with no open interval was rejected "
+                        f"(the deprecation exemption is gone): {e}"))
+
+    # (d) ACCEPTS a SUPERSEDED entity with only a closed interval (EXEMPT -- same as
+    # deprecated: a superseded entity's current form moved to its successor).
+    v = [_vrow(6, "1.5.1164953", "1.5.1164953")]
+    n = [_nrow(6, superseded_by="entity_7")]
+    try:
+        check_live_entity_has_open_interval(v, n)
+        results.append(("live-open-accepts-superseded-closed-only", True, ""))
+    except Exception as e:   # noqa: BLE001
+        results.append(("live-open-accepts-superseded-closed-only", False,
+                        f"a superseded entity with no open interval was rejected "
+                        f"(the supersession exemption is gone): {e}"))
+
+    # (e) ACCEPTS a live entity with a CLOSED past interval AND an OPEN current one
+    # (the normal version-history shape: closed [1.5..1.6) + open [1.7..)). >=1 open.
+    v = [_vrow(8, "1.5.1164953", "1.6.2000000"),
+         _vrow(8, "1.7.3000000", "")]
+    n = [_nrow(8)]
+    try:
+        check_live_entity_has_open_interval(v, n)
+        results.append(("live-open-accepts-live-closed-past-plus-open", True, ""))
+    except Exception as e:   # noqa: BLE001
+        results.append(("live-open-accepts-live-closed-past-plus-open", False,
+                        f"a live entity with a closed past + open current interval "
+                        f"was rejected: {e}"))
+
+    return results
+
+
 def _expect_raise(fn, *args):
     try:
         fn(*args)
         return None
     except Exception as e:   # noqa: BLE001
         return e
+
+
+# --------------------------------------------------------------------------
+# Case 4c: KI-0025 -- _present_row_non_trio_differs compares the derives-from edge in
+# kcdx_id space, so a NO-OP comparison of an unchanged dependent row NEVER requires the
+# dependency's OPEN interval (the chicken-and-egg that blocked the kcdx_id=12 reopen).
+# A minimal 2-row in-memory address_versions table -- no fixture rebuild needed.
+# --------------------------------------------------------------------------
+def _minimal_av_db():
+    """A 2-row in-memory address_versions table reproducing the KI-0025 shape: a
+    dependency (kcdx_id=12, string_anchor, its sole interval CLOSED) + a dependent
+    (kcdx_id=9, instruction_anchor) whose folded `derives_from` points at the
+    dependency's av_id. Carries ONLY the columns _present_row_non_trio_differs reads."""
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        "CREATE TABLE address_versions ("
+        " id INTEGER PRIMARY KEY, kcdx_id INTEGER, kind INTEGER, module_id INTEGER,"
+        " rva INTEGER, signature TEXT, offset INTEGER, vtable_slot INTEGER,"
+        " struct_offset INTEGER, valid_through INTEGER,"
+        " aob TEXT, anchor_string TEXT, rule TEXT, slot_count INTEGER,"
+        " expect_unique INTEGER, derives_from INTEGER)")
+    # The DEPENDENCY (kcdx_id=12): av id=100, sole interval CLOSED (valid_through set).
+    con.execute(
+        "INSERT INTO address_versions (id, kcdx_id, kind, module_id, valid_through, "
+        "anchor_string) VALUES (100, 12, 5, 1, 1, 'exec autoexec.cfg')")
+    # The DEPENDENT (kcdx_id=9): av id=200, folded derives_from -> the dependency's av id.
+    con.execute(
+        "INSERT INTO address_versions (id, kcdx_id, kind, module_id, rva, aob, "
+        "expect_unique, derives_from) VALUES "
+        "(200, 9, 7, 1, 0x86AD99, '48 8B 0D ?? ?? ?? ??', 1, 100)")
+    con.commit()
+    return con
+
+
+def _present_row_no_op_does_not_require_open_dependency():
+    """KI-0025 Fix A, the two cases the Gate-A review specified:
+      (a) the dependent's NO-OP comparison returns False WITHOUT raising even though
+          its dependency (kcdx_id=12) has NO open interval (the chicken-and-egg fix);
+      (b) a GENUINE derives-from change is STILL detected as a full-column edit (the
+          fix did not trade the raise for a silent false no-op)."""
+    results = []
+    con = _minimal_av_db()
+    try:
+        # The action mirrors kcdx_id=9's UNCHANGED present row: same module/kind/rva/
+        # survival cells as the stored row, derives_from edge -> kcdx_id 12 (unchanged).
+        a_noop = {
+            "kind": "instruction_anchor", "module": "1", "rva": 0x86AD99,
+            "signature": "", "offset": None, "vtable_slot": None,
+            "struct_offset": None,
+            "survival_aob": "48 8B 0D ?? ?? ?? ??", "survival_anchor_string": None,
+            "survival_rule": None, "survival_slot_count": None,
+            "survival_expect_unique": 1, "survival_derives_from_kid": 12,
+        }
+        # kind_id_fn / module_id_fn return the stored ids so the non-survival compare is a
+        # no-op; the test isolates the derives-from edge comparison.
+        kind_id_fn = lambda: 7      # noqa: E731 -- matches the stored kind id
+        module_id_fn = lambda: 1    # noqa: E731 -- matches the stored module id
+
+        # (a) NO-OP comparison must return False and MUST NOT raise (kcdx_id=12 closed).
+        try:
+            differs = imp._present_row_non_trio_differs(
+                con, 200, a_noop, module_id_fn=module_id_fn, kind_id_fn=kind_id_fn)
+            if differs:
+                results.append((
+                    "present-noop-unchanged-returns-false", False,
+                    "an UNCHANGED dependent row compared as DIFFERING (false positive -- "
+                    "the edge comparison is wrong)"))
+            else:
+                results.append(("present-noop-unchanged-returns-false", True, ""))
+        except Exception as e:   # noqa: BLE001
+            results.append((
+                "present-noop-unchanged-returns-false", False,
+                f"the no-op comparison RAISED on a closed-interval dependency (KI-0025 "
+                f"chicken-and-egg NOT fixed): {type(e).__name__}: {e}"))
+
+        # (b) A GENUINE derives-from change (edge -> a DIFFERENT kcdx_id) is detected.
+        a_changed = dict(a_noop, survival_derives_from_kid=999)
+        try:
+            differs = imp._present_row_non_trio_differs(
+                con, 200, a_changed, module_id_fn=module_id_fn, kind_id_fn=kind_id_fn)
+            results.append((
+                "present-genuine-derives-change-detected", bool(differs),
+                "" if differs else
+                "a GENUINE derives-from change was NOT detected (the fix masks a real "
+                "edit as a no-op -- the dangerous failure mode)"))
+        except Exception as e:   # noqa: BLE001
+            results.append((
+                "present-genuine-derives-change-detected", False,
+                f"comparing a changed edge RAISED unexpectedly: {type(e).__name__}: {e}"))
+        return results
+    finally:
+        con.close()
 
 
 # --------------------------------------------------------------------------
@@ -595,12 +781,38 @@ def test_interval_validator_accepts_legal_rejects_illegal():
         "\n  ".join(f"{aid}: {detail}" for aid, detail in failures)
 
 
+def test_live_entity_has_open_interval_accepts_rejects():
+    """The LIVE-entity-has-open-interval validator (KI-0025): REJECTS a live entity
+    whose only interval is closed (no current form), ACCEPTS a live entity with an
+    open row + a deprecated/superseded entity with none (exempt). Reproduces the
+    kcdx_id=12 closed-only state. Emits the canonical ACCEPT signal. No fixture."""
+    results = _live_open_interval_validator_accepts_and_rejects()
+    _emit_signal(results)
+    failures = [(aid, detail) for aid, ok, detail in results if not ok]
+    assert not failures, "live-open-interval validator failures:\n  " + \
+        "\n  ".join(f"{aid}: {detail}" for aid, detail in failures)
+
+
+def test_present_row_no_op_does_not_require_open_dependency():
+    """KI-0025 Fix A: a NO-OP comparison of an unchanged dependent row does NOT require
+    its dependency's OPEN interval (the chicken-and-egg fix), AND a genuine derives-from
+    change is still detected (no false no-op). Emits the canonical ACCEPT signal. No
+    fixture (a minimal in-memory address_versions table)."""
+    results = _present_row_no_op_does_not_require_open_dependency()
+    _emit_signal(results)
+    failures = [(aid, detail) for aid, ok, detail in results if not ok]
+    assert not failures, "present-row no-op comparison failures:\n  " + \
+        "\n  ".join(f"{aid}: {detail}" for aid, detail in failures)
+
+
 def test_shape_validator_accepts_closed_rejects_malformed(baseline):  # noqa: F811
     assert _shape_validator_accepts_closed_rejects_malformed(baseline)
 
 
 if __name__ == "__main__":
     val_results = _validator_accepts_and_rejects()
+    val_results += _live_open_interval_validator_accepts_and_rejects()
+    val_results += _present_row_no_op_does_not_require_open_dependency()
     if not _have_inputs():
         print(f"SKIP (no fixture): mini-dump or WHGame.dll not found "
               f"(dump={DUMP_DIR}, dll={DLL_PATH}); running validator cases only")
