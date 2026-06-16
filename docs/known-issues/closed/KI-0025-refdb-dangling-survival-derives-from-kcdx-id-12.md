@@ -1,6 +1,7 @@
 # KI-0025 — reference-DB integrity: dangling `survival_derives_from` → kcdx_id=12 blocks new-entity confirms
 
-**Status:** Open
+**Status:** Closed 2026-06-15
+**Closed by commit:** `79ea49a` (fix) + `8ec66e3` (data repair) + `5527f2b` (acceptance add)
 **Reported:** 2026-06-15
 **Severity:** blocks all new Address Library entity additions (the `/confirm` full-DB integrity gate fails for ANY new-entity add, not just the one that surfaced it)
 
@@ -161,4 +162,54 @@ recommended A; B/C masking + cornerstone-disqualified). The fix is now: Fix A (c
 
 ## Resolution
 
-(unfilled — open)
+**Status:** Closed 2026-06-15 (commit `79ea49a` fix + `8ec66e3` data repair + `5527f2b`
+acceptance add).
+
+**Root cause (mechanism).** Two coupled defects. (1) A batch version-row UPDATE
+(`f15ae4f`) wrote `valid_through_version=1.5.1164953` onto kcdx_id=12's SOLE
+`address_versions` row, closing the interval of a LIVE entity (`string_exec_autoexec_cfg`)
+so it had ZERO open rows — no current curated form. The D40 interval validator checked
+closed-row consistency but never asserted a live entity keeps ≥1 open row, so the bad
+close passed. (2) The data repair (clear `valid_through_version` → reopen) could not land
+because `_present_row_non_trio_differs` (the apply path's no-op detector) EAGERLY resolved
+an UNCHANGED dependent row's `survival_derives_from` edge through
+`_resolve_derives_from_av_id`, whose `SELECT id … WHERE kcdx_id=? AND valid_through IS NULL`
+RAISES when the dependency has no open row. `_apply_one_db` walks every baseline-tag action
+incl. kcdx_id=9 (PRESENT, edge → 12); kcdx_id=9's no-op comparison resolved the 9→12 edge
+against the open DB where kcdx_id=12 was still closed → it raised BEFORE kcdx_id=12's own
+reopen interval-write could take effect. A read-only comparison wrongly required global
+interval state, so every apply pass over the baseline set re-resolved the broken edge and
+the single-row reopen could not self-heal (chicken-and-egg). This is WHY the original code
+path made the failure inevitable: the no-op detector imposed an open-interval precondition
+it had no need for.
+
+**Fix (commit `79ea49a`).** Fix A: `_present_row_non_trio_differs` now compares the
+derives-from edge in **kcdx_id space** — it maps the stored `derives_from` av_id back to its
+kcdx_id via a PRIMARY-KEY lookup (no `valid_through IS NULL` predicate, so it cannot raise)
+and compares against the seed's `survival_derives_from_kid` (already a kcdx_id). The write
+paths still resolve the open av_id (they must write the FK) but run only for a row that is
+actually changing, so the open-interval requirement is removed exactly where it was
+gratuitous. This addresses the mechanism by construction: the wrong raise is now impossible
+for a no-op comparison. Plus validator hardening: `check_live_entity_has_open_interval`
+rejects a live (non-deprecated/non-superseded) entity with zero open intervals — the exact
+state defect (1) created — wired into all 3 integrity-pass sites, so the original bad close
+would now be caught.
+
+**Verification.** (a) Cause-tests, same change: `test_present_row_no_op_does_not_require_open_dependency`
+proves the no-op comparison no longer raises on a closed-interval dependency AND still
+detects a genuine derives-from change (guards against a false no-op); the 5-case
+`test_live_entity_has_open_interval_accepts_rejects` proves the new invariant. Interval
+suite 6/6, apply-path family 22/22 green; full refdata-extractor suite green except 2
+PRE-EXISTING reds outside this change's blast radius (`test_rebuild_oracle` stale baseline
+157≠159 rows; `test_importer_blank_signature` kcdx_id=159 fingerprint). (b) Data repair:
+kcdx_id=12 reopened through the validated path (commit `8ec66e3`); both DBs + the CSV export
+show `valid_through IS NULL`. (c) ACCEPTANCE (the falsifiable proof): the new-entity
+`/confirm` that this issue blocked now SUCCEEDS — CCryPak_FOpenRaw (kcdx_id=160) added via
+`/confirm/create-entity` → `status: saved` (commit `5527f2b`), where it previously failed
+with `survival_derives_from kcdx_id=12 has no curated address_versions row`.
+
+**Process note.** PROBE G's recorded "build a reopen capability" diagnosis was a misread
+(the reopen path already existed — PROBE H); the real blocker was the eager
+comparison-resolution (PROBE I). The user chose Fix A (Gate-A `forward-and-wait`
+recommended it as the root-cause fix; the action-ordering + bypass-script alternatives were
+flagged as masking and cornerstone-disqualified). Probe artifacts: `_research/ki0025-reopen-probe/`.
