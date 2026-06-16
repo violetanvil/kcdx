@@ -1,8 +1,12 @@
-# RESUME — file-system-takeover, exact pickup point (2026-06-15)
+# RESUME — file-system-takeover, exact pickup point (updated 2026-06-16)
 
-The durable handoff so work resumes EXACTLY here. KI-0025 is resolved AND the
-plan tree is updated for the merged open+read cutover — the next action is to
-EXECUTE step 3.2. Read this first on pickup; it is the source of truth, not
+The durable handoff so work resumes EXACTLY here. **Next action: EXECUTE step
+3.4** (pak-mgmt/search-path/delete slots + finalize the per-slot table). Steps
+3.1/3.2/3.3 are DONE — the open/read/existence/metadata/enumeration families are
+kcdx-owned. The phase-03 ledger ([phase-03-file-slots/README.md](phase-03-file-slots/README.md))
+is the live per-step status; this doc's lower sections are the historical
+rationale digest for how 3.1–3.3 landed (kept as the record, not the next step).
+Read this + the ledger first on pickup; they are the source of truth, not
 conversation memory (`.claude/rules/plan-persistence.md`).
 
 ## Where we are
@@ -15,9 +19,21 @@ through the 101 thunked slots (P4, cap-108 PASS). The phase-grain row reads NOT
 STARTED only because its KI-0019/KI-0006 *resolution* half stays open until step
 4.2 — that is the deliberate documented two-gate state, NOT unbuilt work.
 
-**Phase 3 — step 3.1 DONE** (`4f2c32d`, backfill `4e817ed`): PROBE P3 resolved.
-Handle representation SETTLED = a kcdx **handle-id** (design §4.4), safe because
-the read family is kcdx-owned (never thunked). Steps 3.2–3.5 NOT STARTED.
+**Phase 3 — steps 3.1, 3.2, 3.3 DONE; 3.4–3.5 remain.**
+- 3.1 (`4f2c32d`, backfill `4e817ed`): PROBE P3 resolved — handle rep SETTLED = a
+  kcdx **handle-id** (design §4.4), safe because the read family is kcdx-owned.
+- 3.2 (`842e5d5`): open+read cutover — open (1/35/36) + read (38/39/40/41/53/54/
+  55/56 + variants) flipped THUNK→KCDX together; the cross-CRT class structurally
+  removed (KI-0019 clean live, cap-113 PASS).
+- 3.3 (`247d295`): existence/metadata (13/45/67/68/69/70/92/93) + enumeration
+  (14 ForEachFile) slots own the unified index — index HIT from the ByteSource,
+  index MISS thunks the slot's captured original (engine pak-dir AND disk). Slots
+  15 + 101 stay THUNK (probe-confirmed clean — the engine CCryPakFindData iterator
+  walks the pak-dir itself; `_research/fs-takeover-slot101-callers-recon/`).
+  cap-114 regression plugin landed (index core headless; live dispatch pending
+  the next launch).
+- 3.4 NOT STARTED (next): pak-mgmt/search-path/alias/delete slots + finalize the
+  per-slot table. 3.5 NOT STARTED: subsume the `asset_overlay.cpp` seam.
 
 ## Decisions that reshaped step 3.2 — now LANDED in the tree
 
