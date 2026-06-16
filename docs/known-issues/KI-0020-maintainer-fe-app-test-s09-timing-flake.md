@@ -67,6 +67,35 @@ non-deterministic (the failing tests pass in isolation; the suite passes 575/575
 3.1 logic regression — 3.1's own no-DLL-arrival tests never fail. The raised frequency makes the
 hardening cycle more urgent: the gate now reds intermittently on most full runs.
 
+## Update 2026-06-15 (completion-sequence Step 4 — stress-repro, NO repro; kept OPEN with a watch)
+
+`/debug KI-0020` reached this from the maintainer-tool completion sequence. Phase B re-observation
+before designing any harden (`results-driven` — fix a race you can OBSERVE, not one you theorize):
+
+- **13 full-suite runs this session, ALL green 632/632** — 9 plain `vitest run` + 4 under deliberate
+  contention (`--max-workers=24` over-subscribed on 16 cores + 12 background CPU spinners). `App.test.tsx`
+  in isolation: 14/14, **zero `act()` warnings**. The flake would NOT surface under the strongest stress
+  I could apply; the documented mechanism signal (the `Notifications` `act()` warning) never fired once.
+- **Probable already-resolved by `7d37417` (the KI-0022 fix).** Git shows the last commit touching BOTH
+  `App.test.tsx` and the s09 source it exercises is `7d37417` ("single-owner divergence effect — banner/
+  prompt survive StrictMode arrival"). KI-0022's root cause was a StrictMode double-fire race in the s09
+  deep-link/arrival effects (the reset's 2nd fire landing after the set) — the SAME timing class these
+  flaky tests intermittently caught. Collapsing that double-fire to a single-owner effect plausibly
+  removed the unsettled-transition window the assertions occasionally observed.
+
+**This is PROBABLE, not VERIFIED** — a flake that will not reproduce cannot be proven fixed (the test
+passes before and after; the disappearance could be `7d37417` OR transient scheduling luck). Per the
+user's decision (2026-06-15), KI-0020 stays **OPEN** rather than landing an unverifiable harden or
+claiming an unproven close. It is a test-infra flake, not a product defect (the s09 behaviours pass in
+isolation), so it does NOT block the completion sequence's close-out.
+
+**Watch / revival trigger:** reopen active work on this the next time a full `vitest run` REDS an s09 /
+back-stack test in `App.test.tsx` (capture the failing test + its `act()`/timing signature as the
+ground truth a verifiable harden needs). Until then, no harden lands — there is nothing to verify it
+against.
+
 ## Resolution
 
-_(open — to be filled when the flake is hardened in its own cycle)_
+_(open — non-reproducible across 13 stress runs 2026-06-15; probable already-fixed by `7d37417`/KI-0022
+but UNVERIFIED; kept open with a watch trigger above per the user's decision — a harden lands only once
+the flake can be reproduced to verify against)_

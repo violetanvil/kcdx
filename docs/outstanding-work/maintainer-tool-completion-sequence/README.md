@@ -22,7 +22,7 @@ KI close, or the phase build+gate) is met.
 | 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | DONE — accepted 2026-06-15 on the live tool: s09 opened from the navigator badge (7 never-verified at version 1.5.1164953, by-kind sections + counts as specced), `[Verify ▸]` PUSHED s04, the KI-0024-fixed trio-edit path held (verified_by won't blank, no raw-validator error on the populated fields), `‹ back` restored s09 intact, s08 Fix-flow carried detail to s04 + report-intact ‹back. (A dead shared dev-backend surfaced mid-walk as a browser CORS/NetworkError — relaunched the uvicorn process, re-verified the `Access-Control-Allow-Origin` header for the vite origin; code/config were correct, no defect.) Phase 3 flipped to DONE | — (acceptance, no commit hash) |
 | 3 — KI-0021 fix: new-entity verified first row unsavable (port the `verified_date` today-auto-fill from CreateVersionForm to CreateEntityForm + regression test) via `/debug`. **Same audit-trio family as KI-0024.** Fold in the s05 `CreateVersionForm` blank-trio gap Gate B surfaced during KI-0024 | DONE — `/debug KI-0021` found the fix had ALREADY landed (FE:9ff0fb5, audit-trio coupling wired into CreateEntityForm.setField+revertField) during the audit-trio pass, with a falsifiable regression test (vitest 7/7, verified live this session: FE build exit 0 + revert→test-goes-red). The KI doc sat stale-open; Phase B skipped (cause statically verified), Gate B `root-cause-verifier` → `land-fix`. The folded s05 `CreateVersionForm` blank-trio concern verified NON-EXISTENT as a live trap (it starts from a complete prefilled trio — source row + verified_date-today default — so cannot orphan). Closed (KI-0021 → closed/ + reindexed). | FE:9ff0fb5 |
 | 4b — general validator-message → teaching-copy translation layer ("option 2c", deferred by the user at KI-0024's Fork-2): translate EVERY raw validator message the editor surfaces (not just the trio-incomplete verdict) to teaching copy + per-shape deficient-field attribution | DONE (build landed; awaiting acceptance) — `/execute` built `validatorTeaching.ts`: a per-shape table (stable-substring matcher + user-approved teaching copy + deficient-field resolver) covering all ~20 data-core validator shapes + a strip-file:line-prefix fallback; `translateValidatorError` routes every error through it in FieldEditor + both create forms (and their rowErrors channels). Presentation-only — validity stays the API's `res.valid` (law 6); the raw `…seed.csv:NN:` string never reaches the maintainer. Per-shape falsifiable tests (overlap pairs resolve distinctly; fallback asserts no raw-prefix leak). Structure + copy + fallback all user-approved up front. Build exit 0 + vitest 632/632 (manager-run, AP8); step-review PROCEED. FE:a3c5eb3 | FE:a3c5eb3 |
-| 4 — KI-0020 fix: harden the flaky `App.test.tsx` s09 timing tests (fake timers / `waitFor` / `act`) via `/debug` or `/execute` | NOT STARTED | — |
+| 4 — KI-0020 fix: harden the flaky `App.test.tsx` s09 timing tests | INVESTIGATED — kept OPEN with a watch (does NOT block close-out). `/debug KI-0020` re-observed before designing any harden: NON-REPRODUCIBLE across 13 full-suite runs incl. forced contention (24 over-subscribed workers + 12 CPU spinners), all green 632/632, zero `act()` warnings. Probably already resolved by `7d37417` (KI-0022's single-owner StrictMode-stable s09 effect collapsed the same double-fire race) but UNVERIFIED — a flake that won't reproduce can't be proven fixed (`results-driven`/AP17). Per user decision, no unverifiable harden lands; KI stays open with a revival trigger (reopen when an s09 `App.test` next reds, capturing the signature a verifiable harden needs). A test-infra flake, not a product defect (s09 behaviours pass in isolation), so it does not gate the sequence close-out. | — (no fix — kept open) |
 | 5 — db-direct Phase 5: Docker packaging (image serving the built frontend + mounted-checkout + env-injected push-credential seam) via `/feature` | NOT STARTED | — |
 
 **Reshape (2026-06-15):** the Phase 6 acceptance walk-through surfaced a correctness bug
@@ -57,8 +57,15 @@ trio).
 (`validatorTeaching.ts`, FE:a3c5eb3) — all ~20 validator shapes → user-approved teaching copy +
 deficient-field attribution + a strip-prefix fallback; build exit 0 + vitest 632/632 + step-review
 PROCEED. The build is fully-directed (copy/structure/fallback approved up front) so it carries no
-mid-build milestone UAT — it gets a single user-acceptance walk-through next. Immediate work resumes:
-**Step 4 — KI-0020** (App.test.tsx s09 timing flake), then **Step 5 — db-direct Phase 5 Docker**.
+mid-build milestone UAT — its single user-acceptance walk-through stays OPEN (offered; not yet
+confirmed).
+
+**Step 4 INVESTIGATED, kept OPEN (2026-06-15):** `/debug KI-0020` re-observed before hardening — the
+s09 `App.test.tsx` flake is NON-REPRODUCIBLE across 13 full-suite runs incl. forced contention (all
+green 632/632, zero `act()` warnings), probably already resolved by `7d37417` (KI-0022) but UNVERIFIED.
+Per user decision, no unverifiable harden lands; KI-0020 stays open with a watch trigger and does NOT
+block close-out (a test-infra flake, not a product defect). Immediate work resumes: **Step 5 —
+db-direct Phase 5 Docker** (the last sequence item), via `/feature`.
 
 The owning trees + their canonical ledgers:
 - Steps 1: [maintainer-tool-verification-engine/](../maintainer-tool-verification-engine/README.md) Phase 6.
@@ -76,6 +83,10 @@ The owning trees + their canonical ledgers:
 
 ## Close-out
 
-When all five rows are DONE, the maintainer tool's tracked open work is closed (the tool
-functionally complete + packaged, both FE features accepted, both KIs closed). This driver doc
-moves to `closed/` per `.claude/rules/doc-organization.md`.
+When the remaining rows are DONE, the maintainer tool's tracked open work is closed (the tool
+functionally complete + packaged, both FE features accepted, KI-0021 closed). **Step 4 (KI-0020) is the
+one row that does NOT close to DONE** — it is a non-reproducible test-infra flake intentionally kept
+OPEN with a watch trigger (not a product defect; does not gate close-out). So the close condition is:
+Steps 1 / 1a / 1b / 2pre / 2 / 3 / 4b / 5 DONE + Step 4b's acceptance confirmed, with KI-0020 carried
+as a tracked open watch-item. This driver doc moves to `closed/` per
+`.claude/rules/doc-organization.md` at that point.
