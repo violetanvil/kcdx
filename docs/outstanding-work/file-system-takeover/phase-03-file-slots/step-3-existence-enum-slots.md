@@ -1,4 +1,4 @@
-# Step 3.4 — existence/metadata + directory-enumeration slots
+# Step 3.3 — existence/metadata + directory-enumeration slots
 
 **What.** Build kcdx's existence/metadata + directory-enumeration slots as real
 KCDX impls: existence/metadata-by-name — IsFolder (13), GetFileSize (45),

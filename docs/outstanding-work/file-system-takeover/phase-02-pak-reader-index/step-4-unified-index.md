@@ -30,7 +30,7 @@ does not win, or a vpath resolves to the wrong source.
 
 **Dependencies.** Step 2.2 (CDR parser — to populate Pak sources) + step 2.3 (the
 read path the index's Pak sources point into). The loose/overlay precedence reuses
-the existing asset-overlay map logic (still live until step 3.6).
+the existing asset-overlay map logic (still live until step 3.5).
 
 **Reference.** [`../plan-spec.md`](../plan-spec.md); design §5 (the index), §7
 (precedence carried from asset-replacement); [`docs/design/asset-replacement.md`](../../../design/asset-replacement.md)

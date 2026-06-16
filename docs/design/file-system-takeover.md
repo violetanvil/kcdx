@@ -336,11 +336,22 @@ the front-1 table):
 
 - **Resolution:** slot 1 `AdjustFileName` (the path-resolution chokepoint every
   by-name consumer calls first). kcdx's impl is the unified-index lookup (§5).
-- **Open:** slot 36 `FOpen`, slot 35 `FOpenRaw`, slot 38 `FOpen-by-pak-index`.
-- **Read family:** slot 39 `FReadRaw`, slot 40 `FGetCachedFileData`, slot 41
-  `FWrite`, slot 43 `FGets`, slot 44 `FGetc`, slot 47 `FUngetc`, slot 53 `FSeek`,
-  slot 54 `FTell`, slot 55 `FClose`, slot 56 `FEof`, slot 57 `FError`, slot 58
-  `FGetErrno`, slot 59 `FFlush`, slot 46/66 fileno variants.
+- **Open:** slot 36 `FOpen`, slot 35 `FOpenRaw`. (Slot 38 was previously grouped
+  here as "FOpen-by-pak-index"; the slot-map reconciliation against the binary
+  showed its body leafs into the read-raw leaf + CRT `fread` with no `fopen` call
+  — it is `FReadRaw-by-pak-index`, a READ, not an open. It now lives in the read
+  family below. Recon: `_research/fs-takeover-slot35-recon/FINDINGS.md`.)
+  - **Slot 35 `FOpenRaw` — verified ABI** (freshly dumped, recon above; seeded
+    kcdx_id 160, RVA 0x2418DE4): 5-arg `__fastcall` member
+    `FILE*-like(CCryPak* this, const char* pName, const char* szMode, char* outResolvedBuf, int bufCap)`
+    — resolves `pName` via slot 1, copies the resolved name into `outResolvedBuf`
+    (clamped ≤2048), opens through the `_wfopen`-backed primitive (RVA 0x9B2B28),
+    returns the `FILE*`.
+- **Read family:** slot 38 `FReadRaw-by-pak-index`, slot 39 `FReadRaw`, slot 40
+  `FGetCachedFileData`, slot 41 `FWrite`, slot 43 `FGets`, slot 44 `FGetc`, slot
+  47 `FUngetc`, slot 53 `FSeek`, slot 54 `FTell`, slot 55 `FClose`, slot 56
+  `FEof`, slot 57 `FError`, slot 58 `FGetErrno`, slot 59 `FFlush`, slot 46/66
+  fileno variants.
 - **Existence / metadata by name:** slot 13 `IsFolder`, slot 45 `GetFileSize`,
   slot 67 `IsFileExist(3)`, slot 68 `GetFileAttributes`, slot 69 `GetFileStat`,
   slot 70 `IsFileExist(2)`, slot 92 `GetFileSizeOnDisk`, slot 93

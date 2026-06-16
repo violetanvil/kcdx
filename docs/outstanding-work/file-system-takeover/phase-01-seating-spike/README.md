@@ -44,12 +44,13 @@ against the swapped, layout-preserved object). The swap MECHANISM is proven —
 kcdx seats + holds, the engine dispatches into kcdx, the game boots.
 
 The phase's KI-0019/KI-0006 RESOLUTION half is **NOT** met by this spike, and was
-never going to be: only slot 36 is kcdx-owned; the read family (FSeek/FClose/
-FRead, …) is still `THUNK(original)` on the engine's CRT, so the cross-CRT
+never going to be: only slot 36 is kcdx-owned; the read family (FReadRaw 39, FSeek
+53, FClose 55, …) is still `THUNK(original)` on the engine's CRT, so the cross-CRT
 inventory-open `fseek` crash STILL reproduced with the swap active (32×
 `engine.ccrypak_fopen` FAULTED_FIRE + a `ucrtbase!fseek → null EACCES write`
 dump, AFTER the swap — KI-0019 Trail H; evidence `_research/probe-archive/p2-p4-seating-and-ki0019-persists.md`).
-That crash resolves at step 4.2 (read-family slots flipped THUNK→KCDX), per
-design §9. So the seating-mechanism gate is the green half; the crash-resolution
-gate stays open until 4.2 — the phase-grain row is NOT flipped to DONE on this
-step alone.
+That crash dies at the Phase-3 open+read cutover (step 3.2 — read-family slots
+flipped THUNK→KCDX, per design §9) and is formally CLOSED at step 4.2. So the
+seating-mechanism gate is the green half; the crash-resolution gate stays open
+until 3.2 lands (closure at 4.2) — the phase-grain row is NOT flipped to DONE on
+this step alone.

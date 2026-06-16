@@ -3,6 +3,28 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.5 §4.5 slot-38 reclassified to the read family + slot-35 ABI recorded
+
+- **§4.5 wording defect fixed: slot 38 is `FReadRaw-by-pak-index`, a READ, not an
+  open.** §4.5 had grouped slot 38 under "Open" as "FOpen-by-pak-index". The
+  slot-map reconciliation against the binary
+  (`_research/fs-takeover-slot35-recon/FINDINGS.md`, recon committed `4ca0bae`)
+  body-read slot 38 leafing into the read-raw leaf + CRT `fread` with NO `fopen`
+  call. Moved slot 38 from the Open group to the Read family. The open family is
+  now slots 1 (resolution) + 35 + 36; the read family gains 38.
+  - **Build consequence:** slot 38 flips THUNK→KCDX in the read cutover, not the
+    open step — folded into the merged open+read cutover (plan step 3.2; see the
+    plan tree).
+- **Slot 35 `FOpenRaw` verified ABI recorded** in §4.5: 5-arg `__fastcall` member
+  `FILE*-like(this, pName, szMode, outResolvedBuf, int bufCap)`, `_wfopen`-backed
+  (open primitive RVA 0x9B2B28), resolves via slot 1. Seeded kcdx_id 160 (AP18-
+  approved, `5527f2b`), RVA 0x2418DE4 — resolve by name, ready for the cutover.
+- **Stale slot-label legend corrected** below: the v1.4 entry's parenthetical
+  "(FRead 40 / FSeek 38 / FEof 39 / …)" carried front3's superseded role labels.
+  The recon settled: slot 38 = FReadRaw-by-pak-index, slot 39 = FReadRaw, slot 40
+  = FGetCachedFileData; FSeek = 53, FEof = 56. Corrected in place so the
+  changelog does not preserve a body-falsified mapping.
+
 ## 2026-06-15 — v1.4 P3 resolved (static binary read): kcdx handle-id is safe; read family stays kcdx-owned (step 3.1)
 
 - **P3 resolved by a STATIC binary read** from the primary-evidence asset-resolution
@@ -12,8 +34,10 @@ this records its revisions.
   (`.claude/rules/results-driven.md` §4), so the step-3.1 Scope's "then a live
   probe" was not needed. Outcome 1 holds: **no off-vtable access to a
   `FOpen`-class (slot 36) handle exists.**
-  - The read family (FRead 40 / FSeek 38 / FEof 39 / FWrite 41 / FClose 55)
-    dispatches purely on the handle tag THROUGH the vtable; the loose-vs-pak decision
+  - The read family (FReadRaw 38/39, FGetCachedFileData 40, FWrite 41, FSeek 53,
+    FClose 55, FEof 56 — corrected per the v1.5 entry above; this entry's
+    original labels were front3's superseded mapping) dispatches purely on the
+    handle tag THROUGH the vtable; the loose-vs-pak decision
     bites at `FOpen`-time, never off-vtable
     (`front3-handle-consume-read-path.md`).
   - The ONE off-vtable raw-handle operation (the streaming engine's

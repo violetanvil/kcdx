@@ -24,9 +24,9 @@ from masking on its own (AP17), so closure rests on the verified MECHANISM
 paragraph, not just the clean repro. `root-cause-verifier` returns `land-fix`
 before the Resolution is recorded.
 
-**Dependencies.** Step 3.3 (the read family on kcdx CRT — where the class dies) +
-step 4.1 (the regression rows proving the serving works). The clean repro is the
-step-3.3 acceptance carried to closure here.
+**Dependencies.** Step 3.2 (the open+read cutover — where the read family flips to
+kcdx's CRT and the class dies) + step 4.1 (the regression rows proving the serving
+works). The clean repro is the step-3.2 acceptance carried to closure here.
 
 **Reference.** [`../plan-spec.md`](../plan-spec.md); design §9 (the
 KI-0019/KI-0006 resolution mechanism); `.claude/rules/doc-organization.md` §2 (the

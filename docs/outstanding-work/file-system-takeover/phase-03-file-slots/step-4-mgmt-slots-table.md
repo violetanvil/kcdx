@@ -1,4 +1,4 @@
-# Step 3.5 — pak-mgmt / search-path / delete slots + finalize the table
+# Step 3.4 — pak-mgmt / search-path / delete slots + finalize the table
 
 **What.** Build the remaining kcdx-owned slots as real KCDX impls and FINALIZE the
 per-slot declarative table: pak/archive-management — AddPakToValidate (7),
@@ -31,9 +31,10 @@ operates correctly (falsifiable per-family assertions — `.claude/rules/test-su
 102 slots have a table row and each is KCDX-or-THUNK — the reversibility property
 is structurally present, not assumed. Build green.
 
-**Dependencies.** Steps 3.2–3.4 (the file/read/existence slots — this completes
-the kcdx-owned set) + Phase 2 (the index/reader the mgmt slots reference). The
-table finalization depends on every prior slot step having set its rows.
+**Dependencies.** Steps 3.2 (the open+read cutover) + 3.3 (the existence/enum
+slots) — this completes the kcdx-owned set — + Phase 2 (the index/reader the mgmt
+slots reference). The table finalization depends on every prior slot step having
+set its rows.
 
 **Reference.** [`../plan-spec.md`](../plan-spec.md); design §4.5, §4.3 (the
 reversibility constraint — load-bearing); `_research/phase8.5-pak-resolver/front1-full-vtable-surface.md`

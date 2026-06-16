@@ -6,8 +6,8 @@
 off-vtable)? The answer decides whether a kcdx handle can be a lightweight kcdx
 handle-id (the engine treats it as opaque, only the vtable read slots operate it)
 or must be a real `FILE*`-shaped object operable on kcdx's CRT off-vtable. This
-gates the open/read slots (3.2/3.3) — they must mint the representation P3
-settles.
+gates the open/read cutover (the merged step 3.2) — it must mint the
+representation P3 settles.
 
 **Scope.** First the static leads (read
 `_research/asset-loadpath-map-recon/F5-streaming-engine-bypass.md` +
@@ -26,8 +26,8 @@ reads the log.
 **Test bar.** A probe, not a feature — the "test" is P3 firing with a falsifiable
 reading matching one outcome (agent-read, `PROBE P3` category). The representation
 decision it produces is captured durably (a decision record / the plan-spec
-invariant). The slots that consume it (3.2/3.3) carry the permanent regression
-rows.
+invariant). The slots that consume it (the merged step 3.2 open+read cutover)
+carry the permanent regression rows.
 
 **Dependencies.** Phase 1 (the swap is proven — the probe runs against the
 swapped-in vtable) + Phase 2 (the index + reader exist, so a real read can be
@@ -50,9 +50,11 @@ needed. No probe code was written into `src/` — no residue to remove.
 
 **Outcome that held — outcome 1: no off-vtable raw-handle access to a `FOpen`-class
 (slot 36) handle.**
-- The read family (FRead 40 / FSeek 38 / FEof 39 / FWrite 41 / FClose 55) dispatches
-  purely on the handle tag THROUGH the vtable; the loose-vs-pak decision bites at
-  `FOpen`-time, never off-vtable
+- The read family (FReadRaw 38/39, FGetCachedFileData 40, FWrite 41, FSeek 53,
+  FClose 55, FEof 56 — roles per the later slot-map reconciliation `4ca0bae`,
+  `_research/fs-takeover-slot35-recon/FINDINGS.md`; an earlier draft here carried
+  front3's superseded labels) dispatches purely on the handle tag THROUGH the
+  vtable; the loose-vs-pak decision bites at `FOpen`-time, never off-vtable
   (`_research/phase8.5-pak-resolver/front3-handle-consume-read-path.md`).
 - The ONE off-vtable raw-handle operation — the streaming engine's
   `SetFilePointer`/`ReadFile` on `m_zipFile` — operates an ENGINE-minted pak-MOUNT
@@ -68,10 +70,13 @@ Outcome 2 (forced to a real `FILE*`-shaped object) is FALSIFIED.
 handle-id** — opaque to the engine, operated only by kcdx's own read slots. It honors
 the engine's tagged-union contract (`index+1` = pak entry; else = real-`FILE*`-class)
 so any reused/thunked read slot dispatches it correctly. **Load-bearing constraint
-for 3.2/3.3/3.5:** the read family is **kcdx-owned, never thunked** — a thunked read
+for 3.2/3.4:** the read family is **kcdx-owned, never thunked** — a thunked read
 slot's OS arm would `fread` the kcdx handle-id on the ENGINE's CRT (the cross-CRT
-straddle §9 removes). 3.2 mints the handle-id; 3.3 builds the kcdx-owned read family;
-3.5's per-slot table keeps every handle-operating slot `KCDX`.
+straddle §9 removes). The merged step 3.2 mints the handle-id AND builds the
+kcdx-owned read family in one atomic cutover (open + read flip together — a
+handle-id reachable by a thunked read slot is exactly the straddle); 3.4's
+per-slot table keeps every handle-operating slot `KCDX`. (This constraint is WHY
+the original 3.2-mints / 3.3-reads split was merged into one step.)
 
 **Capture:** `_research/probe-archive/p3-off-vtable-handle-rep.md` (the finding +
 the cited recon).

@@ -1,8 +1,9 @@
 # RESUME — file-system-takeover, exact pickup point (2026-06-15)
 
-The durable handoff so work resumes EXACTLY here after the KI-0025 DB-integrity
-detour. Read this first on pickup; it is the source of truth, not conversation
-memory (`.claude/rules/plan-persistence.md`).
+The durable handoff so work resumes EXACTLY here. KI-0025 is resolved AND the
+plan tree is updated for the merged open+read cutover — the next action is to
+EXECUTE step 3.2. Read this first on pickup; it is the source of truth, not
+conversation memory (`.claude/rules/plan-persistence.md`).
 
 ## Where we are
 
@@ -16,17 +17,20 @@ STARTED only because its KI-0019/KI-0006 *resolution* half stays open until step
 
 **Phase 3 — step 3.1 DONE** (`4f2c32d`, backfill `4e817ed`): PROBE P3 resolved.
 Handle representation SETTLED = a kcdx **handle-id** (design §4.4), safe because
-the read family is kcdx-owned (never thunked). Steps 3.2–3.6 NOT STARTED.
+the read family is kcdx-owned (never thunked). Steps 3.2–3.5 NOT STARTED.
 
-## What we were doing when we paused (the live thread)
+## Decisions that reshaped step 3.2 — now LANDED in the tree
 
-Driving **Phase 3 step 3.2 (open slots)**, with two user decisions already made
-that RESHAPE the build:
+Two user decisions reshaped the build; both are now recorded in the plan tree +
+design (this plan-update commit), so the step docs are the source of truth — the
+notes below are the rationale digest:
 
 1. **Merge 3.2 + 3.3 into ONE atomic open+read cutover** (user-chosen). Reason:
    3.2 mints kcdx handle-ids; if the read family were still thunked, a thunked
    read slot would operate a kcdx handle-id on the ENGINE's CRT (the exact
-   cross-CRT crash). So open + read flip to KCDX together, in one cutover.
+   cross-CRT crash). So open + read flip to KCDX together, in one cutover. LANDED:
+   merged step doc [step-2-open-read-cutover.md](phase-03-file-slots/step-2-open-read-cutover.md);
+   downstream renumbered (existence/enum 3.3, mgmt+table 3.4, seam 3.5).
 2. **Build only on verified ABIs** (user-chose "extract ABIs first"). That ran
    `/research-disassembly`, which produced:
 
@@ -39,9 +43,10 @@ gated-verifier confirmed. Key outcomes that bind the build:
 - **front1 (and design §4.5) is authoritative; front3 mislabeled read-family
   ROLES.** slot 40 = FGetCachedFileData (not FRead), slot 39 = FReadRaw (not
   FEof/FTell), slot 38 = **FReadRaw-by-pak-index (a READ, NOT an open)**.
-- **Slot 38 is a READ slot** → it belongs to the read family (was-3.3), NOT the
-  open slots (was-3.2). **§4.5 has a wording defect** (it groups slot 38 under
-  "Open") — correct it during the cutover.
+- **Slot 38 is a READ slot** → it belongs to the read family, NOT the open slots.
+  §4.5's "Open" grouping of slot 38 was a wording defect — **FIXED in this
+  plan-update** (design §4.5 v1.5; slot 38 now in the read family). The merged
+  step 3.2 flips it with the read family.
 - **Open family = slots 1 + 35 + 36** (NOT 1/35/36/38). Read family = 38/39/40/
   41/53/54/55/56 (+ variants).
 - **Slot 35 FOpenRaw ABI freshly dumped + verified**: 5-arg __fastcall
@@ -70,18 +75,27 @@ slot-35 seed row is ready to resolve by name. No DB work remains.
 
 ## EXACT next action on pickup
 
-KI-0025 is fixed and the slot-35 row is seeded — **start at step 1 (/plan-update)**.
-(Former steps "fix KI-0025" + "re-add FOpenRaw" are DONE.)
+KI-0025 is fixed, the slot-35 row is seeded, AND the plan tree is updated —
+**execute step 3.2, the open+read cutover.** (Former steps "fix KI-0025",
+"re-add FOpenRaw", and "/plan-update the tree" are all DONE.)
 
-1. **`/plan`-update the takeover tree** (user-chosen): merge
-   3.2+3.3 into one open+read cutover step; move slot 38 to the read family;
-   correct §4.5's slot-38 "Open" grouping; record the slot-35 ABI + the merged-step
-   decision in plan-spec/design (`.claude/rules/decision-capture.md`).
-2. **Execute the cutover**: flip open (1/35/36) + read (38/39/40/41/53/54/55/56)
-   slots THUNK→KCDX; wire `BuildAssetIndex` into the seating path (NOT yet called —
-   `seating_hook.cpp` only swaps the vtable today); mint handle-ids + operate them
-   on kcdx's CRT; full open→read regression plugin (next free = **cap-113**).
-   This is the change that closes the cross-CRT read class (KI-0019/KI-0006 at 4.2).
+**Execute the cutover** ([step-2-open-read-cutover.md](phase-03-file-slots/step-2-open-read-cutover.md)),
+built to design §4.5/§5/§4.4/§4.3 (`.claude/rules/spec-conformance.md`):
+
+- Wire `BuildAssetIndex` into the seating path (NOT yet called — `seating_hook.cpp`
+  only swaps the vtable today) so slot 1 has an index to look up.
+- Flip open (1/35/36) + read (38/39/40/41/53/54/55/56 + variants) slots THUNK→KCDX
+  TOGETHER (one atomic cutover — a thunked read slot would operate a kcdx
+  handle-id on the engine's CRT; that's why open+read are one step).
+- Mint kcdx handle-ids (the P3-settled rep, step 3.1) + operate them on kcdx's CRT.
+- Full open→read→close regression plugin, BOTH a Loose and a Pak source (next
+  free = **cap-113**) — this also satisfies the OWED CCryPak_FOpenRaw test plugin.
+- This is the change that closes the cross-CRT read class; KI-0019/KI-0006 formally
+  CLOSE at step 4.2.
+
+Route via `/feature` (the merged 3.2 spans the index-wiring + the slot flips + the
+test plugin — a multi-part build in one motion) or `/execute` if it lands as one
+commit. The step doc is the `Source work-item`.
 
 ## Owed follow-ups (don't lose these)
 
@@ -89,7 +103,6 @@ KI-0025 is fixed and the slot-35 row is seeded — **start at step 1 (/plan-upda
   cutover's slot-35 exercise satisfies it; `policy.md` test-plugin requirement.
 - **cap-108–112 PASS rows** still `[unverified — pending launch]` (Phase 2 + 3.1
   seating) — confirm at the next `/verification-checkpoint` launch.
-- **§4.5 slot-38 wording fix** (groups a read slot under "Open").
 - **KI-0025 pre-existing reds (NOT this work):** `test_rebuild_oracle` stale
   baseline (157≠159 rows) + `test_importer_blank_signature` kcdx_id=159 fingerprint
   — surfaced during the KI-0025 fix, confirmed outside its blast radius; separate

@@ -39,11 +39,23 @@ decisions, verbatim with their design source:
   file slots are built. The real slots build on proven ground.
 - **The plan owns the in-flight cleanup** — KI-routing correction (1.1) +
   PROBE-F removal (1.2) are early steps; the `asset_overlay.cpp` seam subsumption
-  (3.6) is its own step in the phase that lands the replacement (no coverage gap —
+  (3.5) is its own step in the phase that lands the replacement (no coverage gap —
   the seam is removed only once its kcdx-slot replacement is live).
 - **Dedicated DEFLATE-dependency step** (2.1) — the zlib-vs-miniz pick is
   surfaced + decided AT that step (license-checked, recorded per
   `.claude/rules/dependencies.md`), not pre-baked into this plan.
+- **Open + read flip in ONE atomic cutover step (3.2), not two** (user-decided,
+  2026-06-15). The original decomposition split the open slots (3.2 mints kcdx
+  handles) from the read family (3.3 operates them). P3 settled the handle
+  representation as a kcdx **handle-id** — opaque to the engine's CRT, operable
+  only by kcdx's own read slots. That makes the split unsafe: an open slot minting
+  a handle-id while the read family stayed thunked would let a thunked read slot
+  `fread`/`fseek`/`fclose` the handle-id on the ENGINE's CRT — the exact cross-CRT
+  straddle this takeover removes. So open (slots 1/35/36) and read (38/39/40/41/53/
+  54/55/56 + variants) flip TOGETHER. The cross-CRT class dies in this one step.
+  Downstream steps renumbered: existence/enum = 3.3, mgmt+table = 3.4, seam
+  subsumption = 3.5. (`.claude/rules/incremental-delivery.md` — the reorder, here a
+  merge, that keeps each landed step independently verifiable + safe.)
 
 ## The four probes (design §8) — provisional mechanisms proven before their dependent phase
 
@@ -72,12 +84,15 @@ design is provisional on each until its probe lands.
   invariant the whole takeover protects (design §9). A step that mints a kcdx
   handle the engine could `fseek`/`fclose` reintroduces the crash class.
 - **The kcdx handle is a handle-id honoring the engine's tagged-union tag; the read
-  family is kcdx-owned, never thunked** (P3-resolved, design §4.4). 3.2 mints a kcdx
-  handle-id distinguishable by the engine's dispatch test (`index+1` = pak entry;
-  else = real-`FILE*`-class); every handle-operating read slot (3.3/3.5) stays
-  `KCDX`, never `THUNK` — a thunked read slot would `fread` the kcdx handle-id on the
-  ENGINE's CRT (the cross-CRT straddle). This is the one §4.3 thunk-flip the per-slot
-  table forbids while the handle is a kcdx-minted id.
+  family is kcdx-owned, never thunked** (P3-resolved, design §4.4). The merged step
+  3.2 mints a kcdx handle-id distinguishable by the engine's dispatch test
+  (`index+1` = pak entry; else = real-`FILE*`-class) AND flips the read family to
+  `KCDX` in the SAME cutover; every handle-operating read slot stays `KCDX`, never
+  `THUNK` — a thunked read slot would `fread` the kcdx handle-id on the ENGINE's CRT
+  (the cross-CRT straddle). **This is WHY open + read are one step (3.2), not two**:
+  there must be no intermediate state where a minted handle-id is reachable by a
+  thunked read slot. It is the one §4.3 thunk-flip the per-slot table forbids while
+  the handle is a kcdx-minted id.
 - **The per-slot table is the single point of slot ownership** — no code outside
   the table assumes "slot N is the engine's" (design §4.3). Reviewed each slot
   step.
@@ -106,22 +121,22 @@ section by section (the raw artifact, per `.claude/rules/spec-conformance.md`).
 | E7 — index-build: vanilla-pak discovery + CDR population | Step 2.4 | design §5, §6 |
 | E8 — index-build: loose-override + mod-pak sources | Step 2.4 | design §5, §7 |
 | E9 — kcdx slot-1 AdjustFileName impl (index lookup) | Step 3.2 | design §4.5, §5 |
-| E10 — kcdx open slots (36/35/38) minting kcdx handles | Step 3.2 | design §4.5, §4.4 |
-| E11 — kcdx read family operating handles on kcdx CRT | Step 3.3 | design §4.5, §4.4 — the cross-CRT class dies here |
+| E10 — kcdx open slots (35/36) minting kcdx handle-ids | Step 3.2 | design §4.5, §4.4 (slot 38 is a READ, moved to E11 — recon `4ca0bae`) |
+| E11 — kcdx read family operating handle-ids on kcdx CRT (38/39/40/41/53/54/55/56 + variants) | Step 3.2 | design §4.5, §4.4 — flipped TOGETHER with open (merged cutover); the cross-CRT class dies here |
 | E12 — kcdx handle representation (settled by P3) | Step 3.1 | design §4.4 |
-| E13 — kcdx existence/metadata slots (13/45/67/68/69/70/92/93) | Step 3.4 | design §4.5 |
-| E14 — kcdx directory-enum slots (14/15/101) | Step 3.4 | design §4.5 |
-| E15 — kcdx pak/archive-mgmt slots (7/17/32/33/34/71/72/91/100) | Step 3.5 | design §4.5 |
-| E16 — kcdx search-path/alias/mods slots (19–24/94) | Step 3.5 | design §4.5 |
-| E17 — kcdx delete/copy slots (49/50/52) | Step 3.5 | design §4.5 |
-| E18 — thunk-to-original wiring for the pure-internal slots | Step 3.5 | design §4.3, §4.5 |
+| E13 — kcdx existence/metadata slots (13/45/67/68/69/70/92/93) | Step 3.3 | design §4.5 |
+| E14 — kcdx directory-enum slots (14/15/101) | Step 3.3 | design §4.5 |
+| E15 — kcdx pak/archive-mgmt slots (7/17/32/33/34/71/72/91/100) | Step 3.4 | design §4.5 |
+| E16 — kcdx search-path/alias/mods slots (19–24/94) | Step 3.4 | design §4.5 |
+| E17 — kcdx delete/copy slots (49/50/52) | Step 3.4 | design §4.5 |
+| E18 — thunk-to-original wiring for the pure-internal slots | Step 3.4 | design §4.3, §4.5 |
 | E19 — P1 CCryPak construction-timing probe | Step 1.3 | design §8 |
 | E20 — P2 vtable-swap-acceptance probe | Step 1.4 | design §8 |
 | E21 — P3 off-vtable raw-handle-access probe | Step 3.1 | design §8 |
 | E22 — P4 thunked-slot this-compat probe | Step 1.4 | design §8 (alongside P2) |
 | E23 — KI-0019/KI-0006 resolution + closure | Step 4.2 | design §9 |
 | E24 — author-facing contract preserved | Step 4.1 | design §7 (verified by the regression rows) |
-| E25 — subsume the asset_overlay.cpp two-hook seam | Step 3.6 | design §11, §1 |
+| E25 — subsume the asset_overlay.cpp two-hook seam | Step 3.5 | design §11, §1 |
 | E26 — PROBE F removal + capture | Step 1.2 | design §11 |
 | E27 — vanilla-pak format-uniformity static check | Step 2.2 | design §6 |
 | E28 — regression test plugin(s) + matrix rows | Step 4.1 | `.claude/rules/test-suite.md` |

@@ -13,7 +13,7 @@ runtime-disabled flag.
 **Scope.** Capture PROBE F's finding to `_research/probe-archive/` (a new entry:
 what it proved, the instrumentation recipe, the KI-0019 backlink), then remove the
 `PROBE_F` block from `src/asset_overlay.cpp`. The rest of `asset_overlay.cpp`
-(HOOK 1, HOOK 2, the overlay map) stays live — it is subsumed later at step 3.6,
+(HOOK 1, HOOK 2, the overlay map) stays live — it is subsumed later at step 3.5,
 not here. Build green after removal. One commit.
 
 **Test bar.** The existing asset-overlay regression coverage still passes after
