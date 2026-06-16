@@ -42,6 +42,15 @@ MAINTAINER_EMAIL_ENV_VAR = "KCDX_MAINTAINER_EMAIL"
 DEV_DEFAULT_MAINTAINER_NAME = "VioletAnvil"
 DEV_DEFAULT_MAINTAINER_EMAIL = "maintainer-tool@kcdx.local"
 
+# The env var the operator wires to the built frontend's static-assets dir (the SPA's
+# `dist/`). D14 settled the SINGLE IMAGE (uvicorn serves the API AND the built frontend
+# same-origin); this names WHERE that built `dist/` lives. The image's stage-2 COPY places
+# the multi-stage-built `dist/` at the dev default below, so the container needs no env. An
+# operator (or a dev serving a locally-built bundle) overrides it. A missing dir is NOT an
+# error -- the app boots + serves the API regardless (the static_serving degraded contract),
+# the same boot-without-config posture as the checkout / CORS dev defaults.
+STATIC_DIR_ENV_VAR = "KCDX_STATIC_DIR"
+
 # The env var the operator wires to the real frontend origin(s) in production (D17 --
 # the operator-wired seam, alongside KCDX_CHECKOUT / KCDX_PUSH_TOKEN). A comma-separated
 # allowlist of browser ORIGINS the served frontend calls the backend from. Unset/empty ->
@@ -88,6 +97,16 @@ def _repo_root_from_here():
     inside the repo."""
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.normpath(os.path.join(here, "..", "..", "..", ".."))
+
+
+def _default_static_dir():
+    """The dev-default static-assets dir: <app>/static (alongside this module). The
+    image's stage-2 COPY places the built frontend `dist/` HERE, so a container with no
+    KCDX_STATIC_DIR resolves it (D14 single image -- the backend serves the built SPA).
+    Absent on a bare dev checkout (no FE build yet) -- that is the static_serving degraded
+    contract, not a config error, so this never has to exist."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "static")
 
 
 @dataclass(frozen=True)
@@ -171,6 +190,20 @@ def cors_origins():
         if origins:
             return origins
     return list(_DEV_DEFAULT_CORS_ORIGINS)
+
+
+def static_dir():
+    """The built frontend's static-assets dir (the SPA `dist/`) the backend serves (D14
+    single image). KCDX_STATIC_DIR if the operator/dev wired it, else the dev default
+    (<app>/static, where the image's stage-2 COPY lands `dist/`). Read fresh each call
+    (mirrors cors_origins / load_config) so a test can point it at a fixture dir
+    deterministically. The path is NOT required to exist -- static_serving degrades
+    gracefully when it is absent (the API still serves); resolving the path is not the
+    same as the dir being present."""
+    env = (os.environ.get(STATIC_DIR_ENV_VAR) or "").strip()
+    if env:
+        return os.path.abspath(env)
+    return _default_static_dir()
 
 
 def maintainer_identity():

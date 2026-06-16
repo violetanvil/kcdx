@@ -6,9 +6,11 @@ endpoint that reports whether the configured checkout (D18) resolves a reference
 DB/seeds resolve at the configured checkout path, the empty state explains why";
 S7 required state "Empty -- no DB/seeds resolved (names where the backend looked)").
 
-No read/save/commit endpoints yet (steps 2-5). The app holds NO data-core rule
-logic (D13/R3): it imports the data-core through the app.data_core seam and reads
-the checkout through app.config; every rule is the data-core's.
+The read/save/commit routers are included below; the built React SPA is served by a
+catch-all registered LAST (step 16 -- D14 single image: one process serves the API AND
+the frontend `dist/`, same-origin). The app holds NO data-core rule logic (D13/R3): it
+imports the data-core through the app.data_core seam and reads the checkout through
+app.config; every rule is the data-core's. Static serving is pure backend plumbing.
 """
 import logging
 import os
@@ -22,6 +24,7 @@ from .routes_confirm import router as confirm_router
 from .routes_delta import router as delta_router
 from .routes_read import router as read_router
 from .routes_save import router as save_router
+from .static_serving import register_static_serving
 
 # One module logger, event-driven (logging.md): the failure branches below log on
 # the data-core read failure, never per request.
@@ -75,7 +78,6 @@ app.include_router(save_router)
 # backend's own concern (app.git_commit / app.csv_integrity), the write+validate are the
 # data-core's (D13/R3).
 app.include_router(confirm_router)
-
 
 def _version_tags_newest_first(versions):
     """Order a {tag: ordinal} map's TAGS newest-first by the data-core's version
@@ -166,3 +168,16 @@ def health():
     config each call so an operator can mount the volume after boot."""
     config = load_config()
     return _checkout_status(config)
+
+
+# The built React SPA catch-all (D14 single image -- one process serves the API AND the
+# built frontend `dist/`, same-origin). Registered LAST, at module end -- AFTER every API
+# router AND the /health route defined above -- so the API keeps route-resolution priority:
+# Starlette matches routes in REGISTRATION order, so the catch-all `/{spa_path:path}` claims
+# only GET paths no earlier API route matched (an SPA asset, an unknown client route ->
+# index.html, a missing bundle -> a logged 503). Registering it before /health (its prior
+# position, immediately after the include_router calls) let the catch-all shadow /health,
+# because /health's @app.get decorator runs later in module load. The static-dir path is
+# config (KCDX_STATIC_DIR); static_serving owns the serving mechanism + the degraded
+# contract (structure-by-responsibility -- its own module, not main).
+register_static_serving(app)

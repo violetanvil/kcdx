@@ -14,13 +14,24 @@ D14/D17/D18.
 
 ## Step ledger
 
+Step 16 decomposes into three commit-grain sub-steps (settled 2026-06-15 via `/feature`; the
+two open forks + the verification handoff resolved by the user — see step-16 doc §"Resolved
+2026-06-15"). 16 (backend static-serving) is pytest-gated by the agent now; 16b/16c need a
+Docker daemon (absent on this machine) → the user runs the `docker build` + smoke gate, the
+agent reads the `ACCEPT-SUITE` result (`.claude/rules/acceptance-signal.md` / `headless-testable.md`).
+
 | Step | Status | Commit |
 |---|---|---|
-| 16 Docker image + volume layout + env-credential seam (D14/D18) | NOT STARTED | — |
+| 16 backend static-serving — uvicorn serves the built frontend `dist/` as the SPA + the API (single image, same-origin); API routes keep priority, deep-link fallback to `index.html`. pytest-gated (agent-run) | DONE | (pending) |
+| 16b Docker image + env/volume contract — multi-stage Dockerfile (in-image `npm ci && npm run build` of the nested frontend → backend runtime + copied `dist/`) + `.dockerignore` + the documented env-var/volume/`git lfs` contract (D14/D18) | NOT STARTED | — |
+| 16c container smoke test — `docker build` + run with a mounted test checkout + a throwaway local bare remote (the `KCDX_PUSH_TOKEN` seam); asserts API+frontend serve, a read returns the curated set, a save commits+pushes; emits `ACCEPT-RESULT`/`ACCEPT-SUITE` (user-run gate, agent reads) | NOT STARTED | — |
+
+A top-level Step 5 / the sequence-ledger row flips DONE when 16 + 16b + 16c are DONE (16c's
+DONE is the user's smoke-gate `ACCEPT-SUITE: N/N passing`).
 
 ## Step docs
 
-16. [step-16-docker-image-volume.md](step-16-docker-image-volume.md)
+16. [step-16-docker-image-volume.md](step-16-docker-image-volume.md) (covers all three sub-steps)
 
 ## Verification gate (phase end)
 
