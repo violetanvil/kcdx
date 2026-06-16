@@ -52,39 +52,32 @@ gated-verifier confirmed. Key outcomes that bind the build:
 
 - slot 1 (AdjustFileName) = seeded **id 152**; slot 36 (FOpen) = seeded **id 131**
   — resolve by name, ready.
-- slot 35 (FOpenRaw) = NO seed row → **BLOCKED by KI-0025** (see below).
+- slot 35 (FOpenRaw) = seeded **kcdx_id 160** ✅ (added `5527f2b`, AP18-approved) —
+  resolve by name, ready. (Was blocked by KI-0025; now RESOLVED — see below.)
 
-## THE BLOCKER — KI-0025 (why we paused)
+## THE BLOCKER — KI-0025 (RESOLVED 2026-06-15)
 
-Adding the slot-35 seed entity `CCryPak_FOpenRaw` (kcdx_id=160) via
-`/add-db-entity`: the row validated clean at PREVIEW (`valid:true`) but
-`/confirm` FAILED the whole-DB integrity gate and ROLLED BACK (nothing written):
-`survival_derives_from kcdx_id=12 has no curated address_versions row`. This is a
-PRE-EXISTING DB inconsistency (kcdx_id 9/12/23 gEnv-resolver anchor family), NOT
-the FOpenRaw row — and it blocks ALL new-entity adds. Full diagnosis +
-fix-direction: **`docs/known-issues/KI-0025-refdb-dangling-survival-derives-from-kcdx-id-12.md`**.
+KI-0025 is **CLOSED** (`05f2ff7`; closed/KI-0025-...md). Adding CCryPak_FOpenRaw
+tripped a PRE-EXISTING whole-DB integrity break (`survival_derives_from kcdx_id=12
+has no curated address_versions row`). Root cause was TWO coupled defects (the
+filing's "integer-version-id-vs-tag" guess was FALSIFIED): (1) a batch UPDATE
+closed kcdx_id=12's sole interval (a live entity → no open current form), failing
+kcdx_id=9's `survival_derives_from=12` edge; (2) the apply path's no-op comparison
+eagerly resolved that edge against the open DB and raised, so the reopen couldn't
+self-heal. Fixed (`79ea49a` code + validator, `8ec66e3` repair), Gate-B verified.
+**Acceptance: CCryPak_FOpenRaw (kcdx_id=160) is now IN the DB (`5527f2b`)** — the
+slot-35 seed row is ready to resolve by name. No DB work remains.
 
-**User's decision at the pause:** "Pause DB work; investigate the kcdx_id 9/12/23
-integrity defect separately, defer FOpenRaw + the build." (The CCryPak_FOpenRaw
-verified fact is preserved in `4ca0bae`'s FINDINGS, seed-ready, to re-add once the
-DB is consistent.)
+## EXACT next action on pickup
 
-## EXACT next action on pickup (after KI-0025 is fixed)
+KI-0025 is fixed and the slot-35 row is seeded — **start at step 1 (/plan-update)**.
+(Former steps "fix KI-0025" + "re-add FOpenRaw" are DONE.)
 
-1. **Fix KI-0025** first (a maintainer/GUI UPDATE to the kcdx_id 9/12 linkage —
-   out of `/add-db-entity` scope; investigate the integer-version-id-vs-tag
-   mechanism, do NOT hand-edit CSV / force the write).
-2. **Re-add CCryPak_FOpenRaw** (kcdx_id=160) via `/add-db-entity` — the row body
-   is ready (`/tmp/foparaw-entity.json` shape; re-derive from FINDINGS if gone):
-   kind=function, module=WHGame.dll, rva=0x2418DE4,
-   signature='ptr (ptr, cstr, cstr, ptr, i32)', valid_from_version=1.5.1164953,
-   audit trio = VioletAnvil / 2026-06-15 / maintainer_ghidra. AP18 user-approval
-   already GIVEN this session — re-confirm on re-add.
-3. **`/plan`-update the takeover tree** (user-chosen, was the next step): merge
+1. **`/plan`-update the takeover tree** (user-chosen): merge
    3.2+3.3 into one open+read cutover step; move slot 38 to the read family;
    correct §4.5's slot-38 "Open" grouping; record the slot-35 ABI + the merged-step
    decision in plan-spec/design (`.claude/rules/decision-capture.md`).
-4. **Execute the cutover**: flip open (1/35/36) + read (38/39/40/41/53/54/55/56)
+2. **Execute the cutover**: flip open (1/35/36) + read (38/39/40/41/53/54/55/56)
    slots THUNK→KCDX; wire `BuildAssetIndex` into the seating path (NOT yet called —
    `seating_hook.cpp` only swaps the vtable today); mint handle-ids + operate them
    on kcdx's CRT; full open→read regression plugin (next free = **cap-113**).
@@ -92,14 +85,20 @@ DB is consistent.)
 
 ## Owed follow-ups (don't lose these)
 
-- **OWED test plugin** for CCryPak_FOpenRaw once seeded (the cutover's slot-35
-  exercise satisfies it) — `policy.md` test-plugin requirement.
+- **OWED test plugin** for CCryPak_FOpenRaw (kcdx_id=160, now seeded) — the
+  cutover's slot-35 exercise satisfies it; `policy.md` test-plugin requirement.
 - **cap-108–112 PASS rows** still `[unverified — pending launch]` (Phase 2 + 3.1
   seating) — confirm at the next `/verification-checkpoint` launch.
 - **§4.5 slot-38 wording fix** (groups a read slot under "Open").
+- **KI-0025 pre-existing reds (NOT this work):** `test_rebuild_oracle` stale
+  baseline (157≠159 rows) + `test_importer_blank_signature` kcdx_id=159 fingerprint
+  — surfaced during the KI-0025 fix, confirmed outside its blast radius; separate
+  seed-drift items, not owed by the takeover.
 
 ## Commit trail (this thread)
 
 `4f2c32d` (3.1 P3) → `4e817ed` (3.1 backfill) → `4ca0bae` (slot-map recon +
-slot-35 dump). DB add: NOTHING written (KI-0025 rollback). Working tree otherwise
-carries unrelated parallel-chat dirty files — stage by exact path only.
+slot-35 dump). Then the KI-0025 detour: `79ea49a` (fix) → `8ec66e3` (kcdx_id=12
+repair) → `5527f2b` (**CCryPak_FOpenRaw kcdx_id=160 ADDED** — the slot-35 row) →
+`05f2ff7` (KI-0025 closed). Working tree otherwise carries unrelated parallel-chat
+dirty files — stage by exact path only.
