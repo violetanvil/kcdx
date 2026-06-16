@@ -1,4 +1,8 @@
-# Maintainer-tool completion sequence
+# Maintainer-tool completion sequence — COMPLETE (2026-06-16)
+
+**Status: COMPLETE.** All sequence items DONE; Step 4b accepted 2026-06-16; KI-0020 carried open as a
+non-blocking watch-item; Step 5's user-run Docker smoke gate is the non-blocking acceptance gesture. See
+§"Close-out" below.
 
 **Intent:** drive the maintainer tool's remaining open work to closed, in one agreed order
 (user-settled 2026-06-15: acceptances → bugs → Docker). NOT a new feature — a cross-tree
@@ -21,9 +25,9 @@ KI close, or the phase build+gate) is met.
 | 2pre — KI-0024 fix: audit-trio orphan on a direct trio edit (resequenced ahead of Step 2 — it sits in Step 2's s09 `[Verify ▸]` → s04 trio-edit acceptance path). User-hit during Step 2 acceptance ("on random fields all the time"). The s04 trio coupling fired one direction only; every trio-cell-initiated path (direct write, D29 auto-suggest, EMPTYING a verified cell) could orphan the all-or-null trio + the error surface showed the raw validator string on the wrong fields. Fixed both directions + the error surface via `/debug` (FE `8557c11` version-empty; FE `158dd3f` version-set + teaching error/deficient-attribution); Gate A (1b + 2a) + Gate B `land-fix`; vitest 604/604; user-confirmed. Closed `8697121`. UNBLOCKS Step 2's trio-edit acceptance | DONE | FE:8557c11 + FE:158dd3f |
 | 2 — lifecycle-completeness Phase 3 milestone UI acceptance (s09 needs-action view + back-stack + unsaved-guard + s08 reconciliation/Fix-flow) → flips that tree's Phase 3 to DONE | DONE — accepted 2026-06-15 on the live tool: s09 opened from the navigator badge (7 never-verified at version 1.5.1164953, by-kind sections + counts as specced), `[Verify ▸]` PUSHED s04, the KI-0024-fixed trio-edit path held (verified_by won't blank, no raw-validator error on the populated fields), `‹ back` restored s09 intact, s08 Fix-flow carried detail to s04 + report-intact ‹back. (A dead shared dev-backend surfaced mid-walk as a browser CORS/NetworkError — relaunched the uvicorn process, re-verified the `Access-Control-Allow-Origin` header for the vite origin; code/config were correct, no defect.) Phase 3 flipped to DONE | — (acceptance, no commit hash) |
 | 3 — KI-0021 fix: new-entity verified first row unsavable (port the `verified_date` today-auto-fill from CreateVersionForm to CreateEntityForm + regression test) via `/debug`. **Same audit-trio family as KI-0024.** Fold in the s05 `CreateVersionForm` blank-trio gap Gate B surfaced during KI-0024 | DONE — `/debug KI-0021` found the fix had ALREADY landed (FE:9ff0fb5, audit-trio coupling wired into CreateEntityForm.setField+revertField) during the audit-trio pass, with a falsifiable regression test (vitest 7/7, verified live this session: FE build exit 0 + revert→test-goes-red). The KI doc sat stale-open; Phase B skipped (cause statically verified), Gate B `root-cause-verifier` → `land-fix`. The folded s05 `CreateVersionForm` blank-trio concern verified NON-EXISTENT as a live trap (it starts from a complete prefilled trio — source row + verified_date-today default — so cannot orphan). Closed (KI-0021 → closed/ + reindexed). | FE:9ff0fb5 |
-| 4b — general validator-message → teaching-copy translation layer ("option 2c", deferred by the user at KI-0024's Fork-2): translate EVERY raw validator message the editor surfaces (not just the trio-incomplete verdict) to teaching copy + per-shape deficient-field attribution | DONE (build landed; awaiting acceptance) — `/execute` built `validatorTeaching.ts`: a per-shape table (stable-substring matcher + user-approved teaching copy + deficient-field resolver) covering all ~20 data-core validator shapes + a strip-file:line-prefix fallback; `translateValidatorError` routes every error through it in FieldEditor + both create forms (and their rowErrors channels). Presentation-only — validity stays the API's `res.valid` (law 6); the raw `…seed.csv:NN:` string never reaches the maintainer. Per-shape falsifiable tests (overlap pairs resolve distinctly; fallback asserts no raw-prefix leak). Structure + copy + fallback all user-approved up front. Build exit 0 + vitest 632/632 (manager-run, AP8); step-review PROCEED. FE:a3c5eb3 | FE:a3c5eb3 |
+| 4b — general validator-message → teaching-copy translation layer ("option 2c", deferred by the user at KI-0024's Fork-2): translate EVERY raw validator message the editor surfaces (not just the trio-incomplete verdict) to teaching copy + per-shape deficient-field attribution | DONE — accepted 2026-06-16. `/execute` built `validatorTeaching.ts`: a per-shape table (stable-substring matcher + user-approved teaching copy + deficient-field resolver) covering all ~20 data-core validator shapes + a strip-file:line-prefix fallback; `translateValidatorError` routes every error through it in FieldEditor + both create forms (and their rowErrors channels). Presentation-only — validity stays the API's `res.valid` (law 6); the raw `…seed.csv:NN:` string never reaches the maintainer. Per-shape falsifiable tests (overlap pairs resolve distinctly; fallback asserts no raw-prefix leak). Structure + copy + fallback all user-approved up front. Build exit 0 + vitest 632/632 (manager-run, AP8); step-review PROCEED. **User-confirmed the teaching-error rendering walk-through (2026-06-16).** FE:a3c5eb3 | FE:a3c5eb3 |
 | 4 — KI-0020 fix: harden the flaky `App.test.tsx` s09 timing tests | INVESTIGATED — kept OPEN with a watch (does NOT block close-out). `/debug KI-0020` re-observed before designing any harden: NON-REPRODUCIBLE across 13 full-suite runs incl. forced contention (24 over-subscribed workers + 12 CPU spinners), all green 632/632, zero `act()` warnings. Probably already resolved by `7d37417` (KI-0022's single-owner StrictMode-stable s09 effect collapsed the same double-fire race) but UNVERIFIED — a flake that won't reproduce can't be proven fixed (`results-driven`/AP17). Per user decision, no unverifiable harden lands; KI stays open with a revival trigger (reopen when an s09 `App.test` next reds, capturing the signature a verifiable harden needs). A test-infra flake, not a product defect (s09 behaviours pass in isolation), so it does not gate the sequence close-out. | — (no fix — kept open) |
-| 5 — db-direct Phase 5: Docker packaging (image serving the built frontend + mounted-checkout + env-injected push-credential seam) via `/feature` | NOT STARTED | — |
+| 5 — db-direct Phase 5: Docker packaging (image serving the built frontend + mounted-checkout + env-injected push-credential seam) via `/feature` | DONE — built + gated 2026-06-15 (single image: backend serves API + built SPA same-origin; multi-stage Dockerfile + env/volume contract + container smoke test). Step 16 (backend static-serving) pytest-gated by the agent (88/88, AP8); 16b/16c (Dockerfile + `smoke-test.sh`) correctness-by-review + step-review PROCEED (no Docker daemon on the build machine → the `docker build`+run is the user's smoke gate). db-direct Phase 5 + the 16/16b/16c sub-rows flipped DONE. The phase's user-facing acceptance is the user running `bash data/maintainer-tool/docker/smoke-test.sh` on a Docker-equipped machine; the build is complete. | 079774d + 861aecf + eb9fda6 |
 
 **Reshape (2026-06-15):** the Phase 6 acceptance walk-through surfaced a correctness bug
 (KI-0023) + a UX enhancement request (red-box). 1a (KI-0023) closed via `/debug` (on-import
@@ -64,8 +68,24 @@ confirmed).
 s09 `App.test.tsx` flake is NON-REPRODUCIBLE across 13 full-suite runs incl. forced contention (all
 green 632/632, zero `act()` warnings), probably already resolved by `7d37417` (KI-0022) but UNVERIFIED.
 Per user decision, no unverifiable harden lands; KI-0020 stays open with a watch trigger and does NOT
-block close-out (a test-infra flake, not a product defect). Immediate work resumes: **Step 5 —
-db-direct Phase 5 Docker** (the last sequence item), via `/feature`.
+block close-out (a test-infra flake, not a product defect).
+
+**Step 5 built + gated (2026-06-15):** db-direct Phase 5 Docker via `/feature` — single image (uvicorn
+serves the JSON API + the built React SPA same-origin, D14/D18). Decomposed into three commit-grain
+sub-steps: 16 backend static-serving (pytest-gated by the agent, 88/88, AP8, `079774d`); 16b multi-stage
+Dockerfile + `.dockerignore` + env/volume/`git lfs` operator contract (`861aecf`); 16c container
+`smoke-test.sh` acceptance gate (`eb9fda6`). 16b/16c are correctness-by-review + step-review PROCEED —
+Docker is absent on the build machine, so the `docker build`+run is the user's smoke gate (16c),
+the designed handoff per `headless-testable.md` / `acceptance-signal.md`. db-direct Phase 5 + the
+16/16b/16c sub-rows flipped DONE.
+
+**Step 4b ACCEPTED + sequence CLOSED (2026-06-16):** the user confirmed the teaching-error rendering
+walk-through, so 4b flips to accepted. With Steps 1/1a/1b/2pre/2/3/4b/5 all DONE and 4b accepted (KI-0020
+carried open per the close condition), the sequence is complete. Per the user's close-out decision (no
+cornerstone bears — a close-out timing fork), Step 5's user-run smoke gate is treated as non-blocking
+(the build is done + committed; running `smoke-test.sh` is a user-machine gesture, the same class as a
+future game launch — `agent-builds-and-deploys.md` build-vs-launch split). This driver doc moves to
+`closed/` per `.claude/rules/doc-organization.md`.
 
 The owning trees + their canonical ledgers:
 - Steps 1: [maintainer-tool-verification-engine/](../maintainer-tool-verification-engine/README.md) Phase 6.
@@ -81,12 +101,21 @@ The owning trees + their canonical ledgers:
   is a takeover-plan edit, not maintainer-tool — flagged to record in
   [file-system-takeover/](../file-system-takeover/README.md) when P1's finding lands, not driven here.
 
-## Close-out
+## Close-out — DONE (2026-06-16)
 
-When the remaining rows are DONE, the maintainer tool's tracked open work is closed (the tool
-functionally complete + packaged, both FE features accepted, KI-0021 closed). **Step 4 (KI-0020) is the
-one row that does NOT close to DONE** — it is a non-reproducible test-infra flake intentionally kept
-OPEN with a watch trigger (not a product defect; does not gate close-out). So the close condition is:
-Steps 1 / 1a / 1b / 2pre / 2 / 3 / 4b / 5 DONE + Step 4b's acceptance confirmed, with KI-0020 carried
-as a tracked open watch-item. This driver doc moves to `closed/` per
-`.claude/rules/doc-organization.md` at that point.
+The close condition is MET: Steps 1 / 1a / 1b / 2pre / 2 / 3 / 4b / 5 are all DONE and Step 4b's
+acceptance is confirmed (2026-06-16). The maintainer tool's tracked open work is closed — the tool is
+functionally complete + packaged, both FE features (1b red-box, 4b teaching-error) accepted, KI-0021
+closed. This driver is marked COMPLETE in place and its plans-root index entry flipped to COMPLETE (the
+multi-step-plan ledger convention — a completed plan dir is marked-in-place by status, matching every
+other completed plan in [`../README.md`](../README.md) §"Current entries"; the `closed/` file-move is
+the `<TYPE>-NNNN` lifecycle-artifact convention, not the plan-dir one).
+
+**Carried-forward items (tracked elsewhere, NOT gating this close):**
+- **KI-0020** — the non-reproducible s09 `App.test.tsx` test-infra flake stays OPEN in
+  [`docs/known-issues/`](../../known-issues/README.md) with a watch trigger (reopen when an s09
+  `App.test` next reds). A test-infra flake, not a product defect.
+- **Step 5 smoke gate** — the user runs `bash data/maintainer-tool/docker/smoke-test.sh` on a
+  Docker-equipped machine to confirm the packaged image builds + runs (the build is done + committed;
+  this is the user-machine acceptance gesture, non-blocking per the build-vs-launch split). The agent
+  reads `ACCEPT-SUITE: 4/4 passing` when the user reports the run.
