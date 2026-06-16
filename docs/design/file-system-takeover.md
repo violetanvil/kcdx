@@ -1,6 +1,6 @@
 # File-system takeover — kcdx IS the engine filesystem (the settled design)
 
-**Status:** v1.4 (settled 2026-06-14; P1/P3 resolved 2026-06-15; changelog `file-system-takeover-changelog.md`).
+**Status:** v1.6 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; changelog `file-system-takeover-changelog.md`).
 **Supersedes:** the asset-resolution *seam* settled in
 [`asset-replacement.md`](asset-replacement.md) §7 (the two-hook
 `AdjustFileName`-replace + `FOpen`-overlay mechanism) — that seam is a PARTIAL
@@ -324,8 +324,11 @@ the engine original, that thunked body's OS arm would `fread`/`fseek`/`fclose` t
 kcdx handle-id on the ENGINE's CRT — the exact cross-CRT straddle §9 removes. So:
 **kcdx owns the read family, full stop** — every handle-operating slot stays `KCDX`,
 the one §4.3 thunk-flip the per-slot table forbids while the handle is a kcdx-minted
-id. This binds 3.2 (mints the handle-id), 3.3 (the kcdx-owned read family that
-operates it), and 3.5 (the table keeps every handle-operating slot `KCDX`).
+id. This binds the open+read cutover (step 3.2 — mints the handle-id AND owns the
+read family that operates it, in one atomic flip) and the table-finalize step
+(3.4 — the per-slot table keeps every handle-operating slot `KCDX`). Every handle
+the read family operates is a kcdx handle, because FOpen always mints one (§5 —
+asset, non-asset, and write alike); the read family is therefore single-arm.
 
 ### §4.5 The kcdx-owned slot set (the file family)
 
@@ -380,7 +383,9 @@ in the build is the source of truth; this list is the design intent it encodes.
 ## §5 Resolution — the unified asset index
 
 kcdx's slot-1 `AdjustFileName` impl (and the open/existence slots that consult the
-same structure) resolves against ONE in-memory index, built at load:
+same structure) resolves an ASSET name against ONE in-memory index, built at load
+(a non-asset name takes the general-resolution path described after the index — an
+index miss resolves the name, it does not hand it back to the engine):
 
 ```
 vpath (normalized) → ByteSource { kind: Loose | Pak,
@@ -399,9 +404,41 @@ vpath (normalized) → ByteSource { kind: Loose | Pak,
   search-path-vector walk, no per-call pak-directory bisection, no per-mode
   existence-table gate. This is the "no extra hotpath checks" constraint: the only
   per-open cost is the one lookup that tells kcdx where the bytes are.
-- **The index IS the kcdx filesystem's directory.** It is where overlay
-  precedence, load-order, and cross-mod composition all compose — one structure,
-  one source of truth for "what does this vpath resolve to."
+- **The index is the kcdx filesystem's ASSET directory — the fast path, NOT the
+  whole resolution universe.** It is where overlay precedence, load-order, and
+  cross-mod composition compose — one source of truth for "which byte-source
+  serves this asset vpath." It is NOT the set of names kcdx resolves: slot-1
+  `AdjustFileName` is the engine's GENERAL resolver, called for EVERY file name
+  the engine opens — game assets AND saves, config, cache, logs, `%USER%`-profile
+  paths, and write targets. The index answers the asset subset in O(1); it does
+  not (and should not) contain a save path or a `user/*.cfg`.
+
+**Slot-1 resolves EVERY name; an index miss is NOT a hand-back to the engine.**
+This is the load-bearing clarification (§1: kcdx IS the filesystem — *every* file
+operation is kcdx's, not just assets). kcdx's slot-1 `AdjustFileName`:
+- **Asset hit** → the O(1) index lookup returns the winning ByteSource.
+- **Non-asset / unindexed name** (a save, config, cache, write target, or any name
+  the asset index does not carry) → kcdx still resolves it to a real disk-path
+  STRING via the full search-path/alias/pakPriority walk. kcdx may reimplement
+  that walk, or thunk the ORIGINAL `AdjustFileName` body for the long tail — a
+  resolution thunk is SAFE because `AdjustFileName` returns a *string* and
+  operates only the engine object's intact data members (the search-path vector
+  `[this+0x198]`, the alias table `[this+0x1b0]`, the pakPriority cvar
+  `[this+0x228]` — all preserved by the vtable-pointer-only swap, §4.3 P4); it
+  touches NO handle and NO CRT, so it cannot reintroduce the cross-CRT straddle.
+
+**Every FOpen mints a kcdx handle — asset, non-asset, AND write alike (the §9
+invariant's precondition).** Because slot-1 resolves every name to a disk path,
+`FOpen`/`FOpenRaw` ALWAYS open that path on kcdx's CRT (kcdx `_wfopen` for a loose/
+non-asset/write path; kcdx's pak read-cursor for a pak asset) and ALWAYS mint a
+kcdx handle (§4.4). There is no FOpen path that hands the engine an engine-CRT
+handle, and therefore no engine-minted per-file handle ever reaches the kcdx read/
+write slots — so the read family is genuinely SINGLE-ARM (every handle it operates
+is a kcdx handle; no engine-handle detection arm is needed). This is what makes §9
+true rather than aspirational: an index MISS that thunked FOpen to the original
+(minting an engine handle a kcdx read slot would then operate) would be the
+REVERSE cross-CRT straddle — forbidden. The miss thunks RESOLUTION (a string),
+never the OPEN (a handle).
 
 **Index construction reuses the verified pak format facts** (evidence tier: real
 on-disk bytes, 2 Nexus paks, `RESOLUTION-OWNERSHIP-synthesis.md` §4 + front 5):

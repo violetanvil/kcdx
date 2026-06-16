@@ -3,6 +3,39 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-15 — v1.6 §5 states the COMPLETE resolution model: kcdx owns every FOpen, not just indexed assets
+
+- **The defect this fixes (a design-text trap, caught at the step-3.2 build audit):**
+  §5 described slot-1 `AdjustFileName` as resolving "against ONE in-memory index"
+  and called the index "the kcdx filesystem's directory… one source of truth for
+  what does this vpath resolve to" — with NO subsection for a name the index does
+  not carry (a save, config, cache, write target). An executor reading §5 for the
+  resolution/open slots concludes the universe slot-1 handles IS the asset index,
+  and that an index miss hands the name back to the engine (coexistence). That
+  contradicts §1 (kcdx IS the filesystem — *every* file op is kcdx's) and §9 (the
+  read family is kcdx-owned, a kcdx handle operated only by kcdx). The complete
+  intent existed only at §1 (the vision sentence) and §10 (one deferrals aside,
+  line ~608: writes are kcdx impls on kcdx's CRT) — neither connected to §5, and
+  §5 is what an executor reads first. `asset_index.h` had even punted the miss to
+  code ("a miss = the engine resolves it; a later step wires the fall-through"),
+  encoding the wrong default.
+- **The fix — §5 now states the complete model:** the index is the ASSET fast
+  path, NOT the whole resolution universe. Slot-1 resolves EVERY name (assets AND
+  saves/config/cache/`%USER%`/writes); a non-asset/unindexed name still resolves to
+  a real disk-path STRING via the full search-path/alias/pakPriority walk (kcdx's
+  own, or a thunk of the original `AdjustFileName` — SAFE because it returns a
+  string and touches no handle/CRT). `FOpen`/`FOpenRaw` therefore ALWAYS mint a
+  kcdx handle on kcdx's CRT — asset, non-asset, and write alike — which is the
+  precondition that makes the §9 single-arm read family TRUE rather than
+  aspirational. An index miss thunks RESOLUTION (a string), NEVER the OPEN (a
+  handle) — the reverse cross-CRT straddle is thereby forbidden, not merely
+  avoided.
+- **§4.4 updated** to drop the pre-merge "binds 3.2/3.3/3.5" three-step reference
+  (the merged cutover is step 3.2; table-finalize is 3.4) and to state the
+  single-arm property explicitly.
+- **No scope narrowing:** this REMOVES a latent coexistence reading; it does not
+  add deferral. kcdx owns every FOpen, the design's stated total-takeover vision.
+
 ## 2026-06-15 — v1.5 §4.5 slot-38 reclassified to the read family + slot-35 ABI recorded
 
 - **§4.5 wording defect fixed: slot 38 is `FReadRaw-by-pak-index`, a READ, not an
