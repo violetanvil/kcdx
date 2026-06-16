@@ -1,5 +1,23 @@
 # Step 3.4 — pak-mgmt / search-path / delete slots + finalize the table
 
+> **BLOCKED (2026-06-16) — pending a `/design` decision on the pak-mgmt model.**
+> The audit (during a `/feature 3.4` attempt) found the pak-management slots
+> (33 GetPakInfo, 34 free, 100 ClosePakByIndex, 32 FindPakByCRC, 17 pak-membership,
+> 91 GetPakPriority — and 71 OpenPack/mount, ABI inferred-only) read/operate the
+> ENGINE's loaded-pak vector `[this+0x120]` + ZipDir machinery, which design §6
+> explicitly REJECTS (engine-CRT allocation — the cross-CRT class the takeover
+> removes; kcdx mounts into its OWN unified index). "Flip these to KCDX" is
+> therefore under-specified: what does a KCDX OpenPack mount and where; is the
+> engine loaded-pak vector populated under the takeover at all; what do
+> GetPakInfo/ClosePakByIndex/FindPakByCRC/pak-membership enumerate (kcdx's index
+> vs the engine vector); is slot 71 even kcdx-owned given §6. **User decision
+> (2026-06-16): route this model to `/design`** (amend §4.5 + §6 with the
+> mount/enumeration model) before building. Slot 71's inferred ABI resolves via
+> `/research-disassembly` once the design needs it. The search-path/alias
+> (19–24/94, all decompiled-body verified) + delete/copy (49/50/52) + GetPakPriority
+> (91, a pure cvar read) slots are NOT blocked by this fork — they may build once
+> the pak-mgmt model is settled (or in a split step the design decides).
+
 **What.** Build the remaining kcdx-owned slots as real KCDX impls and FINALIZE the
 per-slot declarative table: pak/archive-management — AddPakToValidate (7),
 pak-membership (17), FindPakByCRC (32), GetPakInfo (33) + free (34), OpenPack/mount

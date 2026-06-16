@@ -8,13 +8,18 @@ reading both vanilla paks and loose mod files itself.
 Settled design: [`docs/design/file-system-takeover.md`](../../design/file-system-takeover.md) (`29a21c5`).
 Shared spec + coverage map: [`plan-spec.md`](plan-spec.md).
 
-> **Next: Phase 3 step 3.4 — pak-mgmt/search-path/delete slots + finalize the
-> per-slot table.** Steps 3.1 (handle rep), 3.2 (open+read cutover — the
-> cross-CRT class structurally removed), and 3.3 (existence/metadata + enumeration
-> slots) are DONE. The open/read/existence/metadata/enum families are kcdx-owned;
-> 3.4 flips the remaining pak-management/search-path/alias/delete slots + reviews
-> the finalized table, then 3.5 subsumes the `asset_overlay.cpp` seam. See the
-> [phase-03 ledger](phase-03-file-slots/README.md) for per-step status.
+> **Next: a `/design` decision on the pak-mgmt slot model — step 3.4 is BLOCKED
+> on it.** Steps 3.1 (handle rep), 3.2 (open+read cutover — the cross-CRT class
+> structurally removed), and 3.3 (existence/metadata + enumeration slots) are DONE;
+> the open/read/existence/metadata/enum families are kcdx-owned. Step 3.4 (the
+> remaining pak-mgmt/search-path/delete slots + table finalize) hit a design
+> collision: the pak-mgmt slots operate the engine's loaded-pak vector + ZipDir,
+> which §6 rejects (engine-CRT) — kcdx mounts into its OWN index. The
+> mount/enumeration model under the takeover must be settled in `/design`
+> (amend §4.5 + §6) before 3.4 builds. Details in the
+> [step 3.4 doc](phase-03-file-slots/step-4-mgmt-slots-table.md) BLOCKED note; the
+> search-path/alias + delete/copy slots are not blocked by the fork. 3.5 (subsume
+> the `asset_overlay.cpp` seam) follows 3.4.
 
 ## Phase-grain status ledger
 
