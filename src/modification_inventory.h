@@ -103,6 +103,24 @@ size_t LastTotalModifications();
 // Refreshed by LogInventory(); 0 until the first LogInventory() call.
 size_t LastBytesCount();
 
+// F.1 (KI-0026) — the EARLY ctx-B inventory-capture latch.
+//
+// The boot LogInventory (hooks.cpp first-update-tick) runs in ctx C, AFTER
+// graphics-init, so a graphics-init fault reads LastInventorySummary() = the
+// "(inventory not yet captured)" sentinel and the crash dump's FAULTED_INVENTORY
+// is empty for the very window KI-0026 needs it. dllmain.cpp adds a SECOND,
+// earlier LogInventory at the CtorBracketInstalled phase (ctx B, before
+// graphics-init) and calls MarkEarlyCaptureRan() right after — which flips the
+// latch true ONLY if the cached summary is non-sentinel at that point (i.e. the
+// early capture actually populated it). The cap-45 self-test (ctx C) reads
+// EarlyCaptureRan() to assert the early capture fired and populated the summary
+// before graphics-init; it reads false if the early site never ran or the
+// summary still read the sentinel there. relaxed: a pure latch, no
+// happens-before to publish (set on the worker thread, read on the game thread
+// once both are well past CtorBracketInstalled).
+void MarkEarlyCaptureRan();
+bool EarlyCaptureRan();
+
 // ===========================================================================
 // Fire breadcrumb — the last N hook detours the game executed
 // ===========================================================================

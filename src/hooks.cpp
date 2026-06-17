@@ -473,6 +473,34 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
                               "hooks should have registered");
                 }
 
+                // cap-45: the EARLY ctx-B inventory capture (F.1, KI-0026). The
+                // boot LogInventory above runs in ctx C, AFTER graphics-init, so
+                // a graphics-init fault would read the "(inventory not yet
+                // captured)" sentinel. dllmain.cpp adds a SECOND, earlier
+                // LogInventory at the CtorBracketInstalled phase (ctx B, before
+                // graphics-init) so FAULTED_INVENTORY is populated for an init
+                // fault. EarlyCaptureRan() is true iff that early call ran AND
+                // populated a non-sentinel summary at the ctx-B site. This row
+                // FAILS if the early capture never ran (no second LogInventory)
+                // or the summary still read the sentinel there — i.e. a
+                // graphics-init fault would still see an empty inventory.
+                {
+                    const bool early =
+                        kcdx::modification_inventory::EarlyCaptureRan();
+                    kcdx::test::ReportResult(
+                        "cap-45-early-inventory",
+                        early,
+                        early
+                            ? "early ctx-B LogInventory ran before graphics-init "
+                              "and populated a non-sentinel summary — a "
+                              "graphics-init fault would have a FAULTED_INVENTORY "
+                              "to read"
+                            : "early ctx-B inventory capture did NOT run (or the "
+                              "summary still read the '(inventory not yet "
+                              "captured)' sentinel) — a graphics-init fault would "
+                              "read an empty FAULTED_INVENTORY (F.1 not in effect)");
+                }
+
                 // cap-46: engine self-report for the per-session log-stamp
                 // fix (manifest stub at test-plugins/cap-46-session-stamp/).
                 // The behavior under test is engine machinery: the dev log

@@ -8,6 +8,7 @@
 #include <sys/stat.h>  // struct _stat64 / _wstat64 (the slot-45/92/93 loose-hit size)
 
 #include "asset_index.h"         // ByteSource / GetBuiltIndex / ResolveVPath (normalizes the query in-body)
+#include "boot_trace.h"          // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
 #include "../log.h"
 
 // The kcdx EXISTENCE / METADATA-by-name slot impls — see metadata_slots.h for
@@ -174,6 +175,7 @@ bool kcdx_IsFolder(void* self, const char* pName) {
     if (!orig) { LogMissingOriginal("IsFolder", pName); return false; }
     const bool r = orig(self, pName);
     LogFirstMeta("IsFolder", pName, "original");
+    TraceMeta("IsFolder", pName, "original", r ? 1 : 0);
     return r;
 }
 
@@ -198,12 +200,16 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
                 // bDiskOnly in-body).
             } else {
                 LogFirstMeta("GetFileSize", pName, "index-pak");
+                TraceMeta("GetFileSize", pName, "index-pak",
+                          static_cast<long long>(bs->size));
                 return bs->size;
             }
         } else {  // Loose: the override IS a disk file; stat it for the true size.
             struct _stat64 st;
             if (StatDiskPath(bs->diskPath.c_str(), &st) == 0) {
                 LogFirstMeta("GetFileSize", pName, "index-loose");
+                TraceMeta("GetFileSize", pName, "index-loose",
+                          static_cast<long long>(st.st_size));
                 return static_cast<uint64_t>(st.st_size);
             }
             // The loose override resolved but its disk file failed to stat — a
@@ -224,6 +230,7 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
     }
     const uint64_t r = orig(self, pName, bDiskOnly);
     LogFirstMeta("GetFileSize", pName, "original");
+    TraceMeta("GetFileSize", pName, "original", static_cast<long long>(r));
     return r;
 }
 
@@ -243,18 +250,22 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
         const bool isPak = (bs->kind == ByteSource::Kind::Pak);
         // location==2 → pak-only; ==1 → disk-only; else either.
         if (location == 2) {
-            if (isPak) { LogFirstMeta("IsFileExist3", pName, "index-pak"); return true; }
+            if (isPak) { LogFirstMeta("IsFileExist3", pName, "index-pak");
+                         TraceMeta("IsFileExist3", pName, "index-pak", 1);
+                         return true; }
         } else if (location == 1) {
             if (!isPak) {  // a loose disk override — confirm the disk file exists.
                 wchar_t wpath[kMaxPath];
                 if (WidenPath(bs->diskPath.c_str(), wpath, kMaxPath) &&
                     GetFileAttributesW(wpath) != INVALID_FILE_ATTRIBUTES) {
                     LogFirstMeta("IsFileExist3", pName, "index-loose");
+                    TraceMeta("IsFileExist3", pName, "index-loose", 1);
                     return true;
                 }
             }
         } else {  // either
             LogFirstMeta("IsFileExist3", pName, "index-either");
+            TraceMeta("IsFileExist3", pName, "index-either", 1);
             return true;
         }
         // location filtered the index source out → fall to the original.
@@ -268,6 +279,7 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
     if (!orig) { LogMissingOriginal("IsFileExist3", pName); return false; }
     const bool r = orig(self, pName, location);
     LogFirstMeta("IsFileExist3", pName, "original");
+    TraceMeta("IsFileExist3", pName, "original", r ? 1 : 0);
     return r;
 }
 
@@ -284,6 +296,7 @@ uint64_t kcdx_GetFileAttributes(void* self, const char* pName) {
     if (!orig) { LogMissingOriginal("GetFileAttributes", pName); return 0; }
     const uint64_t r = orig(self, pName);
     LogFirstMeta("GetFileAttributes", pName, "original");
+    TraceMeta("GetFileAttributes", pName, "original", static_cast<long long>(r));
     return r;
 }
 
@@ -299,6 +312,7 @@ int kcdx_GetFileStat(void* self, const char* pName, void* outStat) {
     if (!orig) { LogMissingOriginal("GetFileStat", pName); return -1; }
     const int rc = orig(self, pName, outStat);
     if (rc == 0) LogFirstMeta("GetFileStat", pName, "original");
+    TraceMeta("GetFileStat", pName, "original", static_cast<long long>(rc));
     return rc;
 }
 
@@ -312,6 +326,7 @@ bool kcdx_IsFileExist2(void* self, const char* pName) {
 
     if (ResolveVPath(GetBuiltIndex(), pName)) {
         LogFirstMeta("IsFileExist2", pName, "index");
+        TraceMeta("IsFileExist2", pName, "index", 1);
         return true;  // an index entry is always a file (never a dir stub).
     }
 
@@ -321,6 +336,7 @@ bool kcdx_IsFileExist2(void* self, const char* pName) {
     if (!orig) { LogMissingOriginal("IsFileExist2", pName); return false; }
     const bool r = orig(self, pName);
     LogFirstMeta("IsFileExist2", pName, "original");
+    TraceMeta("IsFileExist2", pName, "original", r ? 1 : 0);
     return r;
 }
 
@@ -336,11 +352,15 @@ long long kcdx_GetFileSizeOnDisk(void* self, const char* pName) {
     if (bs) {
         if (bs->kind == ByteSource::Kind::Pak) {
             LogFirstMeta("GetFileSizeOnDisk", pName, "index-pak");
+            TraceMeta("GetFileSizeOnDisk", pName, "index-pak",
+                      static_cast<long long>(bs->size));
             return static_cast<long long>(bs->size);
         }
         struct _stat64 st;
         if (StatDiskPath(bs->diskPath.c_str(), &st) == 0) {
             LogFirstMeta("GetFileSizeOnDisk", pName, "index-loose");
+            TraceMeta("GetFileSizeOnDisk", pName, "index-loose",
+                      static_cast<long long>(st.st_size));
             return static_cast<long long>(st.st_size);
         }
         LOG_WARN_KV(kCat, "getfilesizeondisk_loose_stat_failed",
@@ -354,6 +374,7 @@ long long kcdx_GetFileSizeOnDisk(void* self, const char* pName) {
     if (!orig) { LogMissingOriginal("GetFileSizeOnDisk", pName); return 0; }
     const long long r = orig(self, pName);
     LogFirstMeta("GetFileSizeOnDisk", pName, "original");
+    TraceMeta("GetFileSizeOnDisk", pName, "original", r);
     return r;
 }
 
@@ -370,11 +391,15 @@ uint32_t kcdx_GetFileSizeCompressed(void* self, const char* pName) {
     if (bs) {
         if (bs->kind == ByteSource::Kind::Pak) {
             LogFirstMeta("GetFileSizeCompressed", pName, "index-pak");
+            TraceMeta("GetFileSizeCompressed", pName, "index-pak",
+                      static_cast<long long>(bs->compressed));
             return static_cast<uint32_t>(bs->compressed);
         }
         struct _stat64 st;
         if (StatDiskPath(bs->diskPath.c_str(), &st) == 0) {
             LogFirstMeta("GetFileSizeCompressed", pName, "index-loose");
+            TraceMeta("GetFileSizeCompressed", pName, "index-loose",
+                      static_cast<long long>(st.st_size));
             return static_cast<uint32_t>(st.st_size);  // loose = stored, compressed==disk size
         }
         LOG_WARN_KV(kCat, "getfilesizecompressed_loose_stat_failed",
@@ -387,6 +412,8 @@ uint32_t kcdx_GetFileSizeCompressed(void* self, const char* pName) {
     if (!orig) { LogMissingOriginal("GetFileSizeCompressed", pName); return 0; }
     const uint32_t r = orig(self, pName);
     LogFirstMeta("GetFileSizeCompressed", pName, "original");
+    TraceMeta("GetFileSizeCompressed", pName, "original",
+              static_cast<long long>(r));
     return r;
 }
 

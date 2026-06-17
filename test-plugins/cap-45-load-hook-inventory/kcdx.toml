@@ -16,6 +16,17 @@
 #                          the boot LogInventory call (src/hooks.cpp), PASS iff
 #                          the live inventory's TOTAL modification count is
 #                          nonzero (LastTotalModifications() > 0).
+#   cap-45-early-inventory The EARLY ctx-B inventory capture (F.1, KI-0026) ran
+#                          BEFORE graphics-init so a graphics-init fault has a
+#                          populated FAULTED_INVENTORY to dump. dllmain.cpp adds a
+#                          SECOND LogInventory at the CtorBracketInstalled phase
+#                          (ctx B, before CSystem::Init) — the boot call above is
+#                          ctx C, AFTER graphics-init, so it cannot seed an
+#                          init-fault's inventory. PASS iff EarlyCaptureRan() (the
+#                          early call ran AND populated a non-sentinel summary at
+#                          the ctx-B site). FAILS if the early capture never ran
+#                          or the summary still read the "(inventory not yet
+#                          captured)" sentinel there.
 #
 # The inventory reads the LIVE modification sources: hook_chain::g_chains (live
 # kcdx.hook plugin hooks) plus a RegisterModification'd registry of the fixed
@@ -36,4 +47,4 @@ description         = "Dev-mode load-path engine-modification inventory: confirm
 version             = "0.1.0"
 kcdx_min_version    = "0.1.0"
 log_level           = "info"
-test_names          = ["cap-45-load-inventory"]
+test_names          = ["cap-45-load-inventory", "cap-45-early-inventory"]

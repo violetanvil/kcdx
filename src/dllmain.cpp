@@ -14,6 +14,9 @@
 #include "lua_bind_hook.h"    // RegisterHandlers() — Kind::Hook apply handler
 #include "lua_bind_statement.h"  // RegisterHandlers() — Kind::Statement apply handler
 #include "lua_vm_build.h"     // KEYSTONE: worker builds the VM + engine adopts it
+#include "modification_inventory.h"  // early ctx-B inventory capture (F.1) — so a
+                                     // graphics-init fault has a populated
+                                     // FAULTED_INVENTORY to dump
 #include "mod_absorb/pak_mod_registry.h"  // pak-mod version gate (step 3)
 #include "mod_absorb/order_persist.h"     // order persistence (step 5)
 #include "paths.h"
@@ -291,6 +294,40 @@ DWORD WINAPI WorkerThread(LPVOID) {
     // PRODUCTION (no dev-mode gate) — this IS the feature.
     kcdx::mod_absorb::InstallCtorBracket();
     kcdx::init::AdvanceTo(kcdx::init::InitPhase::CtorBracketInstalled);
+
+    // F.1 (KI-0026) EARLY modification-inventory capture. The post-everything
+    // boot LogInventory (hooks.cpp, first-update-tick) runs in ctx C, AFTER
+    // graphics-init — so a graphics-init fault (the KI-0026 0xC8 in NGX/FSR2
+    // C_Game::CreateInstance) reads LastInventorySummary() = "(inventory not yet
+    // captured)" and the crash dump's FAULTED_INVENTORY is empty for exactly the
+    // window we need it. This SECOND, earlier call (ctx B, worker thread, right
+    // after the engine hooks + the ctor-bracket install — strictly before
+    // CSystem::Init / graphics-init) refreshes the cached crash-guard summary so a
+    // fault DURING init has the suspect set to read. It folds FEWER modifications
+    // than the boot call (plugins are not loaded yet) — that is expected and
+    // correct: it captures exactly what kcdx has modified by this point (the
+    // engine self-instrumentation hooks + the ctor-bracket / vtable installs),
+    // which IS the content-independent suspect set for this crash (PROBE E).
+    // Allocation-safe here: LogInventory takes the module mutex + iterates a
+    // vector off the fault path on the worker thread. The boot call stays as the
+    // post-everything-applied refresh; this only seeds a value for an init fault.
+    // A distinct action token ("EarlyInventoryCapture") keeps the two emissions
+    // distinguishable in the dev log.
+    kcdx::modification_inventory::LogInventory(kcdx::log::Level::Info);
+    // Latch the early-capture-ran flag (only flips true if the summary is now
+    // non-sentinel) — the cap-45 ctx-C self-test reads it to prove the ctx-B
+    // capture populated FAULTED_INVENTORY before graphics-init.
+    kcdx::modification_inventory::MarkEarlyCaptureRan();
+    LOG_INFO_KV("INVENTORY", "early_capture_ctxB",
+        kcdx::log::KV::BareStr("phase", "CtorBracketInstalled"),
+        kcdx::log::KV("count",
+            static_cast<long long>(
+                kcdx::modification_inventory::LastTotalModifications())),
+        kcdx::log::KV::BareStr("detail",
+            "F.1 (KI-0026): early ctx-B inventory captured BEFORE graphics-init "
+            "so a graphics-init fault has a populated FAULTED_INVENTORY — folds "
+            "fewer mods than the boot summary (plugins not loaded yet); this is "
+            "the engine/ctor-bracket suspect set."));
 
     // Filesystem-takeover seating hook — armed at the SAME race-critical early
     // slot as the ctor bracket above, and for the same reason: the engine's

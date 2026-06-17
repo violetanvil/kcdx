@@ -9,6 +9,7 @@
 #include <io.h>       // _wfindfirst64 / _wfindnext64 / _wfinddata64_t
 
 #include "asset_index.h"
+#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
 #include "../log.h"
@@ -114,6 +115,7 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
     }
 
     bool any = false;
+    long long matched = 0;  // FS_BOOT_TRACE (F.3): entries the unified walk fired
 
     // ---- (1) Engine on-disk walk (the original _findfirst64 loop, on kcdx's
     //          CRT) over the resolved disk pattern. Resolve pPathPattern via
@@ -147,6 +149,7 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
                     if (w > 0 && w < static_cast<int>(kMaxPath)) {
                         perFile(self, cbCtx, full, userData);
                         any = true;
+                        ++matched;
                     }
                 } while (_wfindnext64(h, &fd) == 0);
                 _findclose(h);
@@ -186,6 +189,7 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
         if (vpath.find('/', prefix.size()) != std::string::npos) continue;  // deeper subdir — skip (single-level)
         perFile(self, cbCtx, vpath.c_str(), userData);
         any = true;
+        ++matched;
     }
 
     if (any) {
@@ -203,6 +207,12 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
                     "walk replaced — kcdx owns the enumeration."));
         }
     }
+
+    // FS_BOOT_TRACE (F.3): every enum call in the boot window — the inbound
+    // pattern + the count of entries the unified walk fired the callback for.
+    // pPathPattern is a borrowed inbound pointer (no allocation on the traced
+    // path). Predicted-skip after AfterGameApply.
+    TraceEnum("ForEachFile", pPathPattern, matched);
 
     return any ? 1 : 0;
 }

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "asset_index.h"
+#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
 #include "file_handle.h"
 #include "pak_reader.h"
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
@@ -153,11 +154,14 @@ KcdxHandle OpenResolvedAndMint(void* self, const char* pName, const char* szMode
 
     KcdxHandle handle = 0;
     std::string resolvedDisk;  // what we write into resolvedOut (FOpenRaw)
+    const char* how = "miss-original";  // FS_BOOT_TRACE: the path taken (F.3)
 
     if (bs && bs->kind == ByteSource::Kind::Loose) {
         resolvedDisk = bs->diskPath;
+        how = "index-loose";
         handle = OpenLooseAndMint(bs->diskPath, szMode, whichSlot, key.c_str());
     } else if (bs && bs->kind == ByteSource::Kind::Pak) {
+        how = "index-pak";
         // The pak source resolves to its pak file on disk; the read serves from
         // the inflated in-memory buffer (no per-read pak re-touch).
         // Log-only: faithful UTF-8 of the (possibly non-ASCII) pak path — a
@@ -247,6 +251,13 @@ KcdxHandle OpenResolvedAndMint(void* self, const char* pName, const char* szMode
                     "kcdx's read slots. No engine-CRT handle exists."));
         }
     }
+    // FS_BOOT_TRACE (F.3): EVERY open in the boot window (not just the first) —
+    // slot + vpath + resolved disk path + the open result (the kcdx handle id, 0
+    // on a failed open). key/resolvedDisk .c_str() are borrowed pointers (no
+    // allocation on the traced path). After AfterGameApply this is a
+    // predicted-skip branch.
+    TraceOpen(whichSlot, key.c_str(), resolvedDisk.c_str(), how,
+              static_cast<long long>(handle));
     return handle;
 }
 
@@ -309,6 +320,11 @@ void* kcdx_AdjustFileName(void* self, const char* pName, void* outBuf,
                 kcdx::log::KV("disk", bs->diskPath),
                 kcdx::log::KV::BareStr("kind", "loose"));
         }
+        // FS_BOOT_TRACE (F.3): every loose-hit resolution in the boot window —
+        // the vpath kcdx resolved to a loose override's disk path. result=1
+        // marks a kcdx-served resolution (vs the original thunk below).
+        TraceOpen("AdjustFileName", key.c_str(), bs->diskPath.c_str(),
+                  "index-loose", 1);
         return out;
     }
 
@@ -336,7 +352,15 @@ void* kcdx_AdjustFileName(void* self, const char* pName, void* outBuf,
         std::snprintf(out, kMaxPath, "%s", pName);
         return out;
     }
-    return orig(self, pName, outBuf, nFlags);
+    void* resolved = orig(self, pName, outBuf, nFlags);
+    // FS_BOOT_TRACE (F.3): every miss/pak resolution in the boot window — kcdx
+    // thunked the original engine resolver (string-only, §5-safe). disk = the
+    // resolved string (a borrowed pointer to outBuf), result=0 marks the
+    // original thunk (vs the kcdx-served loose hit above).
+    TraceOpen("AdjustFileName", key.c_str(),
+              resolved ? static_cast<const char*>(resolved) : out, "miss-original",
+              0);
+    return resolved;
 }
 
 void* kcdx_FOpen(void* self, const char* pName, const char* szMode,

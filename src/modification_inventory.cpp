@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>   // snprintf (cached summary)
+#include <cstring>  // strcmp (early-capture sentinel check, F.1)
 #include <mutex>
 #include <vector>
 
@@ -38,6 +39,15 @@ std::mutex         g_mu;
 char   g_lastSummary[256] = "(inventory not yet captured)";
 size_t g_lastTotal        = 0;
 size_t g_lastBytes        = 0;  // Category::Bytes subtotal (cap-39 self-test)
+
+// F.1 (KI-0026): set true the first time the EARLY ctx-B inventory capture runs
+// (dllmain.cpp, right after CtorBracketInstalled, BEFORE graphics-init) AND finds
+// the cached summary populated (non-sentinel). The cap-45 self-test (ctx C, after
+// the boot LogInventory) reads it to assert the early capture fired so a
+// graphics-init fault would have had a populated FAULTED_INVENTORY. relaxed: a
+// pure logged-yet latch with no happens-before to publish (set on the worker
+// thread, read on the game thread once both are well past CtorBracketInstalled).
+std::atomic<bool> g_earlyCaptureRan{false};
 
 // Order-independent fingerprint of a set of target VAs. XOR-fold with a
 // per-value mix so two runs with the same set (in any order) produce the same
@@ -184,6 +194,21 @@ size_t LastTotalModifications() {
 
 size_t LastBytesCount() {
     return g_lastBytes;
+}
+
+void MarkEarlyCaptureRan() {
+    // Record the early ctx-B capture ONLY if the cached summary is actually
+    // populated by now — a sentinel summary here would mean LogInventory had not
+    // refreshed it, which is exactly the F.1 failure the cap-45 row guards. The
+    // strcmp against the sentinel is the falsifiable bar: the flag flips true
+    // only when LastInventorySummary() is non-sentinel at the early site.
+    if (std::strcmp(g_lastSummary, "(inventory not yet captured)") != 0) {
+        g_earlyCaptureRan.store(true, std::memory_order_relaxed);
+    }
+}
+
+bool EarlyCaptureRan() {
+    return g_earlyCaptureRan.load(std::memory_order_relaxed);
 }
 
 void RecordFire(uintptr_t targetVa, const char* pluginName,
