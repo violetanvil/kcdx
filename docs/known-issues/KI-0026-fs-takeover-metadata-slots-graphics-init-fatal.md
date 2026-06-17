@@ -41,6 +41,10 @@ lifecycle question); it never got past init.
 | A | DONE | Time-bisect: deploy the last-known-good DLL (`842e5d5`, the open+read cutover, accepted clean) — ONE variable = the engine DLL build. Boots clean ⇒ regression is in `247d295`+ (the metadata/enum slots); still crashes ⇒ cause pre-dates the metadata slots (kills the leading theory). |
 | B | superseded | (was gated on A=clean — A came back crash, so the metadata-slot observation probe is moot; the cause is not the metadata slots) |
 | C | DONE | Re-observe (A killed the leading theory): grep the known-issue tree for this exact stack/code → DUPLICATE of `save-load crash 0xC8 raised from WHGame.md` (a pre-existing, CONFIRMED-kcdx-caused bug). KI-0026 is the same crash class; the investigation reframes to that doc, which is further along. |
+| D | INVALID | Engine-vs-plugin bisect attempt — moved `test-suite/` to `kcdx-plugins/_test-suite-DISABLED-probeD/`. INVALID: the discovery walker RECURSED into the `_`-prefixed dir and loaded all 118 plugins from it anyway (`Discovered plugin … from …\_test-suite-DISABLED-probeD\cap-01-patch\`); `enabled_n=15` unchanged. The plugin-set variable did NOT change; the crash this run is uninformative. Same trap as the canonical doc's PROBE C–F. Redo as D2 (move the folder OUTSIDE the kcdx-plugins tree). |
+| D2 | DONE | Engine-vs-plugin bisect, DONE RIGHT (test-suite parked OUTSIDE the tree). VALID: discovered-plugin count dropped to 3 (the 2 cap-38 + builtin bugsplat-fix; the 119 test plugins gone). STILL CRASHES — byte-identical 0xC8 / culprit `WHGame.DLL rva=38115914`. Cause is kcdx's ENGINE LAYER (vtable swap / ctor-bracket / hooks), NOT the plugin set. Note: `enabled_n=15` UNCHANGED with ~0 test plugins → the engine MOUNT list is not built from the test plugins. |
+| E | DONE | Content-vs-mechanism bisect on the MOUNT list. VALID: `enabled_n=0` (`ctor_bracket_empty_list` — every mod disabled via load_order.toml). STILL CRASHES — byte-identical 0xC8 / culprit `WHGame.DLL rva=38115914`. The mod CONTENT is NOT the cause; the crash is the ctor-bracket / vtable-swap MECHANISM itself, content-independent (zero mods, zero test plugins, still fatals in graphics-init). |
+| F | pending | LOGGING GAP — the crash window is a black box. The log shows kcdx's last actions (swap live, FOpen ./system.cfg, loose_open_failed engine_core.thread_config) then the engine fatals 240ms later in graphics-init with NOTHING about the engine-side path: `FAULTED_INVENTORY=(not captured)`, WHGame frames unsymbolicated, no trace of what file ops graphics-init drove through kcdx's slots before the 0xC8. Enhance logging to make the mechanism visible BEFORE the next probe (user-directed). |
 
 ## Facts
 
@@ -85,6 +89,33 @@ lifecycle question); it never got past init.
 - The prior doc's repro was save-LOAD (~10s after the load hooks); KI-0026's is at
   BOOT graphics-init (before the menu). Same fatal-error path + stack, reached
   from a different entry point. (PROBE C)
+- With the 119 test plugins parked OUTSIDE the tree (3 plugins discovered), the
+  crash is byte-identical → the cause is kcdx's ENGINE LAYER (vtable swap /
+  ctor-bracket / hooks), NOT the plugin set (PROBE D2).
+- The engine MOUNT list kcdx's ctor-bracket synthesizes is `enabled_n=15` and is
+  UNCHANGED by parking the test plugins — it is 15 REAL installed pak mods
+  (FastLaunch, cheat, easytoseeherbs, kcdx_test_paklua, lua_memory_verify,
+  luck_laid_bare, mh_rebalanced_sharpening, + 7 Workshop mods incl. ebapmod,
+  instagather, xnude, znpcoverhaul, + lua_sandbox_probe). kcdx feeds these to the
+  engine C_ModManager MOUNT list; graphics/DLSS/FSR2 init walks it — the KI-0012
+  mod-mount-list surface. (PROBE D2)
+- With `enabled_n=0` (every mod disabled, `ctor_bracket_empty_list` — the engine
+  mounts NO mods, the list slots are a valid empty vector begin==end==cap==0) the
+  crash is byte-identical. The mod CONTENT is NOT the cause; the crash is the
+  ctor-bracket / vtable-swap MECHANISM itself, content-independent (zero mods, zero
+  test plugins, still fatals in graphics-init). The suspect narrows to: the vtable
+  swap, the ctor-bracket's from-scratch C_ModManager synthesis (even empty), or a
+  kcdx hook — one leaves the engine in a state graphics-init fatals on. (PROBE E)
+- LOGGING GAP — the crash window is unobservable. The dev log's last kcdx lines
+  are `ctor_bracket_complete enabled_n=0` → `swap_live_first_open` →
+  `kcdx_open_first ./system.cfg` → `loose_open_failed
+  engine/config/engine_core.thread_config` (errno=2) → the engine `0xC8` fatal
+  ~240ms later. NOTHING records the engine-side graphics-init path:
+  `FAULTED_INVENTORY=(inventory not yet captured)`, the WHGame frames are
+  unsymbolicated bare offsets, and no instrumentation traces which file ops
+  graphics-init drove through kcdx's slots (or what they returned) in that window.
+  The mechanism is invisible to the current logging — the canonical `0xC8` doc
+  flagged the same gap (no PDB; GUARD reports KERNELBASE not the real culprit).
 
 ## Open questions
 
