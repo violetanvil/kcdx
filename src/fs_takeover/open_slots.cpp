@@ -287,18 +287,11 @@ void* kcdx_AdjustFileName(void* self, const char* pName, void* outBuf,
     // convention, so a return-consuming caller (a GetFileSize-by-name, or a
     // caller that opens the returned path) gets the loose override's real path.
     //
-    // A PAK hit and a MISS both fall to the ORIGINAL resolver below (NOT this
-    // arm): slot-1 returns a STRING, and a pak-resident asset has NO loose disk
-    // path to return — returning the PAK FILE path would be wrong (a caller that
-    // re-opened that string would open the pak file itself as a loose file). The
-    // pak bytes are served at FOPEN time, where kcdx_FOpen independently
-    // index-resolves the original vpath and serves the pak entry from kcdx's own
-    // reader — regardless of what slot-1 returned. So slot-1 for a pak asset
-    // only needs the engine's normal resolved string, which the original
-    // resolver produces correctly (it touches no handle, no CRT — §5 safe). This
-    // is the conservative correct reading where §5 is silent on the slot-1
-    // return for a pak-resident asset: serve the loose path where one exists,
-    // thunk resolution otherwise; FOpen owns the pak byte-serve either way.
+    // A PAK hit returns the ORIGINAL inbound pName UNCHANGED (the arm below this
+    // one), NOT the original resolver and NOT the pak file path: see that arm's
+    // comment. A MISS still thunks the original resolver (the catch-all at the
+    // bottom). The total-takeover invariant (§1): kcdx serves an engine-pak file,
+    // it never hands resolution back to the engine for a file it owns (KI-0026).
     if (bs && bs->kind == ByteSource::Kind::Loose) {
         const int written = std::snprintf(out, kMaxPath, "%s",
                                           bs->diskPath.c_str());
@@ -328,13 +321,65 @@ void* kcdx_AdjustFileName(void* self, const char* pName, void* outBuf,
         return out;
     }
 
-    // MISS (or a PAK hit) — §5: NOT a hand-back. kcdx still resolves EVERY name.
-    // Thunk the
-    // captured ORIGINAL AdjustFileName for the long tail (a save, config, cache,
-    // write target). The original returns a STRING and operates only the
-    // engine object's intact data members (search-path vector, alias table,
-    // pakPriority cvar — preserved by the vtable-pointer-only swap); it touches
-    // NO handle and NO CRT, so it cannot reintroduce the cross-CRT straddle.
+    // ASSET HIT, PAK source — kcdx OWNS this engine-pak file; it does NOT hand
+    // resolution back to the engine (KI-0026). A pak-resident asset has no loose
+    // disk path to return, and returning the pak FILE path would be wrong (a
+    // re-opener would open the pak archive itself as a loose file). So return the
+    // ORIGINAL inbound pName UNCHANGED — the un-expanded `%engine%/...` form the
+    // caller passed in. The engine's subsequent kcdx_FOpen receives that exact
+    // `%engine%/...` string and re-resolves it through the index, where the
+    // `%engine%/` strip (asset_index.cpp ExpandEngineAliasToIndexKey) HITS the
+    // stored pak key and kcdx serves the pak bytes from its OWN reader (the
+    // index-pak arm of OpenResolvedAndMint). If instead this thunked the original
+    // resolver, the original would expand `%engine%`→`engine\` and return the
+    // loose string `engine/config/...`; FOpen would then re-resolve THAT form,
+    // whose `engine/` prefix the strip does NOT match → index miss → loose open →
+    // errno=2 → the graphics-init 0xC8 fatal. Returning pName unchanged is what
+    // keeps FOpen on the `%engine%/`-stripping path that hits the pak entry.
+    if (bs && bs->kind == ByteSource::Kind::Pak) {
+        const int written = std::snprintf(out, kMaxPath, "%s", pName);
+        if (written < 0 || static_cast<size_t>(written) >= kMaxPath) {
+            // Over-cap — decline this pak-serve resolution LOUD and fall to the
+            // original (it resolves from pName itself), NOT a truncated mis-serve
+            // (AP14). Mirrors the loose arm's over-cap handling above.
+            LOG_WARN_KV(kCat, "resolve_pak_over_cap",
+                kcdx::log::KV("vpath", key),
+                kcdx::log::KV::BareStr("detail",
+                    "the original pName exceeds kMaxPath (g_nMaxPath) — declining "
+                    "the pak-serve resolution and falling to the original resolver "
+                    "rather than truncating; pakFile is the wide path bs->pakFile"));
+            AdjustFileNameOrigFn_t orig =
+                g_originalAdjustFileName.load(std::memory_order_acquire);
+            return orig ? orig(self, pName, outBuf, nFlags) : out;
+        }
+        bool expected = false;
+        if (g_loggedFirstResolve.compare_exchange_strong(
+                expected, true, std::memory_order_relaxed)) {
+            LOG_DEBUG_KV(kCat, "kcdx_resolve_first",
+                kcdx::log::KV("vpath", key),
+                kcdx::log::KV::BareStr("kind", "pak"),
+                kcdx::log::KV::BareStr("detail",
+                    "slot-1 returns the original %engine%/... form unchanged so "
+                    "FOpen re-resolves it through the index strip and kcdx serves "
+                    "the engine-pak bytes — never handed back to the engine."));
+        }
+        // FS_BOOT_TRACE (F.3): every pak-hit resolution in the boot window — kcdx
+        // SERVED the pak entry at slot-1 (returned pName unchanged for FOpen to
+        // re-resolve), instead of thunking the original resolver to a loose path.
+        // Distinct label "index-pak-serve" + result=1 so the live trace shows the
+        // pak hit was served, not handed back (the KI-0026 outcome-A signal).
+        TraceOpen("AdjustFileName", key.c_str(), pName, "index-pak-serve", 1);
+        return out;
+    }
+
+    // MISS — §5: NOT a hand-back. kcdx still resolves EVERY name; the long tail
+    // (a save, config, cache, write target — a name not in the index) is resolved
+    // by thunking the captured ORIGINAL AdjustFileName. The original returns a
+    // STRING and operates only the engine object's intact data members
+    // (search-path vector, alias table, pakPriority cvar — preserved by the
+    // vtable-pointer-only swap); it touches NO handle and NO CRT, so it cannot
+    // reintroduce the cross-CRT straddle. (A PAK hit is served by the arm above,
+    // not here — kcdx never hands an engine-pak file it owns back to the engine.)
     AdjustFileNameOrigFn_t orig =
         g_originalAdjustFileName.load(std::memory_order_acquire);
     if (!orig) {
@@ -353,10 +398,10 @@ void* kcdx_AdjustFileName(void* self, const char* pName, void* outBuf,
         return out;
     }
     void* resolved = orig(self, pName, outBuf, nFlags);
-    // FS_BOOT_TRACE (F.3): every miss/pak resolution in the boot window — kcdx
+    // FS_BOOT_TRACE (F.3): every miss resolution in the boot window — kcdx
     // thunked the original engine resolver (string-only, §5-safe). disk = the
     // resolved string (a borrowed pointer to outBuf), result=0 marks the
-    // original thunk (vs the kcdx-served loose hit above).
+    // original thunk (vs the kcdx-served loose/pak hits above).
     TraceOpen("AdjustFileName", key.c_str(),
               resolved ? static_cast<const char*>(resolved) : out, "miss-original",
               0);

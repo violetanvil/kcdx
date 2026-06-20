@@ -18,23 +18,51 @@
 // miniz), a log-sink stub (kcdx::log symbols), and an overlay-SEAM stub
 // (asset_overlay::NormalizeVPath + GetOverlayMap + a test-only SetTestOverlayMap
 // driver). asset_index.cpp is BYTE-IDENTICAL to the engine build — the stub
-// supplies the overlay seam, not the index logic. It runs TWO assertions at boot:
+// supplies the overlay seam, not the index logic. It runs FOUR assertions at boot:
 //
 //   (a) DATA-ONLY MISS (the negative control — proves this file IS engine-pak-
 //       resident, i.e. was the KI-0026 miss): build the index over <game>/Data
 //       ALONE (engineDir empty), assert the engine vpath
 //       'config/engine_core.thread_config' does NOT resolve (nullptr) — it is
 //       not in any Data pak.
-//   (b) DATA+ENGINE HIT (the fix): build the index over BOTH <game>/Data AND
-//       <game>/Engine, assert the SAME engine vpath now resolves to a Pak
-//       ByteSource whose {size,compressed,method} match Engine.pak's CDR entry.
+//   (b) DATA+ENGINE HIT (the Engine root is walked): build the index over BOTH
+//       <game>/Data AND <game>/Engine, assert the bare pak-relative key now
+//       resolves to a Pak ByteSource whose {size,compressed,method} match
+//       Engine.pak's CDR entry.
+//   (c) ENGINE-ALIAS HIT (the KI-0026 alias-ownership fix): resolve the engine's
+//       ACTUAL lookup form '%engine%/config/engine_core.thread_config' (the
+//       aliased path it opens at graphics-init) against the same DATA+ENGINE
+//       index, assert it lands on the SAME Engine.pak ByteSource as (b). kcdx
+//       OWNS the %engine% alias — ResolveVPath expands '%engine%/X' to the
+//       pak-root key 'X'.
+//   (d) ALIAS-EXPANDED FORM MISSES (the slot-1-pak-serve fix — the form-mismatch
+//       the broken first fix shipped): assert the alias-EXPANDED LOOSE form
+//       'engine/config/engine_core.thread_config' does NOT resolve. This is the
+//       form the engine's ORIGINAL resolver produces ('%engine%'→'engine\'); the
+//       broken first fix thunked that original on a pak hit, so FOpen received
+//       'engine/...' — NOT a stored key (only the bare 'config/...' key and the
+//       '%engine%/...' alias the strip folds to it are keys), missed, and
+//       fatalled at 0xC8. Asserting it MISSES pins the FORM DISTINCTION the fix
+//       depends on: FOpen must receive the '%engine%/...' form, never
+//       'engine/...'. (The in-body comment explains why the unit layer cannot
+//       drive the full slot-1→FOpen flow — the live boot trace is the end-to-end
+//       proof; this row guards the form-key contract the fix rests on.)
 //
-// (a)+(b) together are the load-bearing FALSIFIABLE claim: the file is reachable
-// through kcdx's index ONLY because the index now covers the Engine root. A
-// regression that dropped the Engine root (or never walked it) yields (b) MISS →
-// FAIL; a wrong file (one already in a Data pak) would not MISS in (a) → FAIL.
-// This is a DIRECT index-hit assertion against the failing-path file KI-0026's
-// evidence names — NOT a boot-survival proxy.
+// (a)+(b)+(c)+(d) together are the load-bearing FALSIFIABLE claim. (a) proves the
+// file is genuinely Engine-pak-resident; (b) proves the Engine root is walked; (c)
+// proves kcdx owns the alias (the form the engine opens resolves); (d) proves the
+// alias-expanded loose form is NOT a key — the form distinction the slot-1-pak-
+// serve fix relies on. Before the alias-strip, (b) PASSED while the engine still
+// MISSED on the '%engine%/'-prefixed form — what (c) catches (FAILS without the
+// strip). Before the slot-1-pak-serve fix, (b)+(c) BOTH PASSED while the LIVE
+// FOpen still missed, because it received the 'engine/...' form neither tested —
+// the blind spot (d) closes (it FAILS if an `engine/` strip, Option 1 NOT chosen,
+// were added that made 'engine/...' a hit, masking the mismatch). A regression
+// that dropped the Engine root yields (b) MISS → FAIL; one that dropped the
+// alias-strip yields (c) MISS → FAIL; one that re-admitted the 'engine/...' form
+// yields (d) HIT → FAIL; a wrong file (one already in a Data pak) would not MISS
+// in (a) → FAIL. This is a DIRECT index assertion against the failing-path file +
+// every form KI-0026's two fixes turn on — NOT a boot-survival proxy.
 //
 // === The fixture (how it was derived — regenerate/verify) =================
 //
@@ -97,6 +125,12 @@ const wchar_t* kGameEngineDir =
 // name, so the resolved key is 'config/engine_core.thread_config'. This is the
 // file that crashed at graphics-init in KI-0026.
 const char*    kEngineVPath    = "config/engine_core.thread_config";
+// The engine's ACTUAL lookup form — the aliased path it opens at graphics-init.
+// The %engine% alias is kcdx's to own (KI-0026): it expands to the pak-ROOT key
+// kEngineVPath (the `%engine%/` prefix dropped). Resolving THIS prefixed input
+// directly exercises the KI-0026 fix — it MISSES (the bug) without the alias-strip
+// in ResolveVPath, HITS the same Engine.pak ByteSource as kEngineVPath with it.
+const char*    kEngineAliasVPath = "%engine%/config/engine_core.thread_config";
 const uint64_t kExpectSize     = 20096;  // uncompressed_size
 const uint64_t kExpectCompr    = 3950;   // compressed_size
 const uint16_t kExpectMethod   = 8;      // DEFLATE
@@ -188,17 +222,103 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
-    // Both (a) and (b) passed.
+    // --- (c) ENGINE-ALIAS HIT: the KI-0026 fix — the engine's ACTUAL lookup
+    // form resolves. The engine opens '%engine%/config/engine_core.thread_config'
+    // (the aliased path), NOT the bare pak-relative key (b) used. kcdx owns the
+    // %engine% alias: ResolveVPath expands it to the pak-ROOT key, so the prefixed
+    // input must land on the SAME Engine.pak Pak ByteSource as (b). This FAILS if
+    // the alias-strip is absent (the bug: the prefixed lookup keeps '%engine%/'
+    // and misses the stored 'config/...' key) — the exact graphics-init 0xC8 path.
+    const fst::ByteSource* aliasHit =
+        fst::ResolveVPath(idxBoth, kEngineAliasVPath);
+    if (aliasHit == nullptr) {
+        std::snprintf(reason, sizeof(reason),
+            "(c) the engine's ACTUAL aliased lookup '%s' did NOT resolve, while "
+            "the bare pak-relative key '%s' did (b) — the %%engine%% alias is not "
+            "expanded to the pak-root key in ResolveVPath, so the prefixed lookup "
+            "misses the stored entry. This IS the KI-0026 crash path: the engine "
+            "opens the aliased form, the index miss thunks a non-existent loose "
+            "path, the open fails, and graphics-init fatals at 0xC8",
+            kEngineAliasVPath, kEngineVPath);
+        Report(false, reason);
+        return true;
+    }
+    if (aliasHit->kind != fst::ByteSource::Kind::Pak ||
+        aliasHit->size != hit->size || aliasHit->compressed != hit->compressed ||
+        aliasHit->method != hit->method) {
+        std::snprintf(reason, sizeof(reason),
+            "(c) the aliased lookup '%s' resolved to a DIFFERENT source than the "
+            "bare key '%s' — alias {kind=%d,size=%llu,compressed=%llu,method=%u} "
+            "!= bare {kind=%d,size=%llu,compressed=%llu,method=%u}. The alias must "
+            "expand to the SAME Engine.pak ByteSource, not a different/partial one",
+            kEngineAliasVPath, kEngineVPath,
+            (int)aliasHit->kind, (unsigned long long)aliasHit->size,
+            (unsigned long long)aliasHit->compressed, aliasHit->method,
+            (int)hit->kind, (unsigned long long)hit->size,
+            (unsigned long long)hit->compressed, hit->method);
+        Report(false, reason);
+        return true;
+    }
+
+    // --- (d) ALIAS-EXPANDED FORM MISSES: the form-mismatch the broken first fix
+    // shipped. The engine's ORIGINAL resolver expands the %engine% alias to a
+    // LOOSE path 'engine/config/...' (the `%engine%`→`engine\` expansion). The
+    // first fix's slot-1 thunked that original on a pak hit, so FOpen received the
+    // 'engine/...' form — which is NOT a stored index key (only the bare
+    // 'config/...' key and the '%engine%/...' alias the strip folds to it are).
+    // FOpen missed, _wfopen'd the loose path, and graphics-init fatalled at 0xC8.
+    // Assertions (b)/(c) both PASSED while the live FOpen missed precisely because
+    // neither tested the 'engine/...' form FOpen actually received — that is the
+    // blind spot this row closes.
+    //
+    // The unit test runs at the ResolveVPath layer; it CANNOT drive the full
+    // slot-1→FOpen flow (the fix returns '%engine%/...' from slot-1 so FOpen
+    // re-resolves the alias form, never the 'engine/...' form). So (d) asserts the
+    // FORM DISTINCTION the fix depends on: the alias-EXPANDED 'engine/...' form
+    // MISSES the index. This pins that 'engine/...' is NOT a key — proving (1) WHY
+    // the old flow failed (FOpen saw a non-key form) and (2) that the fix's
+    // correctness rests on FOpen receiving the '%engine%/...' form (which (c)
+    // proved HITS), not the 'engine/...' form. (d) FAILS if an `engine/` strip
+    // were added (Option 1, NOT chosen) that made 'engine/...' a hit too — which
+    // would re-admit the form ambiguity and mask exactly this mismatch. The
+    // end-to-end proof that FOpen now receives '%engine%/...' is the LIVE BOOT
+    // TRACE ('how=index-pak-serve' at slot-1 then 'how=index-pak' at FOpen), which
+    // a unit test cannot stand in for.
+    const char* kEngineExpandedVPath = "engine/config/engine_core.thread_config";
+    const fst::ByteSource* expandedMiss =
+        fst::ResolveVPath(idxBoth, kEngineExpandedVPath);
+    if (expandedMiss != nullptr) {
+        std::snprintf(reason, sizeof(reason),
+            "(d) the alias-EXPANDED form '%s' UNEXPECTEDLY resolved (kind=%d) — it "
+            "must MISS: only the bare pak-relative key '%s' and the '%%engine%%/' "
+            "alias form are stored keys. A hit here means an `engine/` strip was "
+            "added (Option 1, not chosen), which masks the AdjustFileName-output / "
+            "FOpen-input form-mismatch this row exists to catch (the broken first "
+            "fix's blind spot). The fix relies on FOpen receiving the "
+            "'%%engine%%/...' form, NOT 'engine/...'",
+            kEngineExpandedVPath, (int)expandedMiss->kind, kEngineVPath);
+        Report(false, reason);
+        return true;
+    }
+
+    // (a), (b), (c), and (d) all passed.
     std::snprintf(reason, sizeof(reason),
-        "kcdx unified asset index covers the Engine pak root PASS — (a) the "
-        "engine config vpath '%s' MISSES in a Data-only index (it is "
-        "Engine-pak-resident, the KI-0026 miss); (b) building over <game>/Data + "
-        "<game>/Engine makes it an index HIT — a Pak ByteSource "
-        "{size=%llu,compressed=%llu,method=%u (DEFLATE)} from Engine.pak. The "
+        "kcdx unified asset index covers the Engine pak root + owns the %%engine%% "
+        "alias PASS — (a) the engine config vpath '%s' MISSES in a Data-only index "
+        "(it is Engine-pak-resident, the KI-0026 miss); (b) building over "
+        "<game>/Data + <game>/Engine makes the bare key an index HIT — a Pak "
+        "ByteSource {size=%llu,compressed=%llu,method=%u (DEFLATE)} from "
+        "Engine.pak; (c) the engine's ACTUAL aliased lookup '%s' resolves to the "
+        "SAME ByteSource (kcdx owns %%engine%%, expanding it to the pak root); "
+        "(d) the alias-EXPANDED loose form '%s' MISSES — proving 'engine/...' is "
+        "not a key and the fix relies on slot-1 returning '%%engine%%/...' so FOpen "
+        "re-resolves the alias form (the form-mismatch the broken first fix shipped; "
+        "end-to-end proof is the live boot trace's index-pak-serve→index-pak). The "
         "file that fatalled graphics-init at 0xC8 is now reachable through kcdx's "
-        "own PKZIP/DEFLATE reader; the takeover serves it, not the engine",
+        "own PKZIP/DEFLATE reader by the form the engine actually opens",
         kEngineVPath, (unsigned long long)kExpectSize,
-        (unsigned long long)kExpectCompr, kExpectMethod);
+        (unsigned long long)kExpectCompr, kExpectMethod, kEngineAliasVPath,
+        kEngineExpandedVPath);
     Report(true, reason);
     return true;
 }

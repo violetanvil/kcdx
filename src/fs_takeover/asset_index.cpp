@@ -185,11 +185,43 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
     return index;
 }
 
+// kcdx OWNS the %engine% alias → expand an `%engine%/X` index-lookup key to the
+// pak-root-relative key `X` (DROP the `%engine%/` prefix). Engine.pak entries are
+// keyed pak-relative (NormalizeVPath-folded, e.g. `config/engine_core.thread_config`,
+// no `engine/` prefix), but the engine opens them by the aliased path
+// `%engine%/config/engine_core.thread_config`. Without this strip the lookup key
+// keeps the alias and misses the stored pak-relative key — the file fails to match
+// itself, the miss arm thunks to a non-existent loose path, and the engine raises
+// CSystem::FatalError(0xC8) at graphics-init (KI-0026). The alias maps to the pak
+// ROOT because that is the form the entries are stored in.
+//
+// INVARIANT: applied to the already-NormalizeVPath'd key (lowercase + forward
+// slash), so the literal to match is the folded `%engine%/` (`%` and `/` are
+// unchanged by the fold). A non-`%engine%/` key is returned unchanged; the strip
+// never swallows — a `%engine%`-stripped key that still misses falls through to
+// the existing miss arm exactly as before. Allocation-light: a prefix check that
+// rewrites the same string in place (no second allocation), on the hot lookup path.
+// NOT folded into NormalizeVPath itself — that fold is shared by the overlay
+// resolver + the overlay-map build, and must stay a pure case+slash fold (the
+// shared-key contract); the alias strip is an INDEX-key concern only.
+namespace {
+constexpr const char kEngineAlias[] = "%engine%/";
+constexpr size_t kEngineAliasLen = sizeof(kEngineAlias) - 1;  // exclude the NUL
+
+void ExpandEngineAliasToIndexKey(std::string& key) {
+    if (key.compare(0, kEngineAliasLen, kEngineAlias) == 0)
+        key.erase(0, kEngineAliasLen);  // %engine%/X -> X (pak-root-relative)
+}
+}  // namespace
+
 const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath) {
     // The O(1) hot-path lookup (§5 "no extra hotpath checks"): normalize once,
-    // one hash lookup, return the source or nullptr (a miss = the engine
-    // resolves it; a later step wires the fall-through). No search, no bisection.
-    const auto found = index.find(asset_overlay::NormalizeVPath(vpath));
+    // expand the %engine% alias to the pak-root key (KI-0026), one hash lookup,
+    // return the source or nullptr (a miss = the engine resolves it via the
+    // fall-through). No search, no bisection.
+    std::string key = asset_overlay::NormalizeVPath(vpath);
+    ExpandEngineAliasToIndexKey(key);
+    const auto found = index.find(key);
     return found == index.end() ? nullptr : &found->second;
 }
 
