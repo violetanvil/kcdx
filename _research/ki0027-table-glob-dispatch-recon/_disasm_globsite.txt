@@ -1,0 +1,139 @@
+0x180D1D440: mov     dword ptr [rdi], ecx
+0x180D1D442: add     rsp, 0x20
+0x180D1D446: pop     r15
+0x180D1D448: pop     r14
+0x180D1D44A: pop     rdi
+0x180D1D44B: ret     
+0x180D1D44C: mov     qword ptr [rsp + 0x18], rbx
+0x180D1D451: push    rbp
+0x180D1D452: push    rsi
+0x180D1D453: push    rdi
+0x180D1D454: sub     rsp, 0x20
+0x180D1D458: mov     rdi, rdx
+0x180D1D45B: mov     rsi, rcx
+0x180D1D45E: lea     rdx, [rip + 0x2d767ab]   ; -> 0x183A93C10
+0x180D1D465: mov     rbx, r9
+0x180D1D468: lea     rcx, [rsp + 0x40]
+0x180D1D46D: mov     rbp, r8
+0x180D1D470: call    0x1804f692c   ; direct call
+0x180D1D475: test    rbx, rbx
+0x180D1D478: je      0x180d1d48c
+0x180D1D47A: cmp     byte ptr [rbx], 0
+0x180D1D47D: je      0x180d1d48c
+0x180D1D47F: mov     rdx, rbx
+0x180D1D482: lea     rcx, [rsp + 0x40]
+0x180D1D487: call    0x1807fd854   ; direct call
+0x180D1D48C: mov     rax, qword ptr [rsi]
+0x180D1D48F: mov     rcx, rsi
+0x180D1D492: call    qword ptr [rax + 0x48]   ; *** INDIRECT disp=+0x48 (vtable?) ***
+0x180D1D495: mov     r8, rbp
+0x180D1D498: lea     rdx, [rsp + 0x40]
+0x180D1D49D: lea     rcx, [rsp + 0x58]
+0x180D1D4A2: mov     rbx, rax
+0x180D1D4A5: call    0x1804f03dc   ; direct call
+0x180D1D4AA: mov     rdx, rax
+0x180D1D4AD: lea     rcx, [rsp + 0x48]
+0x180D1D4B2: mov     r8b, 0x2e
+0x180D1D4B5: call    0x1805bc418   ; direct call
+0x180D1D4BA: mov     r8, rbx
+0x180D1D4BD: mov     rdx, rax
+0x180D1D4C0: mov     rcx, rdi
+0x180D1D4C3: call    0x1804f03dc   ; direct call
+0x180D1D4C8: lea     rcx, [rsp + 0x48]
+0x180D1D4CD: call    0x1804fc884   ; direct call
+0x180D1D4D2: lea     rcx, [rsp + 0x58]
+0x180D1D4D7: call    0x1804fc884   ; direct call
+0x180D1D4DC: lea     rcx, [rsp + 0x40]
+0x180D1D4E1: call    0x1804fc884   ; direct call
+0x180D1D4E6: mov     rbx, qword ptr [rsp + 0x50]
+0x180D1D4EB: mov     rax, rdi
+0x180D1D4EE: add     rsp, 0x20
+0x180D1D4F2: pop     rdi
+0x180D1D4F3: pop     rsi
+0x180D1D4F4: pop     rbp
+0x180D1D4F5: ret     
+0x180D1D4F6: int3    
+0x180D1D4F7: int3    
+0x180D1D4F8: int3    
+0x180D1D4F9: int3    
+0x180D1D4FA: int3    
+0x180D1D4FB: int3    
+0x180D1D4FC: int3    
+0x180D1D4FD: int3    
+0x180D1D4FE: int3    
+0x180D1D4FF: int3    
+0x180D1D500: lea     rax, [rip + 0x2d767dd]   ; -> 0x183A93CE4
+0x180D1D507: ret     
+0x180D1D508: push    rbx
+0x180D1D50A: sub     rsp, 0x20
+0x180D1D50E: add     rdx, 0x28
+0x180D1D512: mov     rbx, rcx
+0x180D1D515: call    0x1804fd468   ; direct call
+0x180D1D51A: xor     r8d, r8d
+0x180D1D51D: lea     rdx, [rip + 0x2d766fc]   ; -> 0x183A93C20
+0x180D1D524: mov     rcx, rbx
+0x180D1D527: call    0x1806a4774   ; direct call
+0x180D1D52C: cmp     rax, -1
+0x180D1D530: jne     0x180d1d53b
+0x180D1D532: mov     rax, rbx
+0x180D1D535: add     rsp, 0x20
+0x180D1D539: pop     rbx
+0x180D1D53A: ret     
+0x180D1D53B: mov     r8b, 0x20
+0x180D1D53E: mov     rdx, rax
+0x180D1D541: mov     rcx, rbx
+0x180D1D544: call    0x18048a194   ; direct call
+0x180D1D549: jmp     0x180d1d532
+0x180D1D54B: int3    
+0x180D1D54C: mov     qword ptr [rsp + 8], rbx
+0x180D1D551: mov     qword ptr [rsp + 0x10], rsi
+0x180D1D556: push    rdi
+0x180D1D557: push    r14
+0x180D1D559: push    r15
+0x180D1D55B: sub     rsp, 0x70
+0x180D1D55F: mov     r14, rdx
+0x180D1D562: mov     r8, rdx
+0x180D1D565: lea     rdx, [rsp + 0x58]
+0x180D1D56A: mov     r15, rcx
+0x180D1D56D: call    0x180d1d820   ; direct call
+0x180D1D572: mov     rdi, qword ptr [rip + 0x3c0e2d7]
+0x180D1D579: lea     r8, [rip + 0x2d36198]   ; -> 0x183A53718
+0x180D1D580: mov     rdx, qword ptr [rsp + 0x58]
+0x180D1D585: xor     r9d, r9d
+0x180D1D588: mov     rcx, rdi
+0x180D1D58B: mov     rax, qword ptr [rdi]
+0x180D1D58E: call    qword ptr [rax + 0x120]   ; *** INDIRECT disp=+0x120 = slot36 FOpen ***
+0x180D1D594: xor     ebx, ebx
+0x180D1D596: mov     rsi, rax
+0x180D1D599: test    rax, rax
+0x180D1D59C: je      0x180d1d7fc
+0x180D1D5A2: cmp     byte ptr [r15 + 0x10], bl
+0x180D1D5A6: je      0x180d1d5d3
+0x180D1D5A8: mov     rdx, qword ptr [rdi]
+0x180D1D5AB: mov     rcx, rdi
+0x180D1D5AE: mov     r8, qword ptr [rdx + 0x180]
+0x180D1D5B5: mov     rdx, rax
+0x180D1D5B8: call    r8
+0x180D1D5BB: test    al, al
+0x180D1D5BD: je      0x180d1d5d3
+0x180D1D5BF: mov     rax, qword ptr [rdi]
+0x180D1D5C2: mov     rdx, rsi
+0x180D1D5C5: mov     rcx, rdi
+0x180D1D5C8: call    qword ptr [rax + 0x1b8]   ; *** INDIRECT disp=+0x1B8 (vtable?) ***
+0x180D1D5CE: jmp     0x180d1d7fc
+0x180D1D5D3: mov     rax, qword ptr [rdi]
+0x180D1D5D6: mov     rdx, rsi
+0x180D1D5D9: mov     rcx, rdi
+0x180D1D5DC: call    qword ptr [rax + 0x1b8]   ; *** INDIRECT disp=+0x1B8 (vtable?) ***
+0x180D1D5E2: mov     rcx, qword ptr [rip + 0x3c0e2d7]
+0x180D1D5E9: lea     rdx, [rsp + 0x48]
+0x180D1D5EE: mov     r8, qword ptr [rsp + 0x58]
+0x180D1D5F3: xor     r9d, r9d
+0x180D1D5F6: mov     byte ptr [rsp + 0x28], 1
+0x180D1D5FB: mov     byte ptr [rsp + 0x20], 1
+0x180D1D600: mov     rax, qword ptr [rcx]
+0x180D1D603: call    qword ptr [rax + 0x410]   ; *** INDIRECT disp=+0x410 (vtable?) ***
+0x180D1D609: mov     rcx, qword ptr [rsp + 0x48]
+0x180D1D60E: test    rcx, rcx
+0x180D1D611: je      0x180d1d7f2
+0x180D1D617: mov     rax, qword ptr [rcx]

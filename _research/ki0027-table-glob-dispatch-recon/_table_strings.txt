@@ -1,0 +1,187 @@
+image_base = 0x180000000
+  section .text      VA 0x180001000 .. 0x183A02000
+  section .rdata     VA 0x183A02000 .. 0x1848D1000
+  section .data      VA 0x1848D1000 .. 0x18506BE00
+  section .pdata     VA 0x185688000 .. 0x1859DF000
+  section _RDATA     VA 0x1859DF000 .. 0x1859F2400
+  section .rsrc      VA 0x1859F3000 .. 0x1859F3200
+  section .reloc     VA 0x1859F4000 .. 0x185B2A200
+
+=== b"tables can't be loaded": 1 hit(s) ===
+  0x183E3C8C8 [.rdata]  error - tables can't be loaded..Possibly caused by outdate
+
+=== b'Database system error': 1 hit(s) ===
+  0x183E3C8B0 [.rdata]  .>t.....Database system error - tables can't be loaded..P
+
+=== b'Tables.pak': 0 hit(s) ===
+
+=== b'tables.pak': 1 hit(s) ===
+  0x183DC0368 [.rdata]  _sp.pak.tables.pak......menucommon_sp...engine
+
+=== b'Libs/Tables': 0 hit(s) ===
+
+=== b'Libs\\Tables': 1 hit(s) ===
+  0x183A93C10 [.rdata]  riority.Libs\Tables\....__......Function_......
+
+=== b'Libs/Tables/': 0 hit(s) ===
+
+=== b'.xml': 102 hit(s) (filtered) ===
+  0x184072CCF [.rdata]  ototypes.xml.....Libs/EntityArchetypes..
+  0x18473DDCC [.rdata]  AiConfig.xml....Libs........ui_item_sele
+
+=== b'__': 8722 hit(s) (filtered) ===
+  0x183BE0C68 [.rdata]  ..A.....__metatable...................
+  0x184059224 [.rdata]  ndto....__id........No Client table, b
+
+=== b'DataTable': 0 hit(s) ===
+
+=== b'datatable': 0 hit(s) ===
+
+=== b'TableManager': 0 hit(s) ===
+
+=== b'CTableManager': 0 hit(s) ===
+
+=== b'LoadTable': 1 hit(s) ===
+  0x183C27F78 [.rdata]  e.......LoadTable.......GetTableInfo....GetCo
+
+=== b'LoadTables': 0 hit(s) ===
+
+=== b'GameData': 3 hit(s) ===
+  0x183D31A27 [.rdata]  imulatorGameData.SetFormationUpdateSight.SVO
+  0x183DC7CE8 [.rdata]  pak.....GameData.pak....sys_LvlRes_finalstep
+  0x18404B098 [.rdata]   Check 'GameData.pak' and 'Data/Libs/UI/'...
+
+=== b'Database': 2337 hit(s) ===
+  0x183A63AAD [.rdata]  ...SoundDatabase...AnimDatabase3P..AnimDatab
+  0x183A63ABC [.rdata]  e...AnimDatabase3P..AnimDatabase1P..fileSoun
+  0x183A63ACC [.rdata]  3P..AnimDatabase1P..fileSoundDatabase.......
+  0x183A63AE1 [.rdata]  ileSoundDatabase.......fileAnimDatabase1P...
+  0x183A63AF8 [.rdata]  fileAnimDatabase1P......UseMannequinAGState.
+  0x183A65150 [.rdata]  .{......Database.........8......\.E.....$...
+  0x183AB6110 [.rdata]  rModule.DatabaseModule..ConceptModule...Enti
+  0x183AB67CD [.rdata]  rProfileDatabase...X........*...............
+  0x183AC02D3 [.rdata]  :UberlodDatabase.....wh::entitymodule::cloth
+  0x183AC0303 [.rdata]  :UberlodDatabase::GenderaceUberlodData......
+  0x183AD61B2 [.rdata]  anceAnimDatabase......NPCStateUnstanceDataba
+  0x183AD61D0 [.rdata]  UnstanceDatabase........wh::xgenaimodule::NP
+  0x183AD6218 [.rdata]  ntPresetDatabase........x........E..........
+  0x183AD66C3 [.rdata]  ntParamsDatabase.....wh::xgenaimodule::navig
+  0x183AF0571 [.rdata]  eDubbingDatabase.......wh::playermodule::Alc
+  0x183AF05B3 [.rdata]  gredientDatabase.....wh::entitymodule::cloth
+  0x183AF05EF [.rdata]  ingGroupDatabase.wh::entitymodule::clothing:
+  0x183AF0621 [.rdata]  mentSlotDatabase.......wh::entitymodule::Equ
+  0x183AF0657 [.rdata]  etFilterDatabase.wh::playermodule::AlchemyRe
+  0x183AF0687 [.rdata]  StepTypeDatabase.wh::playermodule::Blacksmit
+  0x183AF06B7 [.rdata]  peratureDatabase.wh::animationmodule::Fragme
+  0x183AF06E6 [.rdata]  dleStateDatabase..wh::playermodule::RandomEv
+  0x183AF0716 [.rdata]  ptionSetDatabase..wh::entitymodule::clothing
+  0x183AF0745 [.rdata]  loodMaskDatabase...wh::rpgmodule::SoulStateE
+  0x183AF0775 [.rdata]  tContextDatabase...wh::playermodule::Blacksm
+  0x183AF07A5 [.rdata]  orkpieceDatabase...wh::playermodule::Control
+  0x183AF07D4 [.rdata]  FeedbackDatabase....wh::playermodule::Random
+  0x183AF0803 [.rdata]  ntOptionDatabase.....wh::playermodule::Alche
+  0x183AF0833 [.rdata]  tionBaseDatabase.....wh::playermodule::Black
+  0x183AF0862 [.rdata]  thRecipeDatabase......wh::entitymodule::Inve
+
+=== b'reading table': 0 hit(s) ===
+
+=== b'table file': 0 hit(s) ===
+
+=== b'merge': 72 hit(s) ===
+  0x183A4FC08 [.rdata]  ........mergedmesh..............@.v......
+  0x183A7E850 [.rdata]  terrain\merged_meshes_sectors\..-+ #0....
+  0x183B2CF28 [.rdata]  ength...mergeRegionArea.maxVerticesPerPol
+  0x183B9F496 [.rdata]  ..When emergency flee is engaged during f
+  0x183BA0977 [.rdata]  .FollowEmergencyFleeDistanceToTarget.....
+  0x183BA0A3F [.rdata]  .FollowEmergencyFleeDistanceToFlee.......
+  0x183BA116F [.rdata]  .FollowEmergencyRadius...FoundByMasterBar
+  0x183D365C4 [.rdata]  ....npcEmergency....runThreshold....PER_M
+  0x183DDC0C9 [.rdata]  osed to merged stencil/sampling passes)..
+  0x183F3DA51 [.rdata]  hey are merged to together.............Bu
+  0x183F90262 [.rdata]  used to merge triangles in neighbouring t
+  0x183FA972F [.rdata]  .WH_AI_EmergencyThreshold................
+  0x183FA97D9 [.rdata]  ags....Emergency threshold for NPC.....WH
+  0x18400A048 [.rdata]  el span merge when building navmesh.....w
+  0x184020D7D [.rdata]  alizing merged mesh manager........C3DEng
+  0x184020E55 [.rdata]  ...some merged meshes failed to prepare p
+  0x1840210A6 [.rdata]  ng down merged mesh manager.......Deletin
+  0x184027A58 [.rdata]  ..L.....mergedmesh_deform_stiffness.....R
+  0x184027AD0 [.rdata]   level..mergedmesh_deform_air_modulation.
+  0x184027AF8 [.rdata]  ........mergedmesh_deform_max_iter......m
+  0x184027B18 [.rdata]  er......mergedmesh_deform_air_resistance.
+  0x184027B40 [.rdata]  ........mergedmesh_deform_air_frequency.m
+  0x184027B60 [.rdata]  equency.mergedmesh_deform_damping.......m
+  0x184027B80 [.rdata]  g.......mergedmesh_deform_variance.......
+  0x184028108 [.rdata]  terrain\merged_meshes_sectors\mmrm_used_m
+  0x184028210 [.rdata]  merging.merged mesh had no valid statinst
+  0x184028280 [.rdata]  p given.merged mesh '%s' had no rendermes
+  0x1840282B8 [.rdata]  g.......merged mesh '%s' has an invalid s
+  0x184028470 [.rdata]  lete....mergedmesh_deform.......m_nSample
+  0x18402A76F [.rdata]  need to merge %d vertices.....vox.....idx
+
+=== b'override': 77 hit(s) ===
+  0x183A39665 [.rdata]  yed(%s),overrideContextSuppress(%s),defaultA
+  0x183A3F8FA [.rdata]  ......r_overrideDXGIAdapter...#!NO_CONTEXT!#
+  0x183AB725F [.rdata]  l tags (overrides all other options).....Mul
+  0x183AB7535 [.rdata]  l color override (GREEN)...wh_pl_SharpeningR
+  0x183AB7595 [.rdata]  l color override (BLUE)....Global font size 
+  0x183AB75D5 [.rdata]  l color override (RED).....wh_pl_SharpeningE
+  0x183AB76F5 [.rdata]  l color override...cl_ETHideReadability....M
+  0x183C2AEF0 [.rdata]  yed(%s),overrideContextSuppress(%s),defaultA
+  0x183C3A3EF [.rdata]  g_param_override................. !......8{.
+  0x183C3A872 [.rdata]  rk_buff_override................{..... !....
+  0x183D246A9 [.rdata]  S......!override.......ps5_amp.!corpse.Remov
+  0x183DB97A5 [.rdata]  adapter override %d. Adapter cannot be used 
+  0x183DB99B5 [.rdata]  ct_spec_override...r_SuperResolution_Mode..r
+  0x183DCC09B [.rdata]  ther to override the spec value during spec 
+  0x183DD9FA8 [.rdata]  Version override for AMD FSR. Value is treat
+  0x183DDA00A [.rdata]  eans no override......r_SuperResolution_AMD_
+  0x183DE435F [.rdata]  texture overrides..Usage: r_TexBindMode [0/1
+  0x183DE5B00 [.rdata]  sage: r_overrideScanlineOrder [0/1/2/3].r_ov
+  0x183DE5B22 [.rdata]  /2/3].r_overrideRefreshRate...r_MeasureOverd
+  0x183DE5B52 [.rdata]  cale..r_overrideScanlineOrder.wh_r_ProfilerS
+  0x183DE8BB6 [.rdata]  m.Width override for shared RT for dynamic t
+  0x183DE8C37 [.rdata]  .Height override of shared RT for dynamic te
+  0x183DE96AA [.rdata]  disable override......r_VolumetricFogSunLigh
+  0x183DE9DAD [.rdata]   in.1 - override whole map with current clou
+  0x183DE9DDE [.rdata]  fig.2 - override for a single frame only..r_
+  0x183E02A14 [.rdata]  FMOD to override all volume settings to sile
+  0x183E06B70 [.rdata]  laneMin.overrides the near clipping plane if
+  0x183E1467C [.rdata]   Cancel override by setting this to -1......
+  0x183E148B2 [.rdata]  Ignores override. ....wh_sys_PlaylineRandomS
+  0x183E6365F [.rdata]  stom or override): %s....Dialog function.esD
+
+=== b'*.xml': 4 hit(s) ===
+  0x183C205CC [.rdata]  *.lua...*.xml.......xm...................
+  0x183F84A9D [.rdata]  ionEnd./*.xml......esModularBehaviorTree.
+  0x184053034 [.rdata]  eTokens/*.xml.......defaultCam......Entit
+  0x1840554FB [.rdata]  .....%s/*.xml........libs/materialeffects
+
+=== b'__*.xml': 0 hit(s) ===
+
+=== b'*': 26429 hit(s) (filtered) ===
+  0x183B65A56 [.rdata]  emyTable*..>.......?&..............Ti
+  0x183C9D09D [.rdata]  myTable *,class std::allocator<class 
+  0x183C9D0DB [.rdata]  myTable *> >>(void) noexcept.const ch
+  0x183CC8B70 [.rdata]  myTable *>>(void) noexcept...........
+  0x183CD2F95 [.rdata]  myTable *,class std::allocator<class 
+  0x183CD2FD3 [.rdata]  myTable *> > >>(void) noexcept.......
+  0x183CD627A [.rdata]  myTable *,class std::allocator<class 
+  0x183CD62B8 [.rdata]  myTable *> > >>(void) noexcept..const
+  0x183CFB431 [.rdata]  emyTable*>(void) noexcept............
+  0x183CFEF7A [.rdata]  emyTable*>(void) noexcept.....const c
+  0x183D0B0DA [.rdata]  myTable *,class std::allocator<class 
+  0x183D0B118 [.rdata]  myTable *> > >*>(void) noexcept.const
+  0x183E0636F [.rdata]  getable.*........food.bowel.*....food
+  0x183E91E63 [.rdata]  myTable>*>(void) noexcept............
+  0x18470A80D [.rdata]  myTable *,class std::allocator<class 
+  0x18470A84B [.rdata]  myTable *> >*>(void) noexcept........
+  0x18470A8E3 [.rdata]  myTable *,class std::allocator<class 
+  0x18470A921 [.rdata]  myTable *> > >>(void) noexcept.......
+  0x18470AA18 [.rdata]  myTable *>>(void) noexcept......const
+  0x18470AA98 [.rdata]  myTable *>*>(void) noexcept.....const
+  0x18470AA9A [.rdata]  Table *>*>(void) noexcept.....const c
+  0x18470AC03 [.rdata]  myTable *,class std::allocator<class 
+  0x18470AC41 [.rdata]  myTable *> > >*>(void) noexcept......
+  0x184712138 [.rdata]  myTable>*>(void) noexcept.......const
+

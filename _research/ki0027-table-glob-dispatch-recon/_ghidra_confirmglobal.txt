@@ -1,0 +1,160 @@
+--- 0x180460364 (CryPak-core reader of the global) ---
+  name=FUN_180460364
+
+undefined8
+FUN_180460364(longlong param_1,undefined8 param_2,undefined8 param_3,undefined1 param_4,
+             undefined8 param_5,undefined8 param_6,undefined8 param_7,short *param_8,int param_9)
+
+{
+  char cVar1;
+  longlong *plVar2;
+  ulonglong uVar3;
+  float fVar4;
+  float fVar5;
+  
+  cVar1 = FUN_1804604f0(param_8,param_2,param_2,param_3,param_4);
+  if (cVar1 != '\0') {
+    if (7 < *param_8) {
+      if (*(int *)(param_8 + 0xe) != 0) {
+        plVar2 = (longlong *)
+                 (**(code **)(*DAT_18492b850 + 0x1f0))
+                           (DAT_18492b850,(longlong)*(int *)(param_8 + 0xe) + 8,
+                            "LoadObjectInstances",1);
+        if (plVar2 != (longlong *)0x0) {
+          LOCK();
+          *(int *)(plVar2 + 1) = (int)plVar2[1] + 1;
+          UNLOCK();
+        }
+        for (uVar3 = (**(code **)(*plVar2 + 0x10))(plVar2); (uVar3 & 3) != 0; uVar3 = uVar3 + 1) {
+        }
+        cVar1 = FUN_1807eba8c(uVar3,(longlong)*(int *)(param_8 + 0xe),param_2,param_3);
+        if (cVar1 == '\0') {
+          FUN_1804a6708(plVar2);
+          return 0;
+        }
+        FUN_180963ccc(param_1,uVar3,(longlong)*(int *)(param_8 + 0xe) + uVar3,param_5,param_6,
+                      param_4,(int)*param_8,param_7,param_9);
+        FUN_1804a6708(plVar2);
+        if (param_9 != 0) {
+          fVar4 = *(float *)(DAT_1854950e0 + 0x400) * *(float *)(param_1 + 0xfc) *
+                  *(float *)(DAT_1854950e0 + 0x704) * *(float *)(DAT_1854950e0 + 0x290);
+          do {
+            fVar5 = *(float *)(param_1 + 0x58);
+            if (*(float *)(param_1 + 0x58) <= fVar4) {
+              fVar5 = fVar4;
+            }
+            *(float *)(param_1 + 0x58) = fVar5;
+            param_1 = *(longlong *)(param_1 + 0x108);
+          } while (param_1 != 0);
+        }
+      }
+      return 1;
+    }
+    (**(code **)(*DAT_18492b8e0 + 0x38))
+              (DAT_18492b8e0,"COctreeNode: too old version %d",(int)*param_8);
+  }
+  return 0;
+}
+
+
+
+--- 0x18041d238 (another low-RVA reader of the global) ---
+  name=FUN_18041d238
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_18041d238(undefined8 param_1,undefined8 param_2,undefined8 param_3,undefined8 param_4,
+                  undefined8 param_5)
+
+{
+  longlong lVar1;
+  longlong *plVar2;
+  int iVar3;
+  longlong lVar4;
+  longlong lVar5;
+  undefined1 auStack_1b8 [32];
+  undefined1 local_198;
+  longlong local_188;
+  longlong local_180;
+  longlong local_178 [2];
+  byte local_168 [36];
+  char local_144 [268];
+  ulonglong local_38;
+  
+  local_38 = DAT_1848fcfc0 ^ (ulonglong)auStack_1b8;
+  FUN_1804fd468(&local_188);
+  FUN_1805bc668(&local_188,param_3);
+  FUN_1806ba6f0(local_178,&local_188);
+  FUN_1804fdaf8(local_188 + -0xc);
+  FUN_1806b9a78(&local_180,local_178,param_4);
+  plVar2 = DAT_18492b850;
+  local_198 = 0;
+  lVar4 = (**(code **)(*DAT_18492b850 + 0x1f8))(DAT_18492b850,local_180,local_168,0);
+  if (lVar4 != -1) {
+    do {
+      if ((local_144[0] != '.') && ((local_168[0] & 0x10) == 0)) {
+        FUN_1804fd468(&local_188,param_3);
+        lVar5 = -1;
+        do {
+          lVar1 = lVar5 + 1;
+          lVar5 = lVar5 + 1;
+        } while (local_144[lVar1] != '\0');
+        FUN_1804fd134(&local_188,local_144);
+        FUN_18041d3a8(param_5,&local_188);
+        FUN_1804fdaf8(local_188 + -0xc);
+      }
+      iVar3 = (**(code **)(*plVar2 + 0x200))(plVar2,lVar4);
+    } while (iVar3 == 0);
+    (**(code **)(*plVar2 + 0x208))(plVar2,lVar4);
+  }
+  FUN_1804fdaf8(local_180 + -0xc);
+  FUN_1804fdaf8(local_178[0] + -0xc);
+  return;
+}
+
+
+
+--- 0x180973058 (the +0x1f8 fn (FindFirst by handle) the table glob calls) ---
+  name=FUN_180973058
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+longlong *
+FUN_180973058(longlong *param_1,undefined8 param_2,undefined8 param_3,uint param_4,
+             undefined1 param_5)
+
+{
+  longlong *plVar1;
+  char cVar2;
+  undefined8 uVar3;
+  longlong *plVar4;
+  longlong lVar5;
+  undefined8 *puVar6;
+  longlong *plVar7;
+  undefined1 auStack_9a8 [32];
+  longlong *local_988;
+  undefined8 local_980;
+  undefined1 local_978 [16];
+  undefined1 local_968 [16];
+  undefined8 local_958;
+  undefined1 local_848 [2048];
+  ulonglong local_48;
+  
+  local_48 = DAT_1848fcfc0 ^ (ulonglong)auStack_9a8;
+  uVar3 = (**(code **)(*param_1 + 8))(param_1,param_2,local_848);
+  plVar4 = (longlong *)(**(code **)(*param_1 + 0x328))(param_1);
+  if (plVar4 != (longlong *)0x0) {
+    *(int *)(plVar4 + 1) = (int)plVar4[1] + 1;
+  }
+  local_988 = plVar4;
+  (**(code **)(*plVar4 + 8))(plVar4,param_1,uVar3,param_5);
+  if ((plVar4[3] != 0) || (param_1[0x33] != param_1[0x34])) {
+    puVar6 = (undefined8 *)param_1[0x34];
+    while (puVar6 != (undefined8 *)param_1[0x33]) {
+      puVar6 = puVar6 + -1;
+      if ((*(int *)(param_1[0x45] + 0x20) != 3) || (cVar2 = FUN_18241ad60(*puVar6), cVar2 != '\0'))
+      {
+        FUN_1804628a0(local_968,*puVar6);
+        FUN_1804629b4(local_968,1,0x2f);
+        FUN_180462a28(local_968,param_2);
+        lVar5 = (**(code **)

@@ -1,0 +1,201 @@
+0x180EF7960: mov     rcx, rbx
+0x180EF7963: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF7966: movsxd  rcx, eax
+0x180EF7969: test    byte ptr [rcx + rsi], 2
+0x180EF796D: jne     0x1822e5fff
+0x180EF7973: lea     rdx, [rip + 0x2b9c296]   ; -> 0x183A93C10
+0x180EF797A: lea     rcx, [rbp + 0x28]
+0x180EF797E: call    0x1804f6ac8   ; direct call
+0x180EF7983: lea     r8, [rbx + 0x58]
+0x180EF7987: lea     rdx, [rbp + 0x28]
+0x180EF798B: lea     rcx, [rbp + 0x38]
+0x180EF798F: call    0x1806b9a78   ; direct call
+0x180EF7994: mov     r8, qword ptr [rbx + 0x50]
+0x180EF7998: lea     r9, [rip + 0x2b9c345]   ; -> 0x183A93CE4
+0x180EF799F: mov     rdx, qword ptr [rbp + 0x38]
+0x180EF79A3: mov     rcx, rdi
+0x180EF79A6: call    0x1804d4e78   ; direct call
+0x180EF79AB: lea     rcx, [rbp + 0x38]
+0x180EF79AF: call    0x1804fc884   ; direct call
+0x180EF79B4: lea     rcx, [rbp + 0x28]
+0x180EF79B8: call    0x1804fc884   ; direct call
+0x180EF79BD: mov     rax, rdi
+0x180EF79C0: add     rsp, 0x28
+0x180EF79C4: pop     rdi
+0x180EF79C5: pop     rsi
+0x180EF79C6: pop     rbx
+0x180EF79C7: pop     rbp
+0x180EF79C8: ret     
+0x180EF79C9: int3    
+0x180EF79CA: int3    
+0x180EF79CB: int3    
+0x180EF79CC: push    rbp
+0x180EF79CE: push    rbx
+0x180EF79CF: push    rsi
+0x180EF79D0: push    rdi
+0x180EF79D1: mov     rbp, rsp
+0x180EF79D4: sub     rsp, 0x28
+0x180EF79D8: mov     rbx, rcx
+0x180EF79DB: mov     rdi, rdx
+0x180EF79DE: lea     rcx, [rbp + 0x28]
+0x180EF79E2: call    0x1803d18d0   ; direct call
+0x180EF79E7: mov     rax, qword ptr [rbx]
+0x180EF79EA: mov     rcx, rbx
+0x180EF79ED: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF79F0: movsxd  r8, eax
+0x180EF79F3: lea     rsi, [rip + 0x2bd4e1e]   ; -> 0x183ACC818
+0x180EF79FA: test    byte ptr [r8 + rsi], 1
+0x180EF79FF: jne     0x1822e6024
+0x180EF7A05: mov     rax, qword ptr [rbx]
+0x180EF7A08: mov     rcx, rbx
+0x180EF7A0B: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF7A0E: movsxd  rcx, eax
+0x180EF7A11: test    byte ptr [rcx + rsi], 2
+0x180EF7A15: jne     0x1822e606d
+0x180EF7A1B: lea     rdx, [rip + 0x2b9c1ee]   ; -> 0x183A93C10
+0x180EF7A22: lea     rcx, [rbp + 0x28]
+0x180EF7A26: call    0x1804f6ac8   ; direct call
+0x180EF7A2B: lea     r8, [rbx + 0x50]
+0x180EF7A2F: lea     rdx, [rbp + 0x28]
+0x180EF7A33: lea     rcx, [rbp + 0x38]
+0x180EF7A37: call    0x1806b9a78   ; direct call
+0x180EF7A3C: mov     r8, qword ptr [rbx + 0x48]
+0x180EF7A40: lea     r9, [rip + 0x2b9c29d]   ; -> 0x183A93CE4
+0x180EF7A47: mov     rdx, qword ptr [rbp + 0x38]
+0x180EF7A4B: mov     rcx, rdi
+0x180EF7A4E: call    0x1804d4e78   ; direct call
+0x180EF7A53: lea     rcx, [rbp + 0x38]
+0x180EF7A57: call    0x1804fc884   ; direct call
+0x180EF7A5C: lea     rcx, [rbp + 0x28]
+0x180EF7A60: call    0x1804fc884   ; direct call
+0x180EF7A65: mov     rax, rdi
+0x180EF7A68: add     rsp, 0x28
+0x180EF7A6C: pop     rdi
+0x180EF7A6D: pop     rsi
+0x180EF7A6E: pop     rbx
+0x180EF7A6F: pop     rbp
+0x180EF7A70: ret     
+0x180EF7A71: int3    
+0x180EF7A72: int3    
+0x180EF7A73: int3    
+0x180EF7A74: push    rbp
+0x180EF7A76: push    rbx
+0x180EF7A77: push    rsi
+0x180EF7A78: push    rdi
+0x180EF7A79: mov     rbp, rsp
+0x180EF7A7C: sub     rsp, 0x28
+0x180EF7A80: mov     rbx, rcx
+0x180EF7A83: mov     rdi, rdx
+0x180EF7A86: lea     rcx, [rbp + 0x28]
+0x180EF7A8A: call    0x1803d18d0   ; direct call
+0x180EF7A8F: mov     rax, qword ptr [rbx]
+0x180EF7A92: mov     rcx, rbx
+0x180EF7A95: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF7A98: movsxd  r8, eax
+0x180EF7A9B: lea     rsi, [rip + 0x2bd4d76]   ; -> 0x183ACC818
+0x180EF7AA2: test    byte ptr [r8 + rsi], 1
+0x180EF7AA7: jne     0x1822e6092
+0x180EF7AAD: mov     rax, qword ptr [rbx]
+0x180EF7AB0: mov     rcx, rbx
+0x180EF7AB3: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF7AB6: movsxd  rcx, eax
+0x180EF7AB9: test    byte ptr [rcx + rsi], 2
+0x180EF7ABD: je      0x180ef7b23
+0x180EF7ABF: lea     rcx, [rbp + 0x30]
+0x180EF7AC3: call    0x1804d99fc   ; direct call
+0x180EF7AC8: mov     rdx, rax
+0x180EF7ACB: lea     rcx, [rbp + 0x28]
+0x180EF7ACF: call    0x1804f35a4   ; direct call
+0x180EF7AD4: lea     rcx, [rbp + 0x30]
+0x180EF7AD8: call    0x1804fc884   ; direct call
+0x180EF7ADD: lea     r8, [rbx + 0x58]
+0x180EF7AE1: lea     rdx, [rbp + 0x28]
+0x180EF7AE5: lea     rcx, [rbp + 0x38]
+0x180EF7AE9: call    0x1806b9a78   ; direct call
+0x180EF7AEE: mov     r8, qword ptr [rbx + 0x50]
+0x180EF7AF2: lea     r9, [rip + 0x2b9c1eb]   ; -> 0x183A93CE4
+0x180EF7AF9: mov     rdx, qword ptr [rbp + 0x38]
+0x180EF7AFD: mov     rcx, rdi
+0x180EF7B00: call    0x1804d4e78   ; direct call
+0x180EF7B05: lea     rcx, [rbp + 0x38]
+0x180EF7B09: call    0x1804fc884   ; direct call
+0x180EF7B0E: lea     rcx, [rbp + 0x28]
+0x180EF7B12: call    0x1804fc884   ; direct call
+0x180EF7B17: mov     rax, rdi
+0x180EF7B1A: add     rsp, 0x28
+0x180EF7B1E: pop     rdi
+0x180EF7B1F: pop     rsi
+0x180EF7B20: pop     rbx
+0x180EF7B21: pop     rbp
+0x180EF7B22: ret     
+0x180EF7B23: lea     rdx, [rip + 0x2b9c0e6]   ; -> 0x183A93C10
+0x180EF7B2A: lea     rcx, [rbp + 0x28]
+0x180EF7B2E: call    0x1804f6ac8   ; direct call
+0x180EF7B33: jmp     0x180ef7add
+0x180EF7B35: int3    
+0x180EF7B36: int3    
+0x180EF7B37: int3    
+0x180EF7B38: lea     rax, [rcx + 0x50]
+0x180EF7B3C: cmp     qword ptr [rax + 0x18], 0xf
+0x180EF7B41: jbe     0x180ef7b46
+0x180EF7B43: mov     rax, qword ptr [rax]
+0x180EF7B46: ret     
+0x180EF7B47: int3    
+0x180EF7B48: push    rbp
+0x180EF7B4A: push    rbx
+0x180EF7B4B: push    rsi
+0x180EF7B4C: push    rdi
+0x180EF7B4D: mov     rbp, rsp
+0x180EF7B50: sub     rsp, 0x28
+0x180EF7B54: mov     rbx, rcx
+0x180EF7B57: mov     rdi, rdx
+0x180EF7B5A: lea     rcx, [rbp + 0x28]
+0x180EF7B5E: call    0x1803d18d0   ; direct call
+0x180EF7B63: mov     rax, qword ptr [rbx]
+0x180EF7B66: mov     rcx, rbx
+0x180EF7B69: call    qword ptr [rax + 8]   ; *** INDIRECT disp=+0x8 = slot1 AdjustFileName ***
+0x180EF7B6C: movsxd  r8, eax
+0x180EF7B6F: lea     rsi, [rip + 0x2bd4ca2]   ; -> 0x183ACC818
+0x180EF7B76: test    byte ptr [r8 + rsi], 1
+0x180EF7B7B: je      0x1822e60e0
+0x180EF7B81: call    0x18091c138   ; direct call
+0x180EF7B86: mov     rcx, qword ptr [rax + 0x148]
+0x180EF7B8D: mov     rax, qword ptr [rcx]
+0x180EF7B90: call    qword ptr [rax + 0xb8]   ; *** INDIRECT disp=+0xB8 (vtable?) ***
+0x180EF7B96: lea     rdx, [rbp + 0x30]
+0x180EF7B9A: call    0x180b96170   ; direct call
+0x180EF7B9F: mov     rdx, qword ptr [rbp + 0x30]
+0x180EF7BA3: lea     r8, [rip + 0x2bd4c86]   ; -> 0x183ACC830
+0x180EF7BAA: lea     rcx, [rbp + 0x40]
+0x180EF7BAE: call    0x1804dd384   ; direct call
+0x180EF7BB3: mov     rdx, rax
+0x180EF7BB6: lea     rcx, [rbp + 0x28]
+0x180EF7BBA: call    0x1804f35a4   ; direct call
+0x180EF7BBF: lea     rcx, [rbp + 0x40]
+0x180EF7BC3: call    0x1804fc884   ; direct call
+0x180EF7BC8: lea     rcx, [rbp + 0x30]
+0x180EF7BCC: call    0x1804fc884   ; direct call
+0x180EF7BD1: lea     r8, [rbx + 0x58]
+0x180EF7BD5: lea     rdx, [rbp + 0x28]
+0x180EF7BD9: lea     rcx, [rbp + 0x38]
+0x180EF7BDD: call    0x1806b9a78   ; direct call
+0x180EF7BE2: mov     r8, qword ptr [rbx + 0x50]
+0x180EF7BE6: lea     r9, [rip + 0x2b9c0f7]   ; -> 0x183A93CE4
+0x180EF7BED: mov     rdx, qword ptr [rbp + 0x38]
+0x180EF7BF1: mov     rcx, rdi
+0x180EF7BF4: call    0x1804d4e78   ; direct call
+0x180EF7BF9: lea     rcx, [rbp + 0x38]
+0x180EF7BFD: call    0x1804fc884   ; direct call
+0x180EF7C02: lea     rcx, [rbp + 0x28]
+0x180EF7C06: call    0x1804fc884   ; direct call
+0x180EF7C0B: mov     rax, rdi
+0x180EF7C0E: add     rsp, 0x28
+0x180EF7C12: pop     rdi
+0x180EF7C13: pop     rsi
+0x180EF7C14: pop     rbx
+0x180EF7C15: pop     rbp
+0x180EF7C16: ret     
+0x180EF7C17: int3    
+0x180EF7C18: push    rbp
+0x180EF7C1A: push    rbx
+0x180EF7C1B: push    rsi

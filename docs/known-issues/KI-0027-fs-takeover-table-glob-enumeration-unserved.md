@@ -65,19 +65,37 @@ mechanism under KI-0026.
 - Slots 15 (`ForEachFile` callback dispatcher) and 101 (iterator lifecycle) were left
   THUNK in the step-3.3 metadata/enum work, surfaced as deferred decisions (cap-114
   matrix notes). (FACT — `test-plugins/README.md` CAP-114 Notes)
+- **The override-glob dispatches through the `FindFirst`/`FindNext`/`FindClose` handle
+  triplet at vtable +0x1F8 / +0x200 / +0x208 (slots 63 / 64 / 65) — NOT slot 14
+  `ForEachFile` (already kcdx-owned) and NOT slot 101 `FindFirst`/`CCryPakFindData`
+  (the iterator-OBJECT factory).** Read directly from the table-loader glob body
+  `FUN_180974484`: it builds the `<base>__*.<ext>` pattern, then
+  `(**(*pak+0x1F8))(pak, pattern, findData, 0)` = FindFirst → `(**(*pak+0x200))(pak,
+  handle, findData)` = FindNext loop → `(**(*pak+0x208))(pak, handle)` = FindClose. The
+  CCryPak singleton is `DAT_18492b850` (== the `*(gEnv+0x50)` object). (PROBE — fresh
+  Ghidra, `_research/ki0027-table-glob-dispatch-recon/FINDINGS.md`)
+- The triplet (slots 63/64/65) is the engine's GENERAL by-name directory enumeration
+  (a second consumer `FUN_18041d238` uses the same triplet for a generic dir listing) —
+  so kcdx owning it serves ALL directory enumeration, not only `Libs/Tables`. (FACT —
+  same recon)
 
-## Open questions
+## Resolution route
 
-- Which CCryPak slot(s) does the engine's table-override glob dispatch through — a
-  `FindFiles`/`FindFirst`-class slot, the `ForEachFile` slots 15/101, or a different
-  enumeration entry point? (A static read of the table-loader's discovery call + a live
-  enum-slot trace settles it — this is the design input for serving glob enumeration
-  over the unified index.)
-- The unified index already holds every pak-resident entry by normalized vpath; serving
-  a `<dir>/<prefix>__*.xml` glob is a prefix/pattern match over the index key space plus
-  the loose + overlay layers. How does the enumeration merge pak + loose + overlay
-  (mirroring `ResolveVPath`'s single-file precedence), and what does it return to the
-  engine's iterator (the `ForEachFile` callback shape)? (Design — route to `/design` /
-  `senior-architect-consult`; the enum-takeover subsystem was explicitly deferred.)
-- Does the engine also enumerate non-table directories at boot (the glob surface may be
-  broader than `Libs/Tables`)? (Scan the boot log's full `*`-path set.)
+This is the deferred `FindFirst`/`FindNext`/`FindClose` directory-enumeration takeover
+surface (slots 63/64/65) — already named in the file-system-takeover design §4.5
+(directory enumeration) under the §1 totalizing invariant (kcdx IS the filesystem). The
+fix is a `/design` revision making the iterator-triplet a settled in-v1 part of the
+takeover (kcdx mints + owns the full `FindFirst`-handle lifecycle, walking the unified
+pak+loose+overlay set), then a `/plan`+`/feature` build. Design dialogue in progress
+(2026-06-20). The slot-14 `ForEachFile` impl already proves the unified-enum MODEL; the
+triplet is the same model behind the engine's stateful handle API the table loader uses.
+
+## Open questions (remaining — for the design)
+
+- The engine impl of the +0x1F8 triplet (`0x180973058` / `0x18041d640` / `0x18097383c`)
+  was not decompiled — whether engine FindFirst walks pak dirs + disk vs disk-only is a
+  separate unread fact. (Not load-bearing for the kcdx design: kcdx's own impl walks the
+  unified set regardless; this only affects the engine-behavior DESCRIPTION.)
+- The find-data buffer ABI the triplet fills (`local_158`, 36+ bytes — name + attrs the
+  caller reads, e.g. the `& 0x10` directory bit + the name bytes at +0x36ish) needs its
+  exact layout read before kcdx mints a compatible find-data the engine consumes.

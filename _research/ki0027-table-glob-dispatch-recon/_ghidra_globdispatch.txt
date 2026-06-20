@@ -1,0 +1,16 @@
+functions referencing Libs\Tables\ or __ : 11
+   FUN_180ef79cc @ 0x180ef79cc
+   FUN_180ef7924 @ 0x180ef7924
+   FUN_180ef7a74 @ 0x180ef7a74
+   FUN_180ef7b48 @ 0x180ef7b48
+   FUN_180ef7c18 @ 0x180ef7c18
+   FUN_181eb27f0 @ 0x181eb27f0
+   FUN_1816a3c58 @ 0x1816a3c58
+   FUN_180d1d44c @ 0x180d1d44c
+   FUN_180974484 @ 0x180974484
+   FUN_181e39b30 @ 0x181e39b30
+   FUN_180d1d508 @ 0x180d1d508
+
+--- those with a CCryPak enum-slot dispatch in body ---
+
+========== done ==========
