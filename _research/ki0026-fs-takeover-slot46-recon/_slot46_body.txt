@@ -1,0 +1,62 @@
+== FUN_180460c08  VA=0x180460c08  RVA=0x460c08  len=0xd1 (end RVA 0x460cd9)
+========================================================================================
+  0x0180460c08  48895c2408             mov     qword ptr [rsp + 8], rbx
+  0x0180460c0d  48896c2418             mov     qword ptr [rsp + 0x18], rbp
+  0x0180460c12  56                     push    rsi
+  0x0180460c13  57                     push    rdi
+  0x0180460c14  4156                   push    r14
+  0x0180460c16  4883ec60               sub     rsp, 0x60
+  0x0180460c1a  488b059fc34904         mov     rax, qword ptr [rip + 0x449c39f]   -> RVA 0x48fcfc0
+  0x0180460c21  4833c4                 xor     rax, rsp
+  0x0180460c24  4889442450             mov     qword ptr [rsp + 0x50], rax
+  0x0180460c29  488d5910               lea     rbx, [rcx + 0x10]
+  0x0180460c2d  488be9                 mov     rbp, rcx
+  0x0180460c30  488bcb                 mov     rcx, rbx
+  0x0180460c33  488d72ff               lea     rsi, [rdx - 1]
+  0x0180460c37  4c8bf2                 mov     r14, rdx
+  0x0180460c3a  e8d5130000             call    0x180462014   -> intern RVA 0x462014
+  0x0180460c3f  33ff                   xor     edi, edi
+  0x0180460c41  84c0                   test    al, al
+  0x0180460c43  740c                   je      0x180460c51
+  0x0180460c45  f0ff03                 lock inc dword ptr [rbx]
+  0x0180460c48  488d4b10               lea     rcx, [rbx + 0x10]
+  0x0180460c4c  e863d2fcff             call    0x18042deb4   -> intern RVA 0x42deb4
+  0x0180460c51  488b4d40               mov     rcx, qword ptr [rbp + 0x40]
+  0x0180460c55  48baabaaaaaaaaaaaaaa   movabs  rdx, 0xaaaaaaaaaaaaaaab
+  0x0180460c5f  488b4548               mov     rax, qword ptr [rbp + 0x48]
+  0x0180460c63  482bc1                 sub     rax, rcx
+  0x0180460c66  48c1f803               sar     rax, 3
+  0x0180460c6a  480fafc2               imul    rax, rdx
+  0x0180460c6e  483bf0                 cmp     rsi, rax
+  0x0180460c71  7341                   jae     0x180460cb4
+  0x0180460c73  488d0476               lea     rax, [rsi + rsi*2]
+  0x0180460c77  488b44c108             mov     rax, qword ptr [rcx + rax*8 + 8]
+  0x0180460c7c  4885c0                 test    rax, rax
+  0x0180460c7f  7407                   je      0x180460c88
+  0x0180460c81  488b4028               mov     rax, qword ptr [rax + 0x28]
+  0x0180460c85  8b7808                 mov     edi, dword ptr [rax + 8]
+  0x0180460c88  488bcb                 mov     rcx, rbx
+  0x0180460c8b  e804630a00             call    0x180506f94   -> intern RVA 0x506f94
+  0x0180460c90  8bc7                   mov     eax, edi
+  0x0180460c92  488b4c2450             mov     rcx, qword ptr [rsp + 0x50]
+  0x0180460c97  4833cc                 xor     rcx, rsp
+  0x0180460c9a  e821dc7b01             call    0x181c1e8c0   -> intern RVA 0x1c1e8c0
+  0x0180460c9f  4c8d5c2460             lea     r11, [rsp + 0x60]
+  0x0180460ca4  498b5b20               mov     rbx, qword ptr [r11 + 0x20]
+  0x0180460ca8  498b6b30               mov     rbp, qword ptr [r11 + 0x30]
+  0x0180460cac  498be3                 mov     rsp, r11
+  0x0180460caf  415e                   pop     r14
+  0x0180460cb1  5f                     pop     rdi
+  0x0180460cb2  5e                     pop     rsi
+  0x0180460cb3  c3                     ret     
+  0x0180460cb4  488bcb                 mov     rcx, rbx
+  0x0180460cb7  e8d8620a00             call    0x180506f94   -> intern RVA 0x506f94
+  0x0180460cbc  498bce                 mov     rcx, r14
+  0x0180460cbf  ff15cb2f5a03           call    qword ptr [rip + 0x35a2fcb]   -> import api-ms-win-crt-stdio-l1-1-0.dll!_fileno   <== DISCRIMINATOR
+  0x0180460cc5  8bc8                   mov     ecx, eax
+  0x0180460cc7  488d542420             lea     rdx, [rsp + 0x20]
+  0x0180460ccc  ff157e2b5a03           call    qword ptr [rip + 0x35a2b7e]   -> import api-ms-win-crt-filesystem-l1-1-0.dll!_fstat64i32
+  0x0180460cd2  4863442434             movsxd  rax, dword ptr [rsp + 0x34]
+  0x0180460cd7  ebb9                   jmp     0x180460c92   -> intern RVA 0x460c92
+
+DISCRIMINATOR import calls in body: [('0x460cbf', 'api-ms-win-crt-stdio-l1-1-0.dll!_fileno')]
