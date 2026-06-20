@@ -3,6 +3,7 @@
 #include <climits>  // SIZE_MAX (size*count overflow guard)
 #include <cstdio>   // SEEK_SET
 
+#include "boot_trace.h"  // FS_BOOT_TRACE — read-family boot-window trace (KI-0026 PROBE K)
 #include "file_handle.h"
 #include "../log.h"
 
@@ -38,6 +39,7 @@ KcdxHandle H(void* handle) {
 size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
                                 size_t count, long long taggedHandle) {
     (void)self;
+    TraceRead("FReadRaw_byPakIndex", taggedHandle);  // FS_BOOT_TRACE (PROBE K)
     // SOURCE: FINDINGS slot-38 body — FUN_180461304(p1,p2,p3,p4,p5); p5 (arg 5,
     // `taggedHandle`) is the tagged handle/pak-index. This is the ONE read slot
     // whose handle is arg 5, not the FILE*-position arg its siblings use — a
@@ -69,6 +71,7 @@ size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
 // seek-to-0 then read `size` bytes on kcdx's CRT.
 size_t kcdx_FReadRaw(void* self, void* buf, size_t size, void* handle) {
     (void)self;
+    TraceRead("FReadRaw", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     const KcdxHandle h = H(handle);
     Seek(h, 0, SEEK_SET);  // the body's leading fseek-to-0
     bool ok = false;
@@ -80,6 +83,7 @@ size_t kcdx_FReadRaw(void* self, void* buf, size_t size, void* handle) {
 // inflated buffer zero-copy, a loose source's whole-file cache.
 void* kcdx_FGetCachedFileData(void* self, void* handle, long long* outSizeDst) {
     (void)self;
+    TraceRead("FGetCachedFileData", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     long long sz = 0;
     const void* data = GetCachedFileData(H(handle), &sz);
     if (outSizeDst) *outSizeDst = sz;
@@ -91,6 +95,7 @@ void* kcdx_FGetCachedFileData(void* self, void* handle, long long* outSizeDst) {
 size_t kcdx_FWrite(void* self, const void* buf, size_t size, size_t count,
                    void* handle) {
     (void)self;
+    TraceRead("FWrite", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     if (count != 0 && size > SIZE_MAX / count) {
         // size*count would overflow → a wrapped small/zero count is a silent
         // short write reported as success (AP14). Untrusted engine multiplicands
@@ -110,12 +115,14 @@ size_t kcdx_FWrite(void* self, const void* buf, size_t size, size_t count,
 // on success, non-zero on failure (libc fseek convention).
 int kcdx_FSeek(void* self, void* handle, long offset, int origin) {
     (void)self;
+    TraceRead("FSeek", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Seek(H(handle), static_cast<long long>(offset), origin);
 }
 
 // slot 54 — FTell (LEAF-IDENTIFIED, _ftelli64-shaped). Current position, or -1.
 long long kcdx_FTell(void* self, void* handle) {
     (void)self;
+    TraceRead("FTell", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Tell(H(handle));
 }
 
@@ -123,12 +130,14 @@ long long kcdx_FTell(void* self, void* handle) {
 // CRT (kcdx fclose for loose; drop the pak buffer). Returns 0 / EOF.
 int kcdx_FClose(void* self, void* handle) {
     (void)self;
+    TraceRead("FClose", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Close(H(handle));
 }
 
 // slot 56 — FEof (LEAF-IDENTIFIED, feof-shaped). Non-zero at EOF, 0 otherwise.
 int kcdx_FEof(void* self, void* handle) {
     (void)self;
+    TraceRead("FEof", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Eof(H(handle)) ? 1 : 0;
 }
 
@@ -137,42 +146,49 @@ int kcdx_FEof(void* self, void* handle) {
 // slot 43 — FGets (LEAF-IDENTIFIED, fgets-shaped). Returns buf / nullptr.
 char* kcdx_FGets(void* self, char* buf, int maxCount, void* handle) {
     (void)self;
+    TraceRead("FGets", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Gets(H(handle), buf, maxCount);
 }
 
 // slot 44 — FGetc (LEAF-IDENTIFIED, fgetc-shaped). Next byte as int, or EOF(-1).
 int kcdx_FGetc(void* self, void* handle) {
     (void)self;
+    TraceRead("FGetc", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Getc(H(handle));
 }
 
 // slot 46 — fileno (LEAF-IDENTIFIED, _fileno-shaped). The fd (loose) or -1 (pak).
 int kcdx_Fileno(void* self, void* handle) {
     (void)self;
+    TraceRead("Fileno", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Fileno(H(handle));
 }
 
 // slot 47 — FUngetc (LEAF-IDENTIFIED, ungetc-shaped). The char / EOF(-1).
 int kcdx_FUngetc(void* self, int ch, void* handle) {
     (void)self;
+    TraceRead("FUngetc", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Ungetc(H(handle), ch);
 }
 
 // slot 57 — FError (LEAF-IDENTIFIED, ferror-shaped). 0 = no error.
 int kcdx_FError(void* self, void* handle) {
     (void)self;
+    TraceRead("FError", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Error(H(handle));
 }
 
 // slot 58 — FGetErrno (LEAF-IDENTIFIED, _errno-shaped). The stream errno.
 int kcdx_FGetErrno(void* self, void* handle) {
     (void)self;
+    TraceRead("FGetErrno", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return GetErrno(H(handle));
 }
 
 // slot 59 — FFlush (LEAF-IDENTIFIED, fflush-shaped). 0 on success.
 int kcdx_FFlush(void* self, void* handle) {
     (void)self;
+    TraceRead("FFlush", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return Flush(H(handle));
 }
 
@@ -180,6 +196,7 @@ int kcdx_FFlush(void* self, void* handle) {
 // FILETIME last-write time (__int64). RDX=handle, RAX=FILETIME.
 long long kcdx_FGetModificationTime(void* self, void* handle) {
     (void)self;
+    TraceRead("FGetModificationTime", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     return GetModificationTime(H(handle));
 }
 

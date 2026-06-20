@@ -33,6 +33,9 @@ lifecycle question); it never got past init.
 | 2026-06-16 | Read the dev-log tail for last kcdx activity before the fatal | `ctor_bracket_complete enabled_n=15` (kcdx replaced ModManager_ctor, MOUNT iterates kcdx's order) → `swap_live_first_open` slot 36 FOpen dispatched into kcdx (`./system.cfg`) → `kcdx_open_first` (kcdx handle minted) → **`loose_open_failed slot=FOpen vpath="engine/config/engine_core.thread_config" errno=2`** → ~430ms later the `0xC8` fatal. |
 | 2026-06-16 | PROBE A: deploy the known-good `842e5d5` DLL (no metadata slots, no PROBE M), relaunch | STILL CRASHES — identical fault (`code=200`/`0xC8`, same culprit `WHGame.DLL rva=38115914` = the NGX raise site, same 14-frame stack; only ASLR base differs). The metadata slots are NOT the cause; the leading theory is killed. (dmp `kcdx_2026-06-16_16-05-19.dmp`) |
 | 2026-06-16 | PROBE C: re-observe — grep the known-issue tree for this exact stack/code | DUPLICATE FOUND. `docs/known-issues/save-load crash 0xC8 raised from WHGame.md` carries the BYTE-IDENTICAL stack (`RaiseException 0xC8` ← `NVSDK_NGX_UpdateFeature+0x871b5a` ← `CreateGameStartup+0xda687` ← `ffxFsr2…`) — a pre-existing bug, CONFIRMED kcdx-caused (vanilla loads clean, 7/7 with kcdx crash), latent corruption set up early + tripped later in the asset/shader path. KI-0026 is the SAME crash class. |
+| 2026-06-16 | PROBE F: the 3-part observability build (early ctx-B inventory capture + `FS_BOOT_TRACE` + PDB), full normal mod set, relaunch + read the now-instrumented window | All 3 instruments fired. `FAULTED_INVENTORY` POPULATED (was sentinel): `total=6 plugin_hook=2 engine=3 lifecycle=0 probe=1 bytes=0` (lua_pcall, lua_newstate, update, bugsplat_ctor probe — NO fs vtable swap, NO mod content). `FS_BOOT_TRACE`: 23 ops, **21/23 `how=miss-original`, 2 `how=original` — ZERO index hits.** The asset index IS built + complete (`asset_index_built entries=305176 paks=41 loose=4` at 10.544, BEFORE the crash). Every traced op is an engine CONFIG/LOG/SAVE path (`kcd.log`, `./system.cfg`, `data/pak.cfg`, `engine/config/engine_core.thread_config`, save-games dir) — correctly NOT in the asset index → correctly thunked to the original engine body. Same `0xC8` / culprit `WHGame.DLL rva=38115914`, identical 14-frame stack. |
+| 2026-06-19 | PROBE K (invalid run): read-family trace built, but PROBE J copy-mode flag left ON → `kcdx_owned=0`, zero kcdx slots, NO crash | INVALID — process error. The deployed build still had `kProbeJ_CopyOriginalVtable=true` from the prior probe, so every slot was the engine's own body (copy-of-original = PROBE J, which boots). Zero kcdx read slots ran → zero `FS_BOOT_TRACE read` lines. Reproduced PROBE J's clean boot, told us nothing new. Fixed: flipped copy-mode OFF, rebuilt, redeployed. |
+| 2026-06-19 | PROBE K (valid): full takeover live (`kcdx_owned=28`), read-family trace, relaunch | **CRASH — and DECISIVE. The read family IS reached, with the CORRECT kcdx handle, CORRECTLY tagged.** Trace: `FOpen ./system.cfg result=3` → `read Fileno handle=3 tag=1` → `read FReadRaw_byPakIndex handle=3 tag=1` → `read FClose handle=3 tag=1`; identical full lifecycle for `data/pak.cfg` (FOpen→3, Fileno/FReadRaw/FClose all `tag=1`). The last kcdx FS op on the FAULT thread (tid=24152) is `FClose handle=3` at 41.512; the `0xC8` fatal fires at 41.866 (~354ms later), same culprit `WHGame.DLL rva=38115914`, identical 14-frame stack, on the SAME thread, with NO kcdx file op in between (only BugSplat collection on tid=15744 at 41.787). **The handle-id-straddle theory is DEAD: `tag=1` everywhere = valid kcdx handles, the engine did NOT mis-route through its own pak-arm test, the open→read→close lifecycle completes cleanly. Graphics-init reads system.cfg + pak.cfg through kcdx correctly, gets correct bytes, closes cleanly — then fatals ~354ms later with no kcdx file op feeding it.** ALL 28 kcdx slots are now instrumented (open+read+meta+enum); every dispatch in the crash window returned correctly. |
 
 ## Probe plan (persisted before running — flip each row as it lands)
 
@@ -44,7 +47,11 @@ lifecycle question); it never got past init.
 | D | INVALID | Engine-vs-plugin bisect attempt — moved `test-suite/` to `kcdx-plugins/_test-suite-DISABLED-probeD/`. INVALID: the discovery walker RECURSED into the `_`-prefixed dir and loaded all 118 plugins from it anyway (`Discovered plugin … from …\_test-suite-DISABLED-probeD\cap-01-patch\`); `enabled_n=15` unchanged. The plugin-set variable did NOT change; the crash this run is uninformative. Same trap as the canonical doc's PROBE C–F. Redo as D2 (move the folder OUTSIDE the kcdx-plugins tree). |
 | D2 | DONE | Engine-vs-plugin bisect, DONE RIGHT (test-suite parked OUTSIDE the tree). VALID: discovered-plugin count dropped to 3 (the 2 cap-38 + builtin bugsplat-fix; the 119 test plugins gone). STILL CRASHES — byte-identical 0xC8 / culprit `WHGame.DLL rva=38115914`. Cause is kcdx's ENGINE LAYER (vtable swap / ctor-bracket / hooks), NOT the plugin set. Note: `enabled_n=15` UNCHANGED with ~0 test plugins → the engine MOUNT list is not built from the test plugins. |
 | E | DONE | Content-vs-mechanism bisect on the MOUNT list. VALID: `enabled_n=0` (`ctor_bracket_empty_list` — every mod disabled via load_order.toml). STILL CRASHES — byte-identical 0xC8 / culprit `WHGame.DLL rva=38115914`. The mod CONTENT is NOT the cause; the crash is the ctor-bracket / vtable-swap MECHANISM itself, content-independent (zero mods, zero test plugins, still fatals in graphics-init). |
-| F | code landed; awaiting launch | LOGGING GAP — the crash window is a black box. The log shows kcdx's last actions (swap live, FOpen ./system.cfg, loose_open_failed engine_core.thread_config) then the engine fatals 240ms later in graphics-init with NOTHING about the engine-side path: `FAULTED_INVENTORY=(not captured)`, WHGame frames unsymbolicated, no trace of what file ops graphics-init drove through kcdx's slots before the 0xC8. The 3-part observability build (F.1 early ctx-B inventory capture, F.2 PDB-verified for offline cdb symbolication, F.3 `FS_BOOT_TRACE` full boot-window slot trace) is landed (see the PROBE F table) — the next crash launch will show the populated `FAULTED_INVENTORY` + the full crash-window slot stream under `FS_BOOT_TRACE`, and the dump symbolicates offline against `kcdx.pdb`. |
+| G | DONE — DECISIVE | RESULT: **NO CRASH — reached the main menu.** With the swap-write bypassed (`probe_g_swap_bypassed` confirmed at 22:52:23.328: vtable built `kcdx_owned=28`, object kept its NATIVE engine vtable) and EVERYTHING else identical (seating hook fired, kcdx vtable built, originals captured, index built), the game boots clean past graphics-init to the first update tick (`TEST SUMMARY passing=315` at 22:52:58, ~35s in). ZERO `0xC8`, zero GUARD fault. **The vtable swap-WRITE — overwriting `[pCryPak+0x00]` with kcdx's vtable pointer — IS the `0xC8` mechanism.** The crash is the swap's side-effect on the object/engine state that NGX/FSR2 graphics-init trips on, NOT anything kcdx serves (PROBE F/I already proved dispatch + metadata answers are correct/unused). Bonus: cap-45-early-inventory PASSED (F.1 verified on a real run). PROBE I removed (null, no-residue). |
+| H | pending | Environment-delta probe — resolve the standing contradiction (`842e5d5` accepted CLEAN earlier this session, same binary crashes now). Retained as a fallback. |
+| I | DONE — null (axis exonerated) | RESULT: ZERO `PROBE_I` lines fired — and zero is a FINDING. The metadata slots had ZERO index hits in the entire boot window (`FS_BOOT_TRACE how=` distribution: 21 miss-original + 2 original (BugSplat GetFileStat at crash time, on the collector thread tid=45792), and 0 index-loose / 0 index-pak / 0 index-either / 0 index). PROBE I instruments only the index-HIT arms, so with zero hits it correctly never fired. Graphics-init reads NO existence/size through a kcdx index-answering slot in the crash window → there is no divergence because there is no index-answered metadata query. The metadata-answer-divergence axis is DEAD. Same byte-identical `0xC8` (now PDB-symbolicated: `RaiseException` ← `NVSDK_NGX_UpdateFeature+0x871b5a` ← `CreateGameStartup+0xda687` ← `ffxFsr2ResourceIsNull`×3 ← `C_Game::CreateInstance+0xabf4f2`). The probe is captured-and-removable (scratch). |
+| I | (orig) pending | **Metadata-slot answer-divergence probe (architect-named, the lead cut).** Gate A architect-review (re-task verdict) EXONERATED the slot-1 miss-thunk: it is string-only resolution (§5-sanctioned), P4 is RESOLVED (live boot-to-world through 101 thunked slots — `_research/probe-archive/p2-p4-seating-and-ki0019-persists.md`), the §1 invariant is held (kcdx owns the open/bytes on its CRT; only name→string resolution defers). The `0xC8` is graphics-init READING engine filesystem state that differs under the swap. The metadata/existence slots (13/45/67/68/69/70/92/93) are KCDX-owned answering from the unified index. PROBE: in the boot window, log every metadata-slot query with kcdx's answer vs what the captured-original would return for the SAME name (originals already captured at swap). A DIVERGENCE on an NGX/FSR2 config/shader asset graphics-init validates = the mechanism. Ground-truth-first, theory-independent (observes the raw answer-vs-original delta, does not test a theory about it). |
+| F | DONE | LOGGING GAP closed. The 3-part observability build (F.1 early ctx-B inventory capture, F.2 PDB, F.3 `FS_BOOT_TRACE`) landed (`3f1a72c`) + ran. RESULT: the crash window is now fully observable and it EXONERATES the file-dispatch path — every traced op resolves correctly (config/log/save paths correctly miss the asset index → correctly thunk to the original engine body; the 305K-entry index is built + complete before the crash). kcdx serves no WRONG file answer. This CONFIRMS the PROBE E reframe with direct evidence: the crash is the takeover MECHANISM (the vtable swap / its side-effects on object or engine state), NOT a mis-served file. The next probe targets the swap's side-effects, not its dispatch results. |
 
 ## PROBE F — the 3-part logging enhancement (settled design, Gate A clear)
 
@@ -62,8 +69,154 @@ observable for the next probe.
 | F.2 | **PDB emission + offline symbolication** — verify `/Zi`+`/DEBUG` (CMakeLists.txt:387-401, already present) emits `kcdx.pdb` beside `build/Release/kcdx.dll`; confirm `package-release.ps1` excludes it from the shipped zip. The crash guard is UNTOUCHED (stays the allocation-free no-SymInitialize walker); symbolication is done offline by running cdb against the dump+PDB. | DONE (verify, no code change) — CMakeLists.txt:396-401 emit the PDB for the `kcdx` target in the MSVC branch (`/Zi` compile + `/DEBUG`+`/OPT:REF`+`/OPT:ICF` link, Release-gated), so `kcdx.pdb` lands beside `build/Release/kcdx.dll`. `package-release.ps1` ships an explicit allowlist (`kcdx.exe`, `kcdx-engine/kcdx.dll`, watchdog, builtins, catalog, load_order) AND post-build VERIFIES the zip against that allowlist (lines 164-184), throwing on ANY unexpected entry — `.pdb` is excluded by omission and would actively FAIL the package step if it ever leaked. Crash guard untouched. No code change needed. |
 | F.3 | **Boot-window FS-slot trace** — a permanent diagnostic gated `init::Current() < AfterGameApply`: ONE relaxed-atomic gate load per slot call, branch-predicted-skip after boot, ZERO allocation. Records which file ops graphics-init drives through kcdx's slots (path + slot + result) in the crash window. A kept diagnostic, not a scratch probe — no-residue discipline does not apply. | DONE (code) — new header-only inline helper `src/fs_takeover/boot_trace.h` (`BootWindowActive()` = `init::Current() < AfterGameApply`, one relaxed-atomic load + predicted-skip after boot; `TraceMeta`/`TraceOpen`/`TraceEnum` log via `LOG_DEBUG_KV` under tag `FS_BOOT_TRACE`, every string a borrowed inbound/literal pointer, zero allocation). Wired into all 8 metadata slots (`metadata_slots.cpp`), the open/resolve path (`open_slots.cpp` FOpen via `OpenResolvedAndMint` + both `kcdx_AdjustFileName` arms), and enum (`enum_slots.cpp` ForEachFile, with a match count). Existing first-only latches kept alongside. Read slots untouched (they carry no path — opaque kcdx handle-ids only; the spec's slot list is open/metadata/enum). No new cap (diagnostic; manager verifies the trace live on the next crash launch). Awaiting build + launch. |
 
+## Probe plan — root-cause narrowing (post-PROBE-G)
+
+| Probe | Status | One-variable action |
+|-------|--------|---------------------|
+| J | DONE — DECISIVE | RESULT: **NO CRASH — reached the menu** with the pointer swapped but g_kcdxVtable an exact COPY of the original (`probe_j_copy_vtable`, `kcdx_owned=0`, zero GUARD faults; boot ran ~36s further than the crashing run, to the FOREIGN_HOOK selftest). ⟹ **the pointer swap / memory location is INNOCENT; the `0xC8` is a kcdx SLOT IMPL.** Candidates 2/3 (cached-original mismatch, address/RTTI check) are DEAD. The crash is one of the 28 kcdx slot impls behaving wrong for what graphics-init dispatches. |
+| (review-logs) | DONE | Read-heavy digest of the crashing run's (`22-26`) crash window (swap→fatal, tid=21192) vs the clean J run (`23-26`). FINDING: **ZERO kcdx-SERVED ops** in the window — all 30 fault-thread FS ops are `how=miss-original`/`original` (kcdx impls ran but returned the ORIGINAL's answer; the FOpen of `./system.cfg` minted a kcdx handle, result=3, succeeded). No `index-*` op. So the INDEX-RESOLUTION theory is dead — graphics-init's crash is NOT a wrong index answer. CAVEAT (load-bearing): FS_BOOT_TRACE covers only open/meta/enum slots that take a path; the READ family (38..66) is NOT traced, and slot 35/36's handle-MINTING (kcdx handle-id vs engine FILE*) is the change PROBE J reverts. The suspect narrows to: a kcdx slot the trace doesn't cover — the read family, or the open slots' kcdx-handle-id representation — that graphics-init dispatches and trips on. |
+| J | (orig) in progress | Partial-swap discriminator — separate "the POINTER changed / where it points" from "a kcdx SLOT's behavior". Swap the vtable pointer as normal (same `[pCryPak+0x00]` overwrite, same g_kcdxVtable memory), but build g_kcdxVtable as a FAITHFUL COPY of the original — every slot = `originalVtable[i]`, ZERO kcdx slots. ONE variable vs PROBE G's full swap: kcdx-slot-contents present vs all-original-contents, pointer swapped either way. STILL CRASHES ⇒ the engine cares THAT the pointer changed or WHERE it points (cached-original mismatch / address-range / RTTI-identity check) — fix targets the pointer/memory. BOOTS CLEAN ⇒ a specific kcdx SLOT impl graphics-init dispatches is the cause — bisect which family next. Re-enables the swap-write (PROBE G flag back OFF), adds a copy-mode flag. |
+| K | DONE — DECISIVE | Read-family boot-window trace (OBSERVATION, takeover intact). RESULT: **read family reached with CORRECT kcdx handles, all `tag=1`, full open→read→close lifecycle clean** on system.cfg + pak.cfg, then `0xC8` ~354ms later with no kcdx file op feeding it. The handle-id-straddle theory is DEAD (the engine does NOT mis-route the kcdx handle through its own pak-arm test). With ALL 28 kcdx slots now instrumented, EVERY dispatch in the crash window returns correctly — the last "kcdx serves/operates a wrong value" axis is eliminated. (First run was invalid — copy-mode left ON; re-run with `kcdx_owned=28` was decisive.) |
+| L (static) | DONE — LEAD NARROWED | STATIC EVIDENCE FIRST (results-driven §4) — REUSED `_research/asset-fopen-handle-recon/FINDINGS.md` (body-read of the engine FOpen `FUN_1804614a0`, 2026-06-03). FINDING: the engine's original FOpen, on the PAK path, **writes the open entry into the pak-handle VECTOR at `param_1[8]` = `[this+0x40]`** (walks for a free slot, writes the entry at :260, returns `slot+1`). kcdx's FOpen mints into its OWN private pool and writes NOTHING into `[this+0x40]` — the vector stays empty. The engine's own FReadRaw dispatch reads that vector's element COUNT (`FUN_180427e40([RBX+0x40])` = `(end-begin)/0x18`). So `[this+0x40]` (the pak-handle vector) is the concrete engine member the original FOpen mutates and kcdx omits — the fresh-frame mechanism, body-read and OFFSET-NAMED. CAVEAT: applies only if system.cfg/pak.cfg take the engine's PAK path (loose files return a `FILE*` and write no vector entry) — L-live must confirm pak-vs-loose + that graphics-init reads `[this+0x40]`. |
+| L (live) | pending — DESIGNED | OBSERVATION (user chose the snapshot probe over the hybrid). Snapshot the CCryPak object member window `[pCryPak+0x00..+0x100]` (covers the pak-handle vector triple) + the records the vector points at, BEFORE kcdx's FOpen, AFTER kcdx's FOpen, and after the captured ORIGINAL FOpen body run for the SAME name (its handle closed via the original FClose — engine open+close pair entirely on the engine CRT, NO kcdx CRT touch = no straddle, per the user's safety call). Log every offset where original-after ≠ before but kcdx-after == before. Built on the live full takeover, one variable = kcdx-body vs original-body object side-effect. EXACT offsets to watch (from L-static body read): `[+0x40]` vector BEGIN (`param_1[8]`/`plVar1`), `[+0x48]` END (`param_1[9]`), `[+0x50]` CAP (`param_1[10]`); the entry is a `0x18`-byte record written at `begin + index*0x18` via `FUN_1823c9004`. Original writes `[+0x40..+0x58]`/the record + kcdx does NOT ⇒ mechanism CONFIRMED (fix = kcdx FOpen replicates the vector write). No divergence ⇒ widen window / it is loose-not-pak ⇒ re-frame. |
+
+## Fresh-frame reframe (post-PROBE-J, 2nd axis reframe → fresh-frame subagent per results-driven.md)
+
+PROBE J killed the pointer/identity theories; the review-logs digest killed the
+index-answer theory. A fresh-frame probe designer (leading theory WITHHELD) was
+dispatched on the raw facts + killed theories. It surfaced the load-bearing
+ground-truth fact and the surviving suspect set:
+
+- **The kcdx handle-id encoding is `(id << 1) | 1` — a tiny ODD integer (smallest
+  value = 3), NOT a 16-byte-aligned heap `FILE*`.** The one FOpen in the crash
+  window minted `result=3` — that IS the kcdx handle-id `3`, not a "3=success"
+  code. If graphics-init (or code it calls) operates that handle as a `FILE*`
+  (dereference / range-check / fileno / hand to a CRT op), a value of `3` behaves
+  catastrophically vs a real pointer. (handle rep: `src/fs_takeover/file_handle.h`)
+- **The surviving suspects, reconciling PROBE J (a kcdx slot IS the cause) with the
+  digest (no kcdx slot SERVED a non-original answer):** the differing kcdx behavior
+  is something the open/meta trace does NOT capture — (a) the open slots' handle
+  MINTING (FOpen returns a kcdx handle-id even on a `how=miss-original` open — the
+  mint happens regardless of index hit), or (b) the READ family (38..66, untraced)
+  operating that handle-id. Copy-of-original (PROBE J) reverted BOTH at once, which
+  is why it could not separate them.
+
+## Mechanism candidate — the handle-id straddle (the §4.4 "never reached" assertion is the probe target)
+
+The handle-id header (`src/fs_takeover/file_handle.h` §4.4) and slot 38's body
+comment (`read_slots.cpp:41`) both rest on ONE design-asserted runtime mechanism:
+the engine's native read family dispatches on **`taggedHandle-1 < pakEntryCount`
+→ engine pak arm, else the OS `FILE*` arm**; the contract claims this engine test
+is "never reached" for a kcdx handle "because kcdx owns the read family, so the
+read slots route on the kcdx tag." Per `.claude/rules/results-driven.md`, that
+"never reached" is a checkable claim wearing a settled-decision costume — and it
+is exactly the surface FS_BOOT_TRACE never covered.
+
+- **The crash is in NGX/FSR2 graphics-init — engine code kcdx does NOT own**,
+  holding the handle-id kcdx minted (`result=3`). If graphics-init hands that
+  handle to an engine-internal helper, runs the engine's OWN `handle-1 <
+  pakEntryCount` test on it, or treats the small integer as a pak index / `FILE*`
+  — rather than dispatching it back through a kcdx read slot — the "never reached"
+  assumption is violated. A kcdx handle `3` (3 < pakEntryCount) would route into
+  the engine's PAK arm, reading garbage from pak-entry-index-2; or, deref'd as a
+  `FILE*`, fault on a near-null pointer. Either is content-independent, latent, no
+  kcdx frame — the EXACT observed `0xC8` signature.
+- **The takeover stays TOTAL.** The fix this points at is making kcdx's handle
+  rep / read family SERVE graphics-init correctly (§1: kcdx owns every file op),
+  NOT handing a family back to the engine. The earlier per-family copy-of-original
+  bisect (Candidate A/B below) was the WRONG instrument — it revert-to-engine, i.e.
+  walks back the takeover, and "un-take-over stops the crash" is a symptom going
+  away, not the mechanism (AP17). Superseded by the read-family TRACE.
+
+## Fresh-frame reframe #2 (post-PROBE-K, 3rd axis killed → fresh-frame subagent per results-driven.md)
+
+PROBE K killed the read-family/handle axis (the 3rd axis killed: pointer → index →
+read-family). A fresh-frame probe designer (leading theory WITHHELD) was dispatched
+on the raw facts + all killed theories. With my lean hidden, it independently
+reached a mechanism that RESOLVES the PROBE J / PROBE K contradiction — and it is an
+axis nothing had observed:
+
+**The engine's ORIGINAL FOpen body registers each open into the CCryPak object's OWN
+internal open-file / handle bookkeeping (engine member state at `[pCryPak+0xNN]`).
+kcdx's FOpen mints into its OWN private pool and touches ZERO engine members.** Same
+return value (a kcdx handle), OPPOSITE side effects on the object. Graphics-init /
+FSR2 later reads that engine-side bookkeeping DIRECTLY off the object (no vtable
+dispatch, no kcdx frame) — finds it empty/stale — and trips `ffxFsr2ResourceIsNull`
+→ `0xC8`, ~354ms after the clean kcdx close.
+
+- **Why this is the ONE thing PROBE J could not isolate:** copy-of-original runs the
+  engine's REAL FOpen body (which DOES register into engine members) → boots; full
+  takeover runs kcdx's body (which does NOT) → crashes. The return value is identical
+  (a handle), so EVERY return-value probe (F/I/K/digest) was blind to it. The
+  difference is the engine-member SIDE EFFECT, not the served value.
+- **It is takeover-PRESERVING.** The fix this points at is kcdx's FOpen replicating
+  the engine's open-file bookkeeping ITSELF (kcdx maintains the object's open-file
+  registry), NOT handing opens back to the engine. Consistent with §1.
+- **Still a THEORY — a design-asserted runtime mechanism** ("the original FOpen
+  writes object members graphics-init reads"). Per results-driven.md it is OBSERVED
+  before any fix is built. The probe: snapshot the CCryPak object's member bytes
+  around the first kcdx FOpen, and compare against what `originalVtable[36]` writes
+  into `this` for the same open. Outcome map: the original mutates a member kcdx
+  leaves unchanged → mechanism identified (next: xref that offset against the
+  FSR2/NGX path, fix = kcdx replicates the write); no such divergence → the delta is
+  elsewhere (engine globals / CRT state the original touches), widen the snapshot.
+- **Static evidence FIRST (results-driven §4):** before the live byte-snapshot,
+  decompile `originalVtable[36]`'s body for its `[this+0xNN]` member writes — that
+  names the exact offsets to watch (and may settle the producer half on paper).
+  Reuse-first ladder: existing `_research/` FOpen dumps → predecessor sigs → Ghidra.
+
+## Next probe — read-family boot-window trace (observation, takeover 100% intact)
+
+The right cut is OBSERVATION on the live full-takeover build, not a revert. Extend
+the FS_BOOT_TRACE coverage to the READ family (the one untraced surface): on every
+read-family slot dispatch in the boot window, log the raw handle value received +
+the slot + the tag-bit, so the crash window shows whether graphics-init's handle
+`3` ever reaches a kcdx read slot at all — or vanishes into engine code that
+operates it off our slots.
+
+- **Theory-independent / falsifying:** records ground truth (every read-slot
+  dispatch + the raw handle), does not test a theory about it. If a kcdx read slot
+  fires on handle `3` before the fatal → graphics-init DOES route through kcdx and
+  the handle rep is operated correctly there (handle-id-straddle theory weakened,
+  look elsewhere in the read impl). If NO read slot fires on it before the fatal →
+  graphics-init operates the minted handle off kcdx's slots entirely (the engine
+  ran its own logic on a kcdx handle — the "never reached" assertion is FALSE, the
+  mechanism is the straddle). Either outcome is decisive.
+- **Superseded (do NOT run):** the per-family copy-of-original bisect — Candidate A
+  (open-original, read-kcdx) and Candidate B (read-original, open-kcdx). Both revert
+  a family to the engine original, which contradicts the total-takeover invariant
+  (§1) and answers only "does partial un-takeover stop the crash" (a symptom, AP17),
+  not the mechanism. Replaced by the read-family trace above.
+
 ## Facts
 
+- DECISIVE (PROBE K): graphics-init dispatches into kcdx for `./system.cfg` and
+  `data/pak.cfg` and runs the FULL read lifecycle on each — `FOpen → result=3`
+  (a valid kcdx handle-id), then `Fileno / FReadRaw_byPakIndex / FClose` all on
+  `handle=3 tag=1`. Every read fire carries `tag=1` (the kcdx tag bit set) — the
+  engine operates the kcdx handle THROUGH kcdx's read slots, never through its own
+  `handle-1 < pakEntryCount` pak-arm test. The handle-id-straddle theory is FALSE:
+  the §4.4 "never reached" contract HOLDS for the read path. (PROBE K)
+- DECISIVE (PROBE K): the fault thread (tid=24152) is the SAME thread that ran the
+  swap + every file op. Its last kcdx FS op is `FClose handle=3` (data/pak.cfg) at
+  41.512; the `0xC8` fatal fires at 41.866 (~354ms later), same culprit
+  `WHGame.DLL rva=38115914`, identical 14-frame stack. Between the clean FClose and
+  the fatal there is NO kcdx file op on the fault thread (only BugSplat collection
+  on tid=15744 at 41.787 — crash already in progress). Graphics-init's file I/O
+  through kcdx COMPLETED CORRECTLY; the fatal is downstream engine work that ran no
+  kcdx slot. (PROBE K)
+- All 28 kcdx slots are now instrumented (open 1/35/36, read 38..66, meta
+  13/45/67-70/92/93, enum 14). In the crash window graphics-init dispatched only
+  3 opens (system.cfg, pak.cfg, + AdjustFileName resolutions, all `how=miss-original`)
+  and the read lifecycle on each — ZERO metadata index hits, ZERO enum. Every kcdx
+  dispatch returned the correct value through the correct path. (PROBE K)
+- CONVERGENCE (post-K): every "kcdx serves or operates a WRONG VALUE" axis is now
+  dead by direct evidence — index answer (PROBE I: zero hits), file resolve/open
+  (PROBE F: all correct), served bytes (review-logs digest: zero kcdx-served),
+  pointer-identity/memory (PROBE J: copy-of-original boots), handle-id/read-family
+  (PROBE K: tag=1, clean lifecycle). The `0xC8` reproduces in a window where every
+  kcdx slot graphics-init touches behaves correctly. The mechanism is NOT a wrong
+  return value from any slot. (PROBE K)
 - Exception code is `0xC8` / decimal 200 (`code=200` in the kcdx GUARD log, `0xC8`
   in the dump — same value), raised via `KERNELBASE!RaiseException`, NOT an access
   violation. `rdi=0xC8`, `r14=0xC8` in the fault context.
@@ -85,6 +238,69 @@ observable for the next probe.
 - PROBE M is in-tree but uncommitted (the mount-slot logging stubs +
   `src/fs_takeover/probe_m_pak_lifecycle.{h,cpp}` + the vtable_swap wiring). It
   did not cause the crash but is part of the deployed build.
+- `FAULTED_INVENTORY` at fault time folds exactly 6 modifications: 2 plugin_hook
+  (`engine.lua_pcall`, `engine.lua_newstate`), 3 engine (`lua_pcall`, `update`,
+  `engine.lua_newstate`), 1 probe (`bugsplat_ctor`). The fs-takeover vtable swap
+  is NOT in the inventory — the inventory tracks MinHook detours, not the
+  vtable-pointer swap (a coverage note, not a contradiction; the swap IS live,
+  logged separately). The faulting thread (`tid=32952`) is the same thread the
+  seating hook + swap ran on. (PROBE F)
+- Every file op in the crash window resolves CORRECTLY. `FS_BOOT_TRACE`: 23 ops,
+  21 `how=miss-original` + 2 `how=original`, ZERO index hits. Every vpath is an
+  engine config/log/save path (`kcd.log`, `./system.cfg`, `data/pak.cfg`,
+  `engine/config/engine_core.thread_config`, `%engine%/config/...`, the
+  saved-games dir) — none are assets, so they correctly miss the asset index and
+  correctly thunk to the original engine body. kcdx serves NO wrong file answer
+  in the entire boot window. (PROBE F)
+- The asset index is BUILT and COMPLETE before the crash: `asset_index_built
+  entries=305176 paks=41 pak_entries=305173 loose=4` at 21:08:10.544, and
+  `seat_index_stored entries=305176` immediately after — ~850ms before the
+  `0xC8` fatal at 21:08:11.392. The overlay-ready gate signaled
+  (`overlay_map_built_signaled entries=4`), the seat acquired it, built the index
+  over `<game-root>/Data`, and stored it. The index path is fully functional.
+  (PROBE F)
+- The `engine_core.thread_config` errno=2 (the prior-run "anomaly immediately
+  preceding the fatal") is `how=miss-original result=0` — i.e. the ORIGINAL
+  engine FOpen body (thunked, not kcdx's index) returns 0 for it. The file
+  genuinely is not found by the engine's own resolver; the miss is correct
+  behavior, not a kcdx mis-resolution. This RESOLVES the prior Open-question
+  ("is `engine_core.thread_config` causal or incidental?") → incidental: kcdx
+  reproduces the engine's own not-found, it does not introduce one. (PROBE F)
+- The two BugSplat `GetFileStat how=original` ops (`BugSplatAttachments/...`) fire
+  on a DIFFERENT thread (`tid=42808`) AT crash time (21:08:11.312, ~80ms before
+  the GUARD fault line) — these are BugSplat already collecting attachments, i.e.
+  the crash is already in progress, not a kcdx op feeding the fault. (PROBE F)
+- Graphics-init reads NO file metadata through a kcdx index-answering slot in the
+  crash window. Across the whole boot window the 8 metadata slots logged ZERO
+  index hits (0 index-loose / index-pak / index-either / index; the only 2 metadata
+  ops were BugSplat-thread `GetFileStat how=original` at crash time). The asset
+  index has 305K entries, but graphics-init never queries existence/size of an
+  asset BY NAME through a kcdx slot during the fatal window — it operates on
+  already-resolved state. So kcdx's metadata ANSWERS cannot be the mechanism: there
+  is no index-answered query for them to be wrong on. (PROBE I)
+- CONVERGENCE: every "kcdx serves a WRONG ANSWER" axis is now eliminated by direct
+  evidence — file open/resolve is correct (PROBE F: all ops resolve, index built),
+  the resolution + metadata MISS thunks are P4-PASS safe (Gate A + `p2-p4` capture),
+  and graphics-init reads no kcdx index-answered metadata at all (PROBE I). The
+  crash reproduces in a window where kcdx serves NOTHING graphics-init consumes
+  through the index. The remaining suspect is the STATE the vtable swap leaves the
+  `CCryPak` object / engine in — a side-effect of the swap itself that the NGX/FSR2
+  path trips on without ever calling a kcdx file slot with an asset query. (PROBE I)
+- ISOLATED: the vtable swap-WRITE is the `0xC8` trigger. Bypassing ONLY the
+  `memcpy` that writes kcdx's vtable pointer into `[pCryPak+0x00]` (everything else
+  identical — seating hook, vtable build, captures, index) makes the game boot
+  CLEAN to the menu. Re-enabling it reproduces the `0xC8`. The swap-write is
+  necessary and (within the fs-takeover) sufficient for the crash. (PROBE G)
+- The crash mechanism is therefore something NGX/FSR2 graphics-init reads or
+  validates THROUGH the swapped vtable pointer (or via the swap disturbing
+  something the engine cached/expects about the object), NOT a kcdx slot serving a
+  wrong value. UNVERIFIED which: (a) graphics-init dispatches a CCryPak slot whose
+  KCDX impl behaves wrong for it (but PROBE I showed no index-answered metadata; a
+  NON-metadata slot — an open/read/mount during graphics-init — remains possible),
+  (b) the engine cached the ORIGINAL vtable pointer somewhere and the swap creates
+  a mismatch the NGX path validates, or (c) the kcdx vtable's MEMORY (g_kcdxVtable,
+  a kcdx-owned array) fails an integrity/identity check the engine does on its pak
+  object. Mechanism is the open question; trigger is isolated. (PROBE G)
 - Hardware: RTX 3080 Ti (NVIDIA) — the NGX/DLSS path is active (bugsplat
   `Attributes` GPU Info), consistent with the `NVSDK_NGX_UpdateFeature` frame.
 - The SAME crash reproduces on the known-good `842e5d5` DLL (no step-3.3 metadata

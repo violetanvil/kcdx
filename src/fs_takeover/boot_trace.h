@@ -90,4 +90,28 @@ inline void TraceEnum(const char* slot, const char* pattern, long long matched) 
         kcdx::log::KV("matched", matched));
 }
 
+// Trace a READ-family slot call (FReadRaw / FSeek / FClose / FGetCachedFileData /
+// … — the handle-operating slots, KI-0026 PROBE K). The read family carries NO
+// path — only the opaque handle the engine hands back. `handle` is that raw
+// value EXACTLY as received (the integer the engine passed into the member
+// call); `tag` is its low bit (1 = a valid kcdx-minted handle `(id<<1)|1`; 0 = a
+// value whose kcdx tag is CLEAR — a foreign handle the engine produced, or a
+// kcdx handle the engine mutated, which a kcdx read slot should never legitimately
+// receive). The decisive observables for the handle-id-straddle theory:
+//   - WHETHER any read slot fires at all on the minted boot-window handle (`3`)
+//     before the fatal — graphics-init routing through kcdx vs operating the
+//     handle off our slots entirely.
+//   - WHETHER any fire arrives with `tag=0` — the engine operating a non-kcdx
+//     value through a kcdx read slot.
+// Allocation-free: slot by literal, handle/tag as integers. No std::string, no
+// path (the read family has none). After AfterGameApply this is a predicted-skip
+// branch, same gate as the open/meta/enum traces above.
+inline void TraceRead(const char* slot, long long handle) {
+    if (!BootWindowActive()) return;  // predicted-skip after boot
+    LOG_DEBUG_KV("FS_BOOT_TRACE", "read",
+        kcdx::log::KV::BareStr("slot", slot),
+        kcdx::log::KV("handle", handle),
+        kcdx::log::KV("tag", static_cast<long long>(handle & 1)));
+}
+
 }  // namespace kcdx::fs_takeover
