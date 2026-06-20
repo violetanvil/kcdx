@@ -12,6 +12,7 @@
 #include "asset_index.h"
 #include "boot_trace.h"        // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
 #include "file_handle.h"
+#include "loose_mode.h"        // SanitizeLooseMode — engine-mode → strict-UCRT mode
 #include "pak_reader.h"
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
 #include "../log.h"
@@ -57,6 +58,7 @@ bool WidenPath(const std::string& diskPath, wchar_t* wpath, size_t wcap) {
     return wlen > 0;
 }
 
+
 // Open a LOOSE disk path on kcdx's CRT and mint a kcdx loose handle. Returns the
 // handle, or 0 on failure (logged loud — never a silent broken handle, AP14).
 KcdxHandle OpenLooseAndMint(const std::string& diskPath, const char* mode,
@@ -68,8 +70,25 @@ KcdxHandle OpenLooseAndMint(const std::string& diskPath, const char* mode,
             kcdx::log::KV("disk", diskPath));
         return 0;
     }
+    // Normalize the engine's mode to one kcdx's strict static UCRT accepts (the
+    // engine's lenient-CRT form would FAST-FAIL the strict parse — KI-0026, the
+    // "rbx" settings.xml crash). The takeover owns every engine open, so it
+    // translates the mode; it never crashes on it.
+    bool modeChanged = false;
+    const std::string sanitized = SanitizeLooseMode(mode, modeChanged);
+    const char* m = sanitized.c_str();
+    if (modeChanged) {
+        // Observability (logging.md): a normalization is a state worth recording
+        // — the original engine mode + what kcdx ran, so a future strict-CRT mode
+        // surfaces in the log rather than silently.
+        LOG_INFO_KV(kCat, "loose_mode_normalized",
+            kcdx::log::KV::BareStr("slot", whichSlot),
+            kcdx::log::KV::BareStr("engine_mode",
+                (mode && mode[0]) ? mode : "rb"),
+            kcdx::log::KV::BareStr("kcdx_mode", m),
+            kcdx::log::KV("disk", diskPath));
+    }
     wchar_t wmode[16];
-    const char* m = (mode && mode[0]) ? mode : "rb";
     if (MultiByteToWideChar(CP_UTF8, 0, m, -1, wmode,
                             static_cast<int>(std::size(wmode))) <= 0) {
         LOG_ERROR_KV(kCat, "loose_mode_widen_failed",

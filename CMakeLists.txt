@@ -321,6 +321,7 @@ add_library(kcdx SHARED
     src/fs_takeover/asset_index.cpp
     src/fs_takeover/file_handle.cpp
     src/fs_takeover/open_slots.cpp
+    src/fs_takeover/loose_mode.cpp
     src/fs_takeover/read_slots.cpp
     src/fs_takeover/metadata_slots.cpp
     src/fs_takeover/enum_slots.cpp

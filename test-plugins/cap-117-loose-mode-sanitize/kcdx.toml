@@ -1,0 +1,55 @@
+# CAP-117 — the loose-open mode sanitizer maps an engine mode the strict UCRT
+# rejects to a valid one, preserving intent (KI-0026 third onion layer).
+#
+# The engine opens settings.xml with mode "rbx". `x` (C11 exclusive-create) is
+# valid ONLY on a write base; on a read base MSVC's strict static UCRT fast-fails
+# (_invalid_parameter → _invoke_watson, c0000409 — no SEH, "no bugsplat"). kcdx's
+# OpenLooseAndMint forwarded the engine's mode verbatim → crash. SanitizeLooseMode
+# normalizes it: drop `x` on a read base (inert to a read), keep it on a write
+# base, keep every other flag.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-112/116 shape) — compiles the engine's own
+# loose_mode.cpp (pure + self-contained, only <string>/<cstring>, no logging → NO
+# log stub needed) into itself. loose_mode.cpp is byte-identical to the engine
+# build. Runs SEVEN mapping assertions at kcdxPlugin_Load — pure CPU, no I/O, no
+# engine lifecycle dependency:
+#
+#   (a) "rbx" → "rb" changed   — THE KI-0026 offender; `x` dropped on read.
+#   (b) "rb"  → "rb"           — valid read mode untouched.
+#   (c) "wbx" → "wbx"          — `x` on a WRITE base is valid, kept.
+#   (d) "rb+"/"r+bx" unchanged — `+` makes the stream writable, `x` valid.
+#   (e) null/"" → "rb"         — the default, never an empty mode.
+#
+# The row:
+#   * cap-117-loose-mode-sanitize  boot-only. PASS requires all seven mappings.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (a) "rbx" is not mapped to "rb" (the fix regressed → the live boot fast-fails
+#     again on settings.xml); OR
+#   - (c) `x` is dropped on a write base (a blanket x-strip → breaks a legitimate
+#     exclusive-create write); OR
+#   - (d) the writeBase test ignores `+` (drops a valid `x` on r+/w+); OR
+#   - (b)/(e) a valid or default mode is altered.
+# Not a tautology: each row asserts the actual SanitizeLooseMode output + its
+# `changed` flag against a fixed expected pair. DIRECT assertion on the mapping the
+# loose-open path runs — the live boot (settings.xml opens, game proceeds) is the
+# end-to-end proof; this row guards the pure function.
+#
+# Test mode: boot-only (HEADLESS). Self-verifies at kcdxPlugin_Load; NO console,
+# NO save/load, NO in-game action, NO live swapped vtable needed.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_117_loose_mode_sanitize"
+display_name        = "CAP-117 loose-open mode sanitizer (rbx → rb)"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own loose_mode.cpp and asserting SanitizeLooseMode maps the engine's strict-UCRT-rejected mode (rbx, the settings.xml fast-fail) to a valid one while preserving read/write/binary intent — the KI-0026 third onion layer (a CRT mode-parse fast-fail, no 0xC8)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-117-loose-mode-sanitize"]
+
+[entrypoints]
+dll = "cap-117.dll"
