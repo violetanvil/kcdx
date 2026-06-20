@@ -34,7 +34,7 @@ step; `/plan` authored all rows `NOT STARTED`; the orchestrator writes transitio
 
 | Step | Status | Commit |
 |---|---|---|
-| [5.1 — probe P5 (find-data buffer ABI)](step-1-probe-find-data-abi.md) | NOT STARTED | — |
+| [5.1 — probe P5 (find-data buffer ABI)](step-1-probe-find-data-abi.md) | DONE | (landed) |
 | [5.2 — build slots 63/64/65 + cut over the table-DB glob + cap-118](step-2-enum-triplet-cutover.md) | NOT STARTED | — |
 | [5.3 — close KI-0027](step-3-close-ki0027.md) | NOT STARTED | — |
 
