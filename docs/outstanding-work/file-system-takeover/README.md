@@ -45,7 +45,7 @@ per phase; flips to `DONE` when its last step lands. `/plan` authored all rows
 | Phase 2 — pak reader + unified index ([phase-02](phase-02-pak-reader-index/README.md)) | DONE | 63daea9 |
 | Phase 3 — real file slots + seam subsumption ([phase-03](phase-03-file-slots/README.md)) | NOT STARTED | — |
 | Phase 4 — verification + closure ([phase-04](phase-04-verification-closure/README.md)) | NOT STARTED | — |
-| Phase 5 — directory enumeration (FindFirst/FindNext/FindClose triplet, slots 63/64/65) ([phase-05](phase-05-directory-enumeration/README.md)) | DONE | (landed) |
+| Phase 5 — directory enumeration (FindFirst/FindNext/FindClose triplet, slots 63/64/65) ([phase-05](phase-05-directory-enumeration/README.md)) | DONE | 4ae17fc |
 
 ## Phases at a glance
 
