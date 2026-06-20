@@ -157,8 +157,12 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     InsertPak(idx, "other/d.dds");   // sibling prefix → excluded
 
     const std::string prefix = Key("ui/");
+    // Empty mask = no filename glob → match everything (a directory-only pattern,
+    // the pre-KI-0027 behavior for those patterns). Assertions (a)/(b) verify the
+    // union/de-dup/single-level select holds under a match-all mask; (f) below
+    // verifies the RESTRICTIVE "<base>__*" mask the KI-0027 bug was blind to.
     std::vector<FindEntry> set =
-        BuildUnifiedFindEntries(diskNames, diskIsDir, idx, prefix);
+        BuildUnifiedFindEntries(diskNames, diskIsDir, idx, prefix, /*nameMask=*/"");
 
     // (a) UNION + de-dup — exactly {a.dds, b.dds}; no second a.dds, no sub/c.dds,
     //     no other/d.dds.
@@ -252,6 +256,52 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
+    // (f) RESTRICTIVE FILENAME-GLOB MASK — the KI-0027 regression. A
+    //     "<base>__*.xml"-style mask over a prefix whose index has BOTH matching
+    //     ("gender__patch.xml") AND non-matching ("gender.xml" — no __;
+    //     "soul_ability__x.xml" — wrong base; "other.xml") pak entries must
+    //     return ONLY the matching subset. cap-118 previously used an effectively-
+    //     "*" mask (the "ui/" set above), so it NEVER exercised a restrictive
+    //     mask — the index arm matched the DIRECTORY only and returned every entry
+    //     under the prefix (live: "gender__*.xml matched=528", the whole dir, not
+    //     the ~0 actual __* overrides → the engine merged 528 unrelated tables as
+    //     gender overrides → "Database system error"). FAILS if any non-"gender__*"
+    //     pak vpath is emitted (the exact KI-0027 over-match), or the matching
+    //     entry is dropped.
+    {
+        AssetIndex midx;
+        InsertPak(midx, "libs/tables/rpg/gender__patch.xml");   // MATCHES gender__*.xml
+        InsertPak(midx, "libs/tables/rpg/gender.xml");          // no '__' → no match
+        InsertPak(midx, "libs/tables/rpg/soul_ability__x.xml"); // wrong base → no match
+        InsertPak(midx, "libs/tables/rpg/other.xml");           // unrelated → no match
+
+        const std::string mprefix = Key("libs/tables/rpg/");
+        const std::string mmask   = Key("gender__*.xml");
+        std::vector<FindEntry> mset =
+            BuildUnifiedFindEntries(/*diskNames=*/{}, /*diskIsDir=*/{}, midx,
+                                    mprefix, mmask);
+
+        const bool onlyMatch = mset.size() == 1 &&
+                               HasEntry(mset, "gender__patch.xml");
+        const bool noBare    = !HasEntry(mset, "gender.xml");
+        const bool noWrong   = !HasEntry(mset, "soul_ability__x.xml");
+        const bool noOther   = !HasEntry(mset, "other.xml");
+        if (!onlyMatch || !noBare || !noWrong || !noOther) {
+            std::snprintf(reason, sizeof(reason),
+                "(f) restrictive mask 'gender__*.xml' wrong — set size=%zu "
+                "(expected 1), has gender__patch.xml=%d (expected 1), "
+                "no gender.xml=%d, no soul_ability__x.xml=%d, no other.xml=%d. The "
+                "index arm must honor the FILENAME glob, not the directory only — "
+                "emitting any non-'gender__*' vpath is the KI-0027 over-match (the "
+                "glob returned the whole directory; the engine merged unrelated "
+                "tables as overrides → table-DB load fatal)",
+                mset.size(), (int)HasEntry(mset, "gender__patch.xml"),
+                (int)noBare, (int)noWrong, (int)noOther);
+            Report(false, reason);
+            return true;
+        }
+    }
+
     std::snprintf(reason, sizeof(reason),
         "kcdx FindFirst/FindNext/FindClose unified-enumeration core PASS — "
         "(a) the union of the disk walk + the index pak-vpaths under 'ui/' is "
@@ -261,7 +311,11 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         "walk cannot see IS surfaced (the KI-0027 fix); (c) a file's find-data "
         "clears attr bit 0x10 @0x00 and writes the base name NUL-terminated @0x24; "
         "(d) a directory SETS bit 0x10; (e) a long name is bounded + terminated "
-        "within the caller buffer. Proves the unified-enumeration + find-data ABI "
+        "within the caller buffer; (f) a restrictive 'gender__*.xml' mask returns "
+        "ONLY the matching pak vpath (gender__patch.xml), excluding gender.xml / "
+        "soul_ability__x.xml / other.xml — the index arm honors the filename glob, "
+        "not the directory only (the KI-0027 mask-blind over-match regression). "
+        "Proves the unified-enumeration + find-data ABI "
         "the slots 63/64/65 rest on. LIVE-LAUNCH-ONLY (NOT asserted here): the "
         "_wfindfirst64 disk walk, the find-handle pool mint, the per-call buffer "
         "fill against the live swapped CCryPak object — the live gate is the boot "

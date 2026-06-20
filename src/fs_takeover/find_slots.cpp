@@ -59,6 +59,47 @@ std::string IndexDirPrefix(const char* pattern) {
     return asset_overlay::NormalizeVPath(std::string(pattern, dlen));
 }
 
+// The normalized FILENAME GLOB MASK of the requested vpath pattern — the
+// basename past the last separator ("gender__*.xml" from
+// "Libs/Tables/rpg/gender__*.xml"; "*.cfg" from "Config/CVarGroups/*.cfg"),
+// NormalizeVPath'd the same way base names are folded for the de-dup so the
+// match is case-insensitive consistent with the rest. A pattern with no filename
+// part yields an empty mask (matches everything — see WildcardMatch). Cold
+// enumeration path — the std::string is acceptable here.
+std::string IndexNameMask(const char* pattern) {
+    const size_t dlen = DirPrefixLen(pattern);
+    return asset_overlay::NormalizeVPath(std::string(pattern + dlen));
+}
+
+// SOURCE: mirrors the disk arm's _wfindfirst64 filename-glob filtering — both
+// arms honor the SAME mask (the symmetry KI-0027's index arm broke by matching
+// the directory prefix only). A two-pointer glob matcher over the engine's mask
+// shapes ("<base>__*.<ext>" and "*.<ext>"): '*' matches any run (incl. empty),
+// '?' matches exactly one char; no character classes (the engine's masks use
+// none). Both sides are already NormalizeVPath'd (lowercase), so the compare is
+// the engine's case-insensitive resolution. An EMPTY mask matches everything (a
+// directory pattern carried no filename glob → no filename filter, the
+// pre-KI-0027 directory-only behavior for those patterns).
+bool WildcardMatch(const std::string& name, const std::string& mask) {
+    if (mask.empty()) return true;  // no filename glob → match all (a '*').
+    size_t n = 0, m = 0;            // cursors into name / mask
+    size_t star = std::string::npos;  // last '*' position in mask, or npos
+    size_t starN = 0;                 // name cursor when that '*' was taken
+    while (n < name.size()) {
+        if (m < mask.size() && (mask[m] == '?' || mask[m] == name[n])) {
+            ++m; ++n;                          // literal or '?' consumes one
+        } else if (m < mask.size() && mask[m] == '*') {
+            star = m++; starN = n;             // remember '*', consume zero so far
+        } else if (star != std::string::npos) {
+            m = star + 1; n = ++starN;         // backtrack: '*' eats one more char
+        } else {
+            return false;                      // mismatch, no '*' to fall back on
+        }
+    }
+    while (m < mask.size() && mask[m] == '*') ++m;  // trailing '*'(s) match empty
+    return m == mask.size();
+}
+
 // Run the engine on-disk walk for `resolvedPattern` (the slot-1-resolved disk
 // pattern "<dir>/<glob>") on kcdx's OWN CRT (_wfindfirst64/_wfindnext64), pushing
 // each entry's BASE NAME + its directory flag into the parallel out-vectors. The
@@ -103,7 +144,8 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
     const std::vector<std::string>& diskNames,
     const std::vector<bool>& diskIsDir,
     const AssetIndex& index,
-    const std::string& normPrefix) {
+    const std::string& normPrefix,
+    const std::string& nameMask) {
     std::vector<FindEntry> entries;
     entries.reserve(diskNames.size());
 
@@ -139,6 +181,13 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
         // The base name = the vpath past the prefix (single level → no further
         // separator, already guaranteed above).
         std::string baseName = vpath.substr(normPrefix.size());
+        // Apply the filename glob mask — the SAME glob the disk arm's
+        // _wfindfirst64 applies to its entries. Without this the index arm
+        // returned EVERY pak vpath under the directory, ignoring the
+        // "<base>__*.<ext>" mask (KI-0027: a "gender__*.xml" glob matched all 528
+        // tables in the dir, not the ~0 actual __* overrides). baseName is already
+        // normalized (a vpath key), so it compares against the normalized mask.
+        if (!WildcardMatch(baseName, nameMask)) continue;
         if (seen.count(asset_overlay::NormalizeVPath(baseName))) continue;  // de-dup.
         entries.push_back(FindEntry{ std::move(baseName), /*isDir=*/false });
     }
@@ -193,12 +242,16 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
     std::vector<bool> diskIsDir;
     DiskWalk(resolvedPattern, diskNames, diskIsDir);
 
-    // (2) Build the unified set (disk UNION index pak-vpaths under the prefix,
-    //     loose-skip de-duped) via the pure core.
+    // (2) Build the unified set (disk UNION index pak-vpaths under the prefix
+    //     that MATCH THE FILENAME GLOB, loose-skip de-duped) via the pure core.
+    //     The disk arm already honored the glob (_wfindfirst64 took the full
+    //     pattern); the index arm honors it via nameMask — both arms, the SAME
+    //     glob (KI-0027).
     const std::string normPrefix = IndexDirPrefix(pattern);
+    const std::string nameMask = IndexNameMask(pattern);
     const AssetIndex& index = GetBuiltIndex();
     std::vector<FindEntry> entries =
-        BuildUnifiedFindEntries(diskNames, diskIsDir, index, normPrefix);
+        BuildUnifiedFindEntries(diskNames, diskIsDir, index, normPrefix, nameMask);
 
     if (entries.empty()) {
         // No unified-set entry — the engine's no-match contract (-1). The

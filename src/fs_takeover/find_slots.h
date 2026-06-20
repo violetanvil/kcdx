@@ -97,10 +97,19 @@ struct FindEntry {
 //     walk's per-entry dir/file flag is carried in `diskIsDir`, parallel to
 //     `diskNames`; an empty `diskIsDir` treats every disk name as a file).
 //   - `index` + `normPrefix` add the index's PAK-resident vpaths directly under
-//     `normPrefix` (single directory level — no deeper subdir), as FILE entries,
-//     SKIPPING any whose base name a disk entry already surfaced (the loose-skip
-//     de-dup: a loose override is a real disk file the walk already saw). Only
-//     Pak sources are index-only — a loose vpath is covered by the disk walk.
+//     `normPrefix` (single directory level — no deeper subdir) that MATCH THE
+//     FILENAME GLOB MASK `nameMask`, as FILE entries, SKIPPING any whose base
+//     name a disk entry already surfaced (the loose-skip de-dup: a loose override
+//     is a real disk file the walk already saw). Only Pak sources are index-only
+//     — a loose vpath is covered by the disk walk.
+//   - `nameMask` is the filename glob mask the requested pattern carried past its
+//     directory (e.g. "gender__*.xml" from "Libs/Tables/rpg/gender__*.xml",
+//     "*.cfg" from "Config/CVarGroups/*.cfg"), NormalizeVPath'd. The index arm
+//     applies it exactly as the disk arm's _wfindfirst64 applies the same glob —
+//     both arms honor the SAME mask, the symmetry KI-0027 broke. An empty mask
+//     (a directory pattern with no filename glob) matches everything (a `*`
+//     equivalent), so a pattern that filtered only by directory still returns its
+//     full set.
 // `normPrefix` is the NormalizeVPath'd directory prefix (lowercase + forward
 // slash) the index keys compare against. Returns the merged entry vector (disk
 // entries first, then the index-only pak deltas). Cold path (enumeration, not the
@@ -109,7 +118,8 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
     const std::vector<std::string>& diskNames,
     const std::vector<bool>& diskIsDir,
     const AssetIndex& index,
-    const std::string& normPrefix);
+    const std::string& normPrefix,
+    const std::string& nameMask);
 
 // Fill a caller-provided find-data buffer from one FindEntry (the design §8 P5
 // ABI): zero the 36-byte header, set/clear bit 0x10 at +0x00 per entry.isDir,
