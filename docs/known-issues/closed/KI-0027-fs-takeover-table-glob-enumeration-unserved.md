@@ -1,13 +1,15 @@
 ---
 id: KI-0027
 opened: 2026-06-20
-status: open
+status: closed
 commit_at_filing: 68cf9f6
+closed: 2026-06-20
+closed_by_commit: 4befc07
 ---
 
 # Table-DB load fails: kcdx's fs-takeover does not serve wildcard-glob directory enumeration (`<table>__*.xml` override discovery)
 
-**Status:** open
+**Status:** closed
 
 The engine's table-database load aborts with a fatal dialog — *"Database system error -
 tables can't be loaded. Possibly caused by outdated or corrupted mods. See kcd.log"* —
@@ -99,3 +101,61 @@ triplet is the same model behind the engine's stateful handle API the table load
 - The find-data buffer ABI the triplet fills (`local_158`, 36+ bytes — name + attrs the
   caller reads, e.g. the `& 0x10` directory bit + the name bytes at +0x36ish) needs its
   exact layout read before kcdx mints a compatible find-data the engine consumes.
+
+## Resolution
+
+**Root cause (the mechanism):** the engine's table-database loader discovers per-table
+override patches by globbing `Libs/Tables/<base>__*.<ext>` and dispatching that glob
+through the CCryPak `FindFirst`/`FindNext`/`FindClose` handle-iterator triplet at vtable
++0x1F8/+0x200/+0x208 (slots 63/64/65 — body-verified in the loader `FUN_180974484`,
+`_research/ki0027-table-glob-dispatch-recon/`). kcdx's file-system takeover swapped the
+CCryPak vtable but left those three slots THUNKED to the engine original (Phase 3's
+step 3.3 owned only slot 14 `ForEachFile`). The engine's own FindFirst walks only its
+on-disk view — it cannot see kcdx-served pak-resident entries — so for every
+`<base>__*.xml` glob it returned zero matching override files. The table loader's worker,
+finding no overrides where the merge convention expects an enumeration result, returned
+false; `CSystem::FatalError` then raised `err_id=259` ("Database system error - tables
+can't be loaded"). The original code path made this inevitable because the takeover owns
+single-file reads (slot 1/36) but the *enumeration* slots the glob dispatches through
+were never flipped to kcdx — a takeover-incompleteness, not a read defect.
+
+A SECOND mechanism surfaced at the first live launch (captured
+`_research/ki0027-find-data-abi-recon/LIVE-GATE-1-mask-blind-index-arm.md`): once kcdx
+owned the triplet, `BuildUnifiedFindEntries`'s index arm matched candidate pak vpaths
+against the directory PREFIX only and dropped the pattern's filename glob mask, so
+`Libs\Tables\rpg\gender__*.xml` returned all 528 `Tables.pak` entries under
+`libs/tables/rpg/` instead of the `gender__*`-matching subset. The engine then tried to
+merge 528 unrelated tables as gender overrides → corrupt merge → the same DB error. The
+disk arm always filtered correctly (it passed the full pattern to `_wfindfirst64`); the
+index arm was asymmetric — it never applied the mask.
+
+**Fix:** kcdx mints + owns the full `FindFirst`-handle lifecycle over the unified
+pak+loose+overlay set (slots 63/64/65 flipped THUNK→KCDX,
+`src/fs_takeover/find_slots.cpp`), filling the find-data to the verified P5 ABI (attr
+byte @0x00 with bit 0x10 = directory, entry name inline NUL-terminated C-string @0x24).
+The index arm now applies the pattern's filename glob mask (`IndexNameMask` +
+`WildcardMatch`), so both the disk and index arms honor the same glob — the symmetry the
+over-match broke. fs-takeover Phase 5, design `docs/design/file-system-takeover.md` §5.1
+(v1.9). Commits: `a414d75` (the triplet) + `4befc07` (the mask fix). cap-118
+regression plugin asserts the unified-enumeration core + the find-data ABI + the
+restrictive-mask filter (assertion f — a `<base>__*` glob returns only the matching
+subset, FAILS on any non-match emitted).
+
+**Verification (live, `kcdx-dev_2026-06-20_15-58-02.log` + `kcdx_2026-06-20_15-58-02.log`):**
+ZERO "Database system error" / `err_id=259` (the fatal is gone); 194+ engine `FindFirst`
+dispatches through kcdx's slot 63 with CORRECT match counts (`matched=0` for vanilla
+`__*` globs, not the pre-fix 528 whole-directory over-match); the test suite ran to
+`passing=320/343`. The table-database load SUCCEEDS — the named mechanism is resolved.
+
+The boot now proceeds past the table-DB layer and hangs at a DISTINCT downstream point
+(UI/render bring-up — sound loads, no video, no input), tracked separately as
+**[KI-0028](KI-0028-fs-takeover-boot-hang-ui-render-init.md)**. That hang is a new
+subsystem (render/UI, not filesystem) the KI-0027 fix unblocked the boot far enough to
+reach — the KI-0026→KI-0027→KI-0028 chain — NOT a regression of this fix (the
+enumeration is verified functioning). KI-0027's closure is on its named mechanism (the
+unserved `__*` glob), now resolved; reaching the menu is KI-0028's concern.
+
+The two design `## Open questions` above are both DISCHARGED: the find-data buffer ABI
+was read (P5, `_research/ki0027-find-data-abi-recon/FINDINGS.md` — attr@0, name@0x24);
+the engine-FindFirst pak-vs-disk behavior was design-marked non-load-bearing (kcdx's impl
+walks the unified set regardless).

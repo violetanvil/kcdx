@@ -21,6 +21,18 @@ Shared spec + coverage map: [`plan-spec.md`](plan-spec.md).
 > search-path/alias + delete/copy slots are not blocked by the fork. 3.5 (subsume
 > the `asset_overlay.cpp` seam) follows 3.4.
 
+> **Phase 5 DONE (`4befc07`) — KI-0027 CLOSED.** The directory-enumeration triplet
+> (FindFirst/FindNext/FindClose, slots 63/64/65) is live: kcdx owns the unified-set
+> iterator, the table-DB override-glob is served (the index arm honors the filename
+> mask), and the table-database load no longer errors (live-verified — zero
+> `err_id=259`, correct match counts, 320 tests pass). The boot now reaches UI/render
+> bring-up and HANGS there (sound, no video, no input) — a NEW distinct subsystem
+> tracked as **[KI-0028](../../known-issues/KI-0028-fs-takeover-boot-hang-ui-render-init.md)**
+> (the KI-0026→KI-0027→KI-0028 chain). KI-0028 picks up via `/debug` with its evidence
+> already captured; it is NOT a regression of Phase 5 (enumeration is verified
+> functioning). Phase 3 step 3.4 (pak-mgmt slots) remains the separate open Phase-3
+> blocker above.
+
 ## Phase-grain status ledger
 
 The canonical completion surface (`.claude/rules/doc-organization.md`). One row
@@ -33,7 +45,7 @@ per phase; flips to `DONE` when its last step lands. `/plan` authored all rows
 | Phase 2 — pak reader + unified index ([phase-02](phase-02-pak-reader-index/README.md)) | DONE | 63daea9 |
 | Phase 3 — real file slots + seam subsumption ([phase-03](phase-03-file-slots/README.md)) | NOT STARTED | — |
 | Phase 4 — verification + closure ([phase-04](phase-04-verification-closure/README.md)) | NOT STARTED | — |
-| Phase 5 — directory enumeration (FindFirst/FindNext/FindClose triplet, slots 63/64/65) ([phase-05](phase-05-directory-enumeration/README.md)) | NOT STARTED | — |
+| Phase 5 — directory enumeration (FindFirst/FindNext/FindClose triplet, slots 63/64/65) ([phase-05](phase-05-directory-enumeration/README.md)) | DONE | (landed) |
 
 ## Phases at a glance
 
