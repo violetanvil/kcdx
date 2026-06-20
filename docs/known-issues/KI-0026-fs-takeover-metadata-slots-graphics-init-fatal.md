@@ -216,8 +216,58 @@ fresh-frame probe designer, rather than another ad-hoc offset guess. The crash
 trigger (swap-write) and the direction (kcdx omits an engine open-side effect) are
 solid; the EXACT omitted write is unread.
 
+## ROOT CAUSE FOUND (research-disassembly, tier-2 reuse hit — the cross-CRT fseek/get_osfhandle hazard)
+
+`/research-disassembly` (top-down: read the FSR2 fault site instead of more bottom-up
+handle probing) hit a TIER-2 reuse answer in `_research/ki0019-inventory-av-recon/
+FINDINGS.md` (2026-06-13, dump-observed + source-confirmed). KI-0026 and KI-0019 are
+the SAME cross-CRT hazard (the KI-0006 family), surfacing two ways.
+
+**Mechanism (dump-observed call-edge, §3.5-grounded — a real faulting stack, not an
+inference):** FSR2/DLSS init (`ffxFsr2ResourceIsNull` → `NVSDK_NGX_UpdateFeature`,
+`C_Game::CreateInstance` graphics-init) calls **`fseek`/`get_osfhandle` DIRECTLY on a
+handle returned by a kcdx FOpen** — bypassing the CCryPak `FRead` slot entirely. The
+KI-0019 dump shows the chain `fseek → common_fseek → lseeki64_nolock →
+get_osfhandle+0x55 → invalid_parameter_noinfo → invalid_parameter`. `get_osfhandle`
+validates the fd in the **engine's CRT (`ucrtbase`)**, where a kcdx-origin handle is
+INVALID → invalid-parameter handler → fault. KI-0019 saw it as a null-write AV
+(`0xC0000005`); KI-0026 sees it as the engine's `0xC8` deliberate fatal-raise — SAME
+root, the invalid-parameter handler surfaces either way depending on path/timing.
+
+**Why every prior KI-0026 probe saw "kcdx clean" — this resolves the whole chain:**
+- PROBE K (read family clean, tag=1): FSR2 does NOT use the CCryPak read slots — it
+  calls `fseek`/`get_osfhandle` on the handle DIRECTLY, outside the vtable. PROBE K
+  traced read-SLOT dispatches, so it could not see the direct fseek.
+- PROBE N (object state byte-identical): the hazard is not object state — it is the
+  RETURNED HANDLE operated by the wrong CRT. (PROBE N's own lead — "the returned
+  handle value is the surviving difference" — was correct; the recon names WHY.)
+- PROBE J (copy-of-original boots): the original FOpen returns a real engine-CRT
+  `FILE*` (valid fd in `ucrtbase`); the takeover returns a kcdx handle `(id<<1)|1`
+  (not even a real `FILE*`) — invalid in `ucrtbase` → the direct fseek faults.
+- The takeover's cross-CRT safety proof is scoped to `FRead` (routes a real `FILE*`
+  to its OS arm by `handle−1 ≫ pak-count`). It does NOT cover the `fseek`/
+  `get_osfhandle` FSR2 calls directly. THIS is the uncovered path.
+- Non-deterministic (KI-0019): FSR2/DLSS touching that specific handle is GPU/driver/
+  timing-dependent — explains the earlier "sometimes no crash" runs.
+
+**Fix shape (takeover-PRESERVING, the open question for /design):** the engine must
+never operate a kcdx handle on its own CRT via a direct `fseek`/`get_osfhandle` (or
+any direct CRT op outside the CCryPak read slots). Options to weigh: (a) kcdx's FOpen
+returns a handle whose fd IS valid in the engine's CRT (a real OS handle the engine's
+ucrtbase can `get_osfhandle`), (b) kcdx also owns the slots FSR2's `fseek` path
+dispatches through (if any are CCryPak vtable slots not yet kcdx-owned), (c) the
+config files FSR2 reads are served such that the engine opens them itself. This is a
+DESIGN fork (the takeover's handle-representation contract) — surface to the user /
+route to the fs-takeover design, NOT decided here.
+
 ## Facts
 
+- ROOT CAUSE (research-disassembly tier-2): the `0xC8` is the cross-CRT
+  `fseek`/`get_osfhandle` hazard — FSR2 init calls `fseek` DIRECTLY on a kcdx-returned
+  handle, the engine's `ucrtbase` `get_osfhandle` rejects the kcdx-origin fd →
+  invalid-parameter fault. Same family as KI-0019 (AV surface) / KI-0006. Evidence:
+  `_research/ki0019-inventory-av-recon/FINDINGS.md` dump-observed fault chain. The
+  takeover's `FRead`-scoped cross-CRT proof does not cover the direct-fseek path.
 - DECISIVE (PROBE L): the crash-window files (system.cfg, pak.cfg,
   engine_core.thread_config) are LOOSE (all `how=miss-original`), and the engine's
   FOpen writes the pak-handle vector at `[+0x40]` ONLY on the PAK path — so `[+0x40]`
