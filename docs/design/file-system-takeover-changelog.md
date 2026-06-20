@@ -3,6 +3,51 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-20 — v1.9 §5.1 settles directory enumeration: kcdx owns the FindFirst/FindNext/FindClose iterator triplet (slots 63/64/65)
+
+- **What this settles (an enumeration gap the slot set named but never specified,
+  root-caused at KI-0027):** §4.5 listed "directory enumeration" as kcdx-owned, but
+  the build flipped only slot 14 `ForEachFile` (the single-call callback API) to
+  KCDX and left the rest THUNK. The engine's table-DB loader discovers per-table
+  override patches by globbing `Libs/Tables/<base>__*.<ext>` — and that glob does
+  NOT dispatch through slot 14. With the enumeration surface incomplete, the
+  pak-resident `__*.xml` overrides were invisible to the loader (292 globs missed,
+  zero enum fired), and the engine fatals "Database system error - tables can't be
+  loaded" (`err_id=259`) — the KI-0027 boot blocker.
+- **The verified dispatch fact (fresh Ghidra, falsified the slot-101 hypothesis):**
+  the override-glob dispatches through the engine's **`FindFirst`/`FindNext`/
+  `FindClose` handle-iterator triplet at vtable +0x1F8/+0x200/+0x208 (slots
+  63/64/65)** — NOT slot 14 (already kcdx-owned) and NOT slot 101 (the
+  `CCryPakFindData` object factory, +0x328, thunked). Read directly from the loader
+  body `FUN_180974484`; the triplet is the engine's GENERAL by-name directory
+  enumeration (a second consumer `FUN_18041d238` uses it). Capture:
+  `_research/ki0027-table-glob-dispatch-recon/FINDINGS.md`.
+- **The settled resolution (kcdx mints + owns the full iterator):** kcdx's slots
+  63/64/65 implement a kcdx-owned `FindFirst`-handle whose `FindNext`/`FindClose`
+  walk the UNIFIED set (engine on-disk entries UNION the index's pak-resident vpaths
+  under the prefix), mirroring slot 14's union model in stateful handle form. The
+  engine never operates the find-handle (cradle-to-grave on kcdx, like the read
+  family §4.4). Owning the triplet serves ALL engine directory enumeration, not just
+  tables — the §1 totalizing invariant, not a scope expansion.
+- **Rejected:** thunk-and-augment (engine mints the iterator, kcdx reaches into its
+  result set) — re-threads engine-CRT `CCryPakFindData`/find-handle state into
+  kcdx's path, the cross-CRT structure-sharing §6/§9 eliminate, and a coexistence
+  retreat from the total takeover. And owning slot 101 instead — falsified: no
+  consumer kcdx must satisfy dispatches a directory glob through it.
+- **New probe P5 (find-data buffer ABI, §8):** the slot-63/64/65 find-data buffer
+  layout (the attr-bit + name fields the engine consumer reads) is a checkable ABI
+  fact to read from the binary BEFORE the build mints a compatible find-data —
+  ordered first, a hard prerequisite, not a guess.
+- **Integrated in:** `file-system-takeover.md` §4.5 (the enumeration slot set
+  corrected — 14 callback + 63/64/65 handle-iterator + 101 stays-THUNK), §5.1 (new
+  concern subsection — the iterator-ownership mechanism + the find-data `assumes`),
+  §8 (P5), §10 (directory enumeration named in v1 IN).
+- **Why:** the takeover claims every file op (§1), and the slot set named
+  enumeration as kcdx's, but the enumeration surface was built incomplete — the
+  engine's actual directory-glob API (slots 63/64/65) was thunked, so the engine's
+  own table-DB load could not see kcdx-served override files. The design must
+  specify kcdx owning the iterator the engine consumers use, over the unified set.
+
 ## 2026-06-20 — v1.8 §5 widens the index to cover the `Engine/*.pak` archives, not just `Data/*.pak`
 
 - **What this settles (a coverage gap §5 left, root-caused at KI-0026):** §5's

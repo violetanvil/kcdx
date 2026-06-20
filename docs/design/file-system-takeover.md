@@ -1,6 +1,6 @@
 # File-system takeover — kcdx IS the engine filesystem (the settled design)
 
-**Status:** v1.8 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; v1.7 §5 index-build cross-thread sequencing — the seat gates on a dedicated overlay-ready event; v1.8 §5 index covers `Engine/*.pak` too, not just `Data/*.pak` — KI-0026 root-cause fix; changelog `file-system-takeover-changelog.md`).
+**Status:** v1.9 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; v1.7 §5 index-build cross-thread sequencing — the seat gates on a dedicated overlay-ready event; v1.8 §5 index covers `Engine/*.pak` too, not just `Data/*.pak` — KI-0026 root-cause fix; v1.9 §5.1 directory enumeration — kcdx owns the `FindFirst`/`FindNext`/`FindClose` iterator triplet (slots 63/64/65), KI-0027 fix; changelog `file-system-takeover-changelog.md`).
 **Supersedes:** the asset-resolution *seam* settled in
 [`asset-replacement.md`](asset-replacement.md) §7 (the two-hook
 `AdjustFileName`-replace + `FOpen`-overlay mechanism) — that seam is a PARTIAL
@@ -360,8 +360,14 @@ the front-1 table):
   slot 67 `IsFileExist(3)`, slot 68 `GetFileAttributes`, slot 69 `GetFileStat`,
   slot 70 `IsFileExist(2)`, slot 92 `GetFileSizeOnDisk`, slot 93
   `GetFileSizeCompressed`.
-- **Directory enumeration:** slot 14 `ForEachFile` + slot 15 callback, slot 101
-  `FindFirst` (`CCryPakFindData` factory).
+- **Directory enumeration:** slot 14 `ForEachFile` + slot 15 callback (the
+  single-call callback API); slots 63/64/65 `FindFirst`/`FindNext`/`FindClose`
+  (the stateful handle-iterator API — vtable +0x1F8/+0x200/+0x208, the engine's
+  GENERAL by-name directory enumeration; §5.1). Slot 101 `FindFirst`
+  (`CCryPakFindData` object factory, +0x328) is a THIRD, separate enumeration
+  API the engine's own consumers do not use for the directory globs kcdx must
+  serve — it stays THUNK (no consumer kcdx must satisfy dispatches through it;
+  flippable later if one surfaces).
 - **Pak / archive management:** slot 7 `AddPakToValidate`, slot 17
   pak-membership, slot 32 `FindPakByCRC`, slot 33 `GetPakInfo` + slot 34 free,
   slot 71 `OpenPack`/mount, slot 72 `TestArchive`, slot 91 `GetPakPriority`, slot
@@ -496,6 +502,93 @@ A wait that fails to resolve fails LOUD and the index is not built (no silent
 build against a possibly-empty overlay map). Because the gate is a happens-before
 edge, the engine's first file call — which P1 places AFTER the seat — sees a
 fully-populated index regardless of thread interleaving.
+
+### §5.1 Directory enumeration — kcdx owns the iterator over the unified set
+
+Resolution (§5) answers "where are this ONE name's bytes." Enumeration answers
+"what names exist under this directory / matching this glob." Under the §1
+totalizing invariant kcdx owns enumeration end to end, exactly as it owns the
+single-file open — an engine directory walk that misses kcdx-served entries (a
+pak-resident override the engine's on-disk walk cannot see) is the same
+takeover-incompleteness as an index miss handed back to the engine.
+
+**The engine has THREE enumeration APIs on the `CCryPak` vtable; kcdx owns the
+two its consumers actually use** (evidence tier: fresh Ghidra decompile of the
+table-DB override-glob loader `FUN_180974484` + a second general-listing consumer
+`FUN_18041d238`, captured in `_research/ki0027-table-glob-dispatch-recon/FINDINGS.md`;
+slot offsets reconciled against `_research/phase8.5-pak-resolver/front1-full-vtable-surface.md`):
+
+- **slot 14 `ForEachFile`** (+0x70) — single-call callback enumeration:
+  `ForEachFile(pattern, callback)` resolves the pattern, walks, fires the
+  caller's per-entry callback (via the object's slot-15 entry) once per match.
+  Already a KCDX impl (it walks the engine's on-disk entries PLUS the unified
+  index's pak vpaths under the prefix — the union model).
+- **slots 63/64/65 `FindFirst`/`FindNext`/`FindClose`** (+0x1F8/+0x200/+0x208) —
+  the stateful **handle-iterator** API: `FindFirst(pattern, findData, 0)` returns
+  a find-handle and fills a caller-provided find-data buffer; `FindNext(handle,
+  findData)` advances, filling the next entry; `FindClose(handle)` releases. This
+  is the engine's GENERAL by-name directory enumeration — the table-DB loader's
+  `Libs/Tables/<base>__*.<ext>` override-glob dispatches through it (BODY-VERIFIED:
+  `FUN_180974484` builds the `__*.<ext>` pattern, then
+  `(**(*pak+0x1F8))(pak, pattern, findData, 0)` → a `(**(*pak+0x200))(pak, handle,
+  findData)` loop → `(**(*pak+0x208))(pak, handle)`), and a second consumer
+  `FUN_18041d238` uses the identical triplet for a generic directory listing.
+- **slot 101 `FindFirst`** (+0x328) — a DIFFERENT, object-iterator API that mints
+  a `CCryPakFindData` with its own vftable. No engine consumer kcdx must satisfy
+  dispatches a directory glob through it; it stays THUNK (§4.5), a future one-line
+  flip if a consumer ever surfaces.
+
+**kcdx mints + owns the full `FindFirst`-handle lifecycle (slots 63/64/65) over
+the unified set** — the same union model slot 14 already implements, in stateful
+handle form:
+
+- kcdx's slot-63 `FindFirst` resolves the pattern's directory prefix (slot-1
+  resolution, §5), opens a kcdx-owned find-handle (a small iterator state in a
+  kcdx handle pool — the same handle-id discipline as `FOpen`, §4.4), seeds it
+  with the UNIFIED entry set for the prefix: the engine's on-disk entries (kcdx's
+  own `_wfindfirst64`-class walk on kcdx's CRT) UNION the unified index's
+  pak-resident vpaths under the prefix that the disk walk cannot see (loose
+  overrides are real disk files the walk already surfaced — the loose-skip is the
+  de-dup, exactly as slot 14 does it). It fills the caller's find-data with the
+  first entry and returns the handle.
+- kcdx's slot-64 `FindNext` advances the kcdx find-handle to the next entry of
+  the unified set, fills the caller's find-data, returns the continue/exhausted
+  signal the engine consumer loops on.
+- kcdx's slot-65 `FindClose` releases the kcdx find-handle.
+
+The engine never operates the find-handle — it holds the handle kcdx minted and
+passes it back to kcdx's `FindNext`/`FindClose`, the same cradle-to-grave
+ownership the read family has (§4.4). There is NO engine `CCryPakFindData` and NO
+engine-CRT iterator state in kcdx's enumeration path — a thunk-and-augment shape
+(let the engine mint the iterator, kcdx reach into its result set) is REJECTED for
+the same reason §6 rejects driving the engine's ZipDir: it re-threads
+engine-CRT-allocated iterator state back into kcdx's path, reintroducing the
+cross-runtime sharing the takeover eliminates, and is a coexistence retreat from
+the total invariant.
+
+**Owning slots 63/64/65 serves EVERY engine directory enumeration, not only the
+table DB** — the triplet is the engine's general by-name dir walk (the second
+consumer proves it). This is the §1 invariant, not a scope expansion: kcdx owns
+the whole filesystem, so it owns every enumeration of it. The table-DB
+override-glob is simply the first hard CONSUMER that surfaced the gap.
+
+**`assumes` — the find-data buffer ABI (UNVERIFIED — probe before building):**
+slot-63/64/65 fill a caller-provided find-data buffer (the `local_158` 36+-byte
+scratch in the loader body — the caller reads at least the `& 0x10` directory-attr
+bit and the entry name bytes). kcdx's impl must fill a find-data the engine
+consumer reads correctly (the same field layout the engine's own FindFirst
+produces), or the consumer mis-reads each entry. The exact field layout (offsets
+of the attr word, the name, any size/time fields) is a checkable ABI fact to read
+from the engine's find-data struct / the consumer's field accesses BEFORE the
+build mints a find-data — a prerequisite probe, ordered first
+(`.claude/rules/incremental-delivery.md`), not a guess.
+
+**`assumes` — engine FindFirst pak-vs-disk behavior (UNVERIFIED, NON-load-bearing):**
+whether the engine's own +0x1F8 FindFirst walks pak directories + disk or
+disk-only was not decompiled. This does NOT gate the kcdx design — kcdx's impl
+walks the unified set regardless; it affects only the DESCRIPTION of what the
+engine original did, not what kcdx builds. Stated provisional for honesty, not as
+a build dependency.
 
 ---
 
@@ -634,6 +727,20 @@ deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.
   answer-divergence question is OPEN and is KI-0026 PROBE I, a separate axis from
   P4's thunk-correctness.
 
+- **P5 — find-data buffer ABI (gates the enumeration build, §5.1). UNVERIFIED —
+  probe before building slots 63/64/65.** *Probe:* read the engine's find-data
+  struct layout — the buffer slot-63/64/65 `FindFirst`/`FindNext` fill (the
+  `local_158` scratch the table-loader passes), via the engine FindFirst/FindNext
+  body OR the consumer's field accesses (`& 0x10` dir-attr bit + the name-byte
+  offsets the loader reads at `local_134`/`local_133`/`local_132`). Static read of
+  the binary (reuse-first ladder), no live launch needed — a struct-layout fact.
+  *Outcome map:* the field offsets (attr word, name, any size/time fields) are read
+  → kcdx mints a byte-compatible find-data the engine consumer reads correctly
+  (proceed to build); the layout is ambiguous from the consumer alone → decompile
+  the engine FindFirst body to read what it writes. A WRONG find-data layout makes
+  every enumerated entry mis-read (the dir-bit or name lands at the wrong offset) —
+  this probe is the hard prerequisite for the enumeration cutover, ordered first.
+
 P1 and P2 are the load-bearing seating probes. P1 is RESOLVED (static binary
 read, outcome (c) — swap seats at the construction site, not the ready-bracket);
 P2 still gates everything after seating (no build proceeds without it). P3 is
@@ -673,10 +780,14 @@ crashes").
 ## §10 Scope, deferrals, and dependencies
 
 **v1 IN:** the vtable swap (seating); the kcdx-owned file/resolution/read/mount/
-existence slot set (§4.5); the unified asset index (§5); kcdx's own PKZIP/DEFLATE
-reader (§6); the per-slot declarative table with thunk-to-original for internal
-slots (§4.3); KI-0019/KI-0006 resolution (§9); the four probes (§8); preservation
-of the `asset-replacement.md` author-facing contract (§7).
+existence slot set (§4.5); the unified asset index (§5); **directory enumeration
+over the unified set — kcdx owns the `FindFirst`/`FindNext`/`FindClose`
+handle-iterator triplet (slots 63/64/65) and the slot-14 `ForEachFile` callback
+API (§5.1)**, so an engine directory glob (the table-DB `__*.xml` override
+discovery, and general by-name dir listing) sees every kcdx-served entry; kcdx's
+own PKZIP/DEFLATE reader (§6); the per-slot declarative table with thunk-to-original
+for internal slots (§4.3); KI-0019/KI-0006 resolution (§9); the probes (§8);
+preservation of the `asset-replacement.md` author-facing contract (§7).
 
 **Dependency — a DEFLATE inflater.** kcdx's pak reader needs DEFLATE. This is a
 third-party dependency choice (`.claude/rules/dependencies.md` — stdlib-first,
