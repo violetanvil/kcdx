@@ -52,14 +52,32 @@ size_t DecodeId(KcdxHandle h) {
     return static_cast<size_t>(h >> 1);
 }
 
-// Resolve a handle to its LIVE slot under the pool lock. Returns nullptr (and
-// logs once at the call site's discretion) on a bad tag / out-of-range id /
-// already-closed slot. CALLER MUST HOLD g_poolLock.
+// Resolve a handle to its LIVE BYTE-SOURCE slot under the pool lock. Returns
+// nullptr (and logs once at the call site's discretion) on a bad tag /
+// out-of-range id / already-closed slot — AND on a FIND handle (a directory
+// iterator is NOT a byte-source; the read family must never operate one — §4.4/
+// §5.1). The engine never hands a find-handle to a read slot under total
+// ownership; rejecting it here makes that invariant fail loud (AP14) rather than
+// reading an empty find-cursor as zero bytes. CALLER MUST HOLD g_poolLock.
 OpenFile* SlotLocked(KcdxHandle h) {
     const size_t id = DecodeId(h);
     if (id == 0 || id > g_slots.size()) return nullptr;
     OpenFile& s = g_slots[id - 1];
     if (s.closed) return nullptr;
+    if (s.kind == OpenFile::Kind::Find) return nullptr;  // not a byte-source
+    return &s;
+}
+
+// Resolve a handle to its LIVE FIND slot (the directory-iterator counterpart of
+// SlotLocked). Returns nullptr on a bad tag / out-of-range id / closed slot / a
+// NON-Find handle (a byte-source handed to a find op is the mirror defect, also
+// fails loud). CALLER MUST HOLD g_poolLock.
+OpenFile* FindSlotLocked(KcdxHandle h) {
+    const size_t id = DecodeId(h);
+    if (id == 0 || id > g_slots.size()) return nullptr;
+    OpenFile& s = g_slots[id - 1];
+    if (s.closed) return nullptr;
+    if (s.kind != OpenFile::Kind::Find) return nullptr;  // not a find-handle
     return &s;
 }
 
@@ -135,6 +153,58 @@ KcdxHandle MintPak(std::vector<uint8_t>&& bytes) {
     s.cursor   = 0;
     s.size     = s.pakBytes.size();
     return Encode(id);
+}
+
+KcdxHandle MintFind(std::vector<std::string>&& names,
+                    std::vector<uint8_t>&& isDir) {
+    if (names.size() != isDir.size()) {
+        // Parallel-vector length mismatch — a caller defect (one base name + one
+        // dir flag per entry). Fail loud (AP14); minting a desynced cursor would
+        // mis-read the dir flag for an entry.
+        LOG_ERROR_KV(kCat, "mint_find_desync",
+            kcdx::log::KV("names", static_cast<uint64_t>(names.size())),
+            kcdx::log::KV("is_dir", static_cast<uint64_t>(isDir.size())),
+            kcdx::log::KV::BareStr("detail",
+                "MintFind got name/dir-flag vectors of different lengths — the "
+                "find-handle would mis-pair an entry's dir bit. Rejected loud."));
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_poolLock);
+    const size_t id = AllocSlotLocked();
+    if (id == 0) {
+        LOG_ERROR_KV(kCat, "mint_failed",
+            kcdx::log::KV::BareStr("kind", "find"),
+            kcdx::log::KV::BareStr("detail",
+                "could not allocate a handle-pool slot for a find open — the "
+                "FindFirst fails loud (returns the no-match contract, never a "
+                "silent broken iterator handle)."));
+        return 0;
+    }
+    OpenFile& s   = g_slots[id - 1];
+    s.kind        = OpenFile::Kind::Find;
+    s.closed      = false;
+    s.findNames   = std::move(names);
+    s.findIsDir   = std::move(isDir);
+    s.findCursor  = 0;
+    return Encode(id);
+}
+
+bool FindPeek(KcdxHandle h, std::string* outName, bool* outIsDir) {
+    std::lock_guard<std::mutex> lock(g_poolLock);
+    OpenFile* s = FindSlotLocked(h);
+    if (!s) { LogBadHandle("find_peek", h); return false; }
+    if (s->findCursor >= s->findNames.size()) return false;  // exhausted (normal)
+    if (outName)  *outName  = s->findNames[s->findCursor];
+    if (outIsDir) *outIsDir = s->findIsDir[s->findCursor] != 0;
+    return true;
+}
+
+bool FindAdvance(KcdxHandle h) {
+    std::lock_guard<std::mutex> lock(g_poolLock);
+    OpenFile* s = FindSlotLocked(h);
+    if (!s) { LogBadHandle("find_advance", h); return false; }
+    if (s->findCursor < s->findNames.size()) ++s->findCursor;
+    return true;
 }
 
 size_t Read(KcdxHandle h, void* dst, size_t bytes, bool& ok) {
@@ -506,6 +576,12 @@ int Close(KcdxHandle h) {
     s.pakBytes.shrink_to_fit();
     s.cursor = 0;
     s.size   = 0;
+    // Find-cursor state (released for a Find handle; no-op for a byte-source slot).
+    s.findNames.clear();
+    s.findNames.shrink_to_fit();
+    s.findIsDir.clear();
+    s.findIsDir.shrink_to_fit();
+    s.findCursor = 0;
     s.closed = true;
     g_freeList.push_back(id);  // the id is reusable now
     return rc;

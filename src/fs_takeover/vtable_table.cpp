@@ -4,6 +4,7 @@
 #include "read_slots.h"      // the KCDX read-family slot impls (38..66)
 #include "metadata_slots.h"  // the KCDX existence/metadata slot impls (13/45/67/68/69/70/92/93)
 #include "enum_slots.h"      // the KCDX directory-enumeration slot impl (14)
+#include "find_slots.h"      // the KCDX directory-iterator slot impls (63/64/65)
 
 namespace kcdx::fs_takeover {
 
@@ -35,10 +36,15 @@ SlotRow Kcdx(size_t slot, const char* role, void* fn) {
 //     returns a value, mints no handle, uses no CRT — §-safe; the 8 originals
 //     are captured at swap time via SetMetadataOriginals).
 //     (metadata_slots.cpp, design §4.5 "Existence / metadata by name".)
-//   - DIRECTORY ENUMERATION (14) — kcdx ForEachFile enumerates the UNIFIED set:
-//     the engine's on-disk entries (kcdx CRT find-walk) PLUS the index's
-//     pak-resident vpaths under the prefix (the totalizing invariant, design
-//     §1/§4.5). (enum_slots.cpp.)
+//   - DIRECTORY ENUMERATION (14 + 63/64/65) — kcdx ForEachFile (14, the
+//     single-call callback API) AND the FindFirst/FindNext/FindClose iterator
+//     triplet (63/64/65, the stateful by-name dir walk the table-DB override-glob
+//     dispatches through) enumerate the UNIFIED set: the engine's on-disk entries
+//     (kcdx CRT find-walk) PLUS the index's pak-resident vpaths under the prefix
+//     (the totalizing invariant, design §1/§4.5/§5.1). (enum_slots.cpp /
+//     find_slots.cpp.) The triplet mints + owns a kcdx find-handle cradle-to-grave
+//     — KI-0027 (err_id=259) is the table-DB glob seeing no pak entries while
+//     63/64/65 were THUNK.
 // Every other slot is THUNK (the pure-internal plumbing — pool, CRC/MD5,
 // %USER%, dir-casing, mount, search-path, delete/copy — kept the engine's for
 // now, each a future one-line flip). Slots 15 (ForEachFile's internal callback
@@ -136,9 +142,20 @@ const SlotRow kTable[] = {
     Thunk(60,  "pool memory"),
     Thunk(61,  "pool memory"),
     Thunk(62,  "internal"),
-    Thunk(63,  "internal"),
-    Thunk(64,  "internal"),
-    Thunk(65,  "internal"),
+    // slots 63/64/65 — FindFirst/FindNext/FindClose (the stateful directory-
+    // iterator triplet, vtable +0x1F8/+0x200/+0x208). KCDX owns the full
+    // find-handle lifecycle over the unified set (design §5.1): FindFirst seeds a
+    // kcdx find-handle (the engine's on-disk walk UNION the index's pak vpaths
+    // under the prefix, loose-skip de-duped), FindNext advances it, FindClose
+    // releases it. The engine never operates the iterator — it holds the
+    // kcdx-minted handle and passes it back, cradle-to-grave (§4.4). This is the
+    // surface the table-DB override-glob (`Libs/Tables/<base>__*.<ext>`) and the
+    // general by-name dir listing dispatch through; with these THUNK kcdx served
+    // no pak-resident entries and the table-database load fatalled (err_id=259,
+    // KI-0027). Slot 101 (the separate CCryPakFindData factory) stays THUNK.
+    Kcdx(63,   "FindFirst", reinterpret_cast<void*>(&kcdx_FindFirst)),
+    Kcdx(64,   "FindNext",  reinterpret_cast<void*>(&kcdx_FindNext)),
+    Kcdx(65,   "FindClose", reinterpret_cast<void*>(&kcdx_FindClose)),
     Kcdx(66,   "FGetModificationTime",
                reinterpret_cast<void*>(&kcdx_FGetModificationTime)),
     Kcdx(67,   "IsFileExist(3)",

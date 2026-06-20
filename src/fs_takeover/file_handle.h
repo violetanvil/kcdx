@@ -79,7 +79,7 @@ namespace kcdx::fs_takeover {
 // operates. A tagged union of the two source kinds (mirrors ByteSource, but
 // holds the OPEN state, not the resolution record).
 struct OpenFile {
-    enum class Kind { Loose, Pak };
+    enum class Kind { Loose, Pak, Find };
     Kind kind = Kind::Loose;
 
     // True once Close() has run on this slot — a use-after-close is rejected
@@ -102,6 +102,22 @@ struct OpenFile {
     // (== pakBytes.size() for a Pak source; for Loose it is unused — the FILE*
     // is the source of truth there.)
     uint64_t size = 0;
+
+    // --- Find (kind == Find): a DIRECTORY-ITERATOR cursor (slots 63/64/65). ----
+    // The seeded unified entry set for the find-handle (the design §5.1 union:
+    // the engine's on-disk entries PLUS the index's pak-resident vpaths under the
+    // prefix, loose-skip de-duped) and the iterator position. NOT a byte-source —
+    // a find-handle holds NO FILE*/pakBytes; it never reaches the read family
+    // (the read slots reject any handle whose kind is Find — a find-handle is
+    // operated only by FindNext/FindClose). `findCursor` is the index of the NEXT
+    // entry FindNext will emit (FindFirst emits findEntries[0] then sets cursor=1).
+    // `findNames` + `findIsDir` are PARALLEL vectors (one base name + its dir
+    // flag per entry) — kept as plain members so file_handle.h needs no
+    // find_slots.h include (no layering cycle; find_slots.cpp converts its
+    // FindEntry vector to these at mint time).
+    std::vector<std::string> findNames;
+    std::vector<uint8_t>     findIsDir;  // 1 = directory (attr 0x10), 0 = file.
+    size_t                   findCursor = 0;
 };
 
 // The opaque handle the engine holds. A void*-width odd-tagged integer (the
@@ -125,6 +141,33 @@ KcdxHandle MintLoose(FILE* fp);
 // inflated byte buffer by move). Returns the opaque KcdxHandle, or 0 on pool
 // failure (logged loud).
 KcdxHandle MintPak(std::vector<uint8_t>&& bytes);
+
+// === The find-handle (directory-iterator) ops — slots 63/64/65 ==============
+//
+// A find-handle is the SAME (id<<1)|1 odd-tagged pool handle, kind == Find. It
+// holds a seeded enumeration cursor (the unified entry set + a position), never a
+// byte-source. The engine never operates it — it holds the opaque id and passes
+// it back to FindNext/FindClose, cradle-to-grave (§4.4/§5.1).
+
+// Mint a find-handle seeding it with the unified entry set (takes ownership of
+// the parallel name+isDir vectors by move). Returns the opaque KcdxHandle, or 0
+// on pool failure (logged loud). The two vectors MUST be the same length (one
+// base name + its dir flag per entry); a length mismatch is a caller defect.
+KcdxHandle MintFind(std::vector<std::string>&& names,
+                    std::vector<uint8_t>&& isDir);
+
+// Read the NEXT find entry without advancing — the entry FindFirst/FindNext
+// should fill into the caller's find-data. Returns true and writes the entry's
+// base name into *outName + its dir flag into *outIsDir when an entry remains;
+// returns false at the end of the set (the iterator is exhausted) OR on a
+// bad/closed/non-Find handle (logged — distinct from a legitimate end, but both
+// tell the caller "no more entries"). Does NOT advance the cursor.
+bool FindPeek(KcdxHandle h, std::string* outName, bool* outIsDir);
+
+// Advance the find-handle's cursor by one (consume the entry FindPeek returned).
+// Returns true on success, false on a bad/closed/non-Find handle (logged). After
+// the last entry the cursor sits past the end and FindPeek returns false.
+bool FindAdvance(KcdxHandle h);
 
 // === The read-family operations on a kcdx handle (all on kcdx's CRT) ========
 //

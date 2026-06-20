@@ -1,0 +1,80 @@
+# CAP-118 — the file-system-takeover FindFirst/FindNext/FindClose iterator
+# triplet (slots 63/64/65) enumerates kcdx's unified set over a directory prefix.
+#
+# The regression proof for the stateful directory-iterator (slots 63/64/65,
+# vtable +0x1F8/+0x200/+0x208) flipped THUNK→KCDX this step. The triplet is the
+# engine's GENERAL by-name directory enumeration — the table-DB override-glob
+# (`Libs/Tables/<base>__*.<ext>`) and the general dir listing dispatch through it.
+# With the slots THUNK, kcdx served no pak-resident entries for those globs and
+# the table-database load fatalled (err_id=259, KI-0027). KCDX owns the full
+# find-handle lifecycle over the unified set (design §5.1): FindFirst seeds a
+# kcdx find-handle (the engine's on-disk walk UNION the index's pak vpaths under
+# the prefix, loose-skip de-duped), FindNext advances it, FindClose releases it.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-114 shape). The DLL compiles the engine's
+# own find_slots.cpp into itself (standalone, against include/ + the one engine
+# source under test, with standalone stubs for find_slots.cpp's external deps —
+# NormalizeVPath real, the rest link-completeness), injects a synthetic disk-walk
+# result + a hand-built AssetIndex, and runs FIVE assertions at kcdxPlugin_Load —
+# all pure CPU, no engine lifecycle dependency:
+#
+#   (a) the unified set over prefix "ui/" is exactly {a.dds (disk), b.dds (index
+#       pak)} — the loose override de-duped once, the deeper/sibling excluded;
+#   (b) the index-only pak vpath "ui/b.dds" the disk walk cannot see IS surfaced
+#       (the KI-0027 fix — the override-glob now sees pak entries);
+#   (c) find-data for a FILE clears attr bit 0x10 @0x00, writes the base name
+#       NUL-terminated @0x24 (the design §8 P5 buffer ABI);
+#   (d) find-data for a DIRECTORY sets attr bit 0x10 @0x00;
+#   (e) a name longer than the buffer cap is truncated + NUL-terminated within it.
+#
+# The row:
+#
+#   * cap-118-fs-takeover-finditer  boot-only. PASS requires ALL FIVE: the
+#     unified-enumeration core + the find-data ABI the slots 63/64/65 rest on are
+#     correct.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (a) the unified set count differs from 2, the loose override 'a.dds' is
+#     re-emitted by the index arm (de-dup broken), or a deeper/sibling vpath is
+#     included; OR
+#   - (b) the pak-only 'ui/b.dds' is absent (the KI-0027 failure: the glob sees
+#     no pak entries); OR
+#   - (c) a file's find-data sets bit 0x10, or its name lands at the wrong offset
+#     / is not NUL-terminated (the consumer's strlen/strcmp/strstr @&buf[0x24]
+#     mis-reads every entry); OR
+#   - (d) a directory's find-data leaves bit 0x10 clear (the consumer treats the
+#     subdir as a matchable file); OR
+#   - (e) a long name overruns the cap or omits the terminator.
+# Not a tautology: each assertion compares the ACTUAL output of
+# BuildUnifiedFindEntries / FillFindData against fixed known values; a broken
+# union/de-dup/fill yields a wrong verdict, not a pass.
+#
+# Test mode: boot-only (HEADLESS). The row self-verifies at kcdxPlugin_Load via
+# the compiled-in engine find_slots.cpp; NO console gestures, NO save/load, NO
+# in-game action, NO live swapped vtable needed.
+#
+# LIVE-VTABLE-ONLY (NOT asserted by this row — declared, not claimed to run):
+# the FULL slot dispatch — kcdx_FindFirst/FindNext/FindClose's `void* self`
+# member-call entry, the live _wfindfirst64 disk walk over a slot-1-resolved
+# pattern, the find-handle pool mint, the per-call buffer fill against the live
+# swapped CCryPak object reading the process-lifetime GetBuiltIndex() set — runs
+# only against the live swapped vtable in-game. The live gate is the boot reaching
+# the world with no table-DB err_id=259 (the table-database load succeeding
+# because the glob now sees the pak-resident `__*` overrides); this row does not
+# assert that path.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_118_fs_takeover_finditer"
+display_name        = "CAP-118 FS-takeover FindFirst/Next/Close iterator"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own find_slots.cpp and asserting the unified-enumeration core + the find-data buffer ABI the file-system-takeover directory-iterator slots (63/64/65) rest on — the disk-walk UNION the index pak-vpaths under a prefix, loose-skip de-duped, and the design §8 P5 attr/name layout (KI-0027)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-118-fs-takeover-finditer"]
+
+[entrypoints]
+dll = "cap-118.dll"
