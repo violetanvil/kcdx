@@ -1,0 +1,60 @@
+# CAP-116 — slot 46 (CCryPak::FGetSize, by-handle) returns the byte SIZE, not a
+# fileno (the KI-0026 RESIDUAL fix).
+#
+# After cap-115's resolve+serve fix, KI-0026's 0xC8 moved from "file not found" to
+# "served-but-rejected": the engine read the right bytes, then sized its read
+# wrong. Root cause (BODY-VERIFIED): WHGame CCryPak slot 46 (+0x170, RVA 0x460C08)
+# is FGetSize — it returns the file's byte SIZE; the engine's FRead OS arm stores
+# that return as the size and reads that many bytes. kcdx had slot 46 as a fileno
+# impl (returned the raw fd, -1 for a pak handle) → engine read size=-1 (a multi-GB
+# count) → "couldn't get length" → 0xC8. The fix: slot 46 is now FGetSize, backed
+# by the pool op FileSize(KcdxHandle).
+#
+# Shape: NATIVE C++ DLL plugin (the cap-112 shape) — the DLL compiles the engine's
+# own file_handle.cpp (the pool: MintPak / FileSize / Read / Close) into itself
+# with a log-sink stub for kcdx::log. file_handle.cpp is BYTE-IDENTICAL between the
+# engine and this build (it is self-contained — no boot_trace dependency). It runs
+# THREE assertions at kcdxPlugin_Load — pure pool ops on synthetic handles, no
+# file I/O, no engine lifecycle dependency:
+#
+#   (a) PAK SIZE: mint a Pak handle over an N-byte buffer; assert FileSize ==
+#       N (NOT -1 the old fileno-for-pak, NOT 0). The exact failing path.
+#   (b) BAD HANDLE → 0, NEVER -1: query FileSize on a closed handle; assert 0
+#       (fail-loud direction — the engine survives a 0-size read, crashes on -1).
+#   (c) POSITION-INDEPENDENT: advance the read cursor, assert FileSize unchanged
+#       (size is a file property, not the cursor — the engine queries size mid-read).
+#
+# The row:
+#
+#   * cap-116-fgetsize-byhandle  boot-only. PASS requires all three: pak size
+#     correct, bad-handle returns 0 (not -1), size independent of the cursor.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (a) FileSize(pak handle) returns -1 (the slot is still the old fileno impl —
+#     a pak handle has no fd) or any value != N → the KI-0026 residual bug; OR
+#   - (b) FileSize(closed handle) returns -1 (the very multi-GB-reject the fix
+#     removes) or any non-zero → wrong fail direction (AP14); OR
+#   - (c) FileSize changes after a read → size derived from the cursor, not the file.
+# Not a tautology: each assertion reads the actual FileSize output against a known
+# byte count + the failing-direction value (-1) the bug produced. This is a DIRECT
+# assertion on the size contract the engine's read path consumes — NOT a boot proxy.
+# The live boot (no 0xC8) is the end-to-end proof; this row guards the primitive.
+#
+# Test mode: boot-only (HEADLESS). The row self-verifies at kcdxPlugin_Load; NO
+# console gestures, NO save/load, NO in-game action, NO live swapped vtable needed.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_116_fgetsize_byhandle"
+display_name        = "CAP-116 slot 46 FGetSize returns the byte size, not a fileno"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own file_handle.cpp and asserting the by-handle FileSize pool op (backing slot 46 FGetSize) returns a pak source's byte size, returns 0 (never -1) on a bad handle, and is independent of the read cursor — the KI-0026 residual fix (slot 46 was a fileno impl returning -1 for a pak handle → engine read size=-1 → 0xC8)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-116-fgetsize-byhandle"]
+
+[entrypoints]
+dll = "cap-116.dll"

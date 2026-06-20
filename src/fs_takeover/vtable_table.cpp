@@ -119,7 +119,7 @@ const SlotRow kTable[] = {
     Kcdx(43,   "FGets", reinterpret_cast<void*>(&kcdx_FGets)),
     Kcdx(44,   "FGetc", reinterpret_cast<void*>(&kcdx_FGetc)),
     Kcdx(45,   "GetFileSize", reinterpret_cast<void*>(&kcdx_GetFileSize)),
-    Kcdx(46,   "fileno", reinterpret_cast<void*>(&kcdx_Fileno)),
+    Kcdx(46,   "FGetSize", reinterpret_cast<void*>(&kcdx_FGetSize)),
     Kcdx(47,   "FUngetc", reinterpret_cast<void*>(&kcdx_FUngetc)),
     Thunk(48,  "internal"),
     Thunk(49,  "RemoveFile"),

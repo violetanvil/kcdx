@@ -356,6 +356,48 @@ int Fileno(KcdxHandle h) {
     return _fileno(s->fp);
 }
 
+long long FileSize(KcdxHandle h) {
+    std::lock_guard<std::mutex> lock(g_poolLock);
+    OpenFile* s = SlotLocked(h);
+    // INVARIANT: a bad/closed handle returns 0 (a loud short read for the engine),
+    // NEVER -1 — the engine stores this return as the file's byte size and reads
+    // that many bytes; -1 widens to a multi-GB count → the 0xC8 "couldn't get
+    // length" reject (KI-0026, the very bug this slot fixes). Fail LOUD with 0 (AP14).
+    if (!s) { LogBadHandle("fgetsize", h); return 0; }
+
+    if (s->kind == OpenFile::Kind::Pak) {
+        // The inflated buffer's length IS the file's byte size (the engine's pak
+        // arm returns the entry's stored uncompressed-size field; ours is the
+        // inflated buffer, which equals it).
+        return static_cast<long long>(s->pakBytes.size());
+    }
+
+    // Loose: a populated cache already carries the size (GetCachedFileData sets it).
+    if (s->size != 0) return static_cast<long long>(s->size);
+
+    // Otherwise size via seek-end/_ftelli64 on kcdx's CRT — stdio only, no
+    // _get_osfhandle round-trip (the proven cross-CRT form, matching
+    // GetCachedFileData; NOT _filelengthi64(_fileno())). SAVE and RESTORE the
+    // current position so a subsequent FRead is not corrupted (the engine's own
+    // OS arm uses _fstat64i32 precisely to avoid moving the position).
+    const __int64 cur = _ftelli64(s->fp);
+    if (cur < 0 || _fseeki64(s->fp, 0, SEEK_END) != 0) {
+        LOG_ERROR_KV(kCat, "fgetsize_seek_end_failed",
+            kcdx::log::KV("handle", static_cast<uint64_t>(h)));
+        return 0;
+    }
+    const __int64 sz = _ftelli64(s->fp);
+    // Restore the prior position regardless of the tell result.
+    _fseeki64(s->fp, cur, SEEK_SET);
+    if (sz < 0) {
+        LOG_ERROR_KV(kCat, "fgetsize_tell_failed",
+            kcdx::log::KV("handle", static_cast<uint64_t>(h)));
+        return 0;
+    }
+    s->size = static_cast<uint64_t>(sz);  // cache for subsequent queries
+    return sz;
+}
+
 long long GetModificationTime(KcdxHandle h) {
     std::lock_guard<std::mutex> lock(g_poolLock);
     OpenFile* s = SlotLocked(h);

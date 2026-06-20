@@ -157,11 +157,23 @@ int kcdx_FGetc(void* self, void* handle) {
     return Getc(H(handle));
 }
 
-// slot 46 — fileno (LEAF-IDENTIFIED, _fileno-shaped). The fd (loose) or -1 (pak).
-int kcdx_Fileno(void* self, void* handle) {
+// slot 46 — FGetSize-by-handle (BODY-VERIFIED, FUN_180460c08, RVA 0x460C08).
+// Returns the file's byte SIZE, NOT a _fileno. The body is handle-tag dispatched:
+// the PAK arm returns the entry's stored uncompressed-size field; the OS arm does
+// _fileno → _fstat64i32 → st_size (the _fileno is only the first hop to size).
+// The engine's FRead OS arm (slot 40, +0x140) calls THIS slot, stores the return
+// as the size, then reads that many bytes — so a wrong return here makes the
+// engine size its read wrong (KI-0026: the prior _fileno impl returned -1 for a
+// pak handle → engine read size=-1 → "couldn't get length" → 0xC8). The earlier
+// "fileno (LEAF-IDENTIFIED, _fileno-shaped)" label was the leaf-mislabel: the
+// import-table _fileno discriminator was read as the role without reading that it
+// is a sub-step of the size computation (AP19). By-HANDLE size; distinct from the
+// by-NAME GetFileSize (slot 45, +0x168, kcdx_GetFileSize).
+long long kcdx_FGetSize(void* self, void* handle) {
     (void)self;
-    TraceRead("Fileno", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
-    return Fileno(H(handle));
+    const KcdxHandle h = H(handle);
+    TraceRead("FGetSize", static_cast<long long>(h));  // FS_BOOT_TRACE (PROBE K)
+    return FileSize(h);
 }
 
 // slot 47 — FUngetc (LEAF-IDENTIFIED, ungetc-shaped). The char / EOF(-1).

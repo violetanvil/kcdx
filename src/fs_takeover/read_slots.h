@@ -76,8 +76,12 @@ char* kcdx_FGets(void* self, char* buf, int maxCount, void* handle);
 // slot 44 FGetc. ABI (LEAF-IDENTIFIED, fgetc-shaped): int (this, FILE* handle).
 int kcdx_FGetc(void* self, void* handle);
 
-// slot 46 fileno. ABI (LEAF-IDENTIFIED, _fileno-shaped): int (this, FILE* handle).
-int kcdx_Fileno(void* self, void* handle);
+// slot 46 FGetSize-by-handle. ABI (BODY-VERIFIED, FUN_180460c08, RVA 0x460C08):
+// long long (this, FILE* handle) — returns the file's byte SIZE (NOT a fileno).
+// The engine's read path stores this return as the size + reads that many bytes.
+// (Was mislabeled "fileno (LEAF-IDENTIFIED)" — the body's _fileno is a sub-step
+// of the size computation, AP19. By-HANDLE size; slot 45 is the by-NAME size.)
+long long kcdx_FGetSize(void* self, void* handle);
 
 // slot 47 FUngetc. ABI (LEAF-IDENTIFIED, ungetc-shaped): int (this, int ch,
 // FILE* handle).

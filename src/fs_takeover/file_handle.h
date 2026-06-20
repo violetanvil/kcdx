@@ -198,7 +198,19 @@ char* Gets(KcdxHandle h, char* dst, int maxCount);
 // one. Returns -1 for a Pak source (no fd — an in-memory buffer) or a bad
 // handle (logged). The engine treats -1 as "no fd"; this matches the engine's
 // own fileno-on-a-pak-entry behavior (a pak entry has no fd either).
+// (NOT a CCryPak vtable slot — fileno is reached internally by FGetSize/
+// FGetModificationTime via _fileno on the FILE*, never as a dispatched slot.)
 int Fileno(KcdxHandle h);
+
+// The file's byte SIZE — the CCryPak::FGetSize (by-handle) contract, slot 46
+// (+0x170, FUN_180460c08, RVA 0x460C08, BODY-VERIFIED). The engine's read path
+// (FRead OS arm at vtable+0x140) calls this slot, STORES the return as the size,
+// and reads that many bytes. Pak → the inflated buffer length; Loose → the
+// cached size or a seek-end/_ftelli64 (position-restored, kcdx CRT). A bad/
+// closed handle returns 0 (a loud short read), NEVER -1 — the engine reads -1 as
+// an enormous size and rejects with "couldn't get length" (KI-0026). This is the
+// by-HANDLE size, distinct from the by-NAME GetFileSize (slot 45, +0x168).
+long long FileSize(KcdxHandle h);
 
 // The file's last-write time as a packed FILETIME (__int64), the slot-66
 // FGetModificationTime contract. Loose → GetFileTime via the FILE*'s fd; Pak →
