@@ -141,7 +141,8 @@ void __fastcall HookedConstructStore(void* csystem) {
     }
 }
 
-// Gate on the overlay-ready event, then build + store the asset index. The seat
+// Gate on the overlay-ready event, then build + store the asset index over both
+// vanilla pak roots (Data + Engine). The seat
 // (game's main thread) must NOT build the index off an empty overlay map: the
 // worker fills the overlay map in BuildOverlayMap and SIGNALS overlay-ready
 // after it; this WAITS on that gate (the ACQUIRE edge — an explicit
@@ -195,18 +196,24 @@ void BuildAssetIndexAtSeat() {
     }
 
     // Gate resolved — the overlay map is complete. Build the full index over
-    // <game-root>/Data and store it process-lifetime where the slot impls read
-    // it (the next sub-step wires the slots). BuildAssetIndex emits its own
-    // "asset_index_built" DEBUG summary (entry/pak/loose counts).
+    // BOTH vanilla pak roots — <game-root>/Data AND <game-root>/Engine — and
+    // store it process-lifetime where the slot impls read it. The Engine root
+    // carries the engine's own archives (Engine.pak holds e.g.
+    // %engine%/config/engine_core.thread_config); covering it makes every
+    // engine-pak file an index HIT kcdx serves, not a miss the engine fatals on
+    // at graphics-init (KI-0026; design §5 v1.8). BuildAssetIndex emits its own
+    // "asset_index_built" DEBUG summary (entry/roots/pak/loose counts).
     LOG_INFO_KV(kCat, "seat_index_building",
         kcdx::log::KV::BareStr("detail",
-            "overlay-ready; building asset index over <game-root>/Data (the "
-            "overlay map is complete — loose overrides will overwrite their pak "
-            "entries)."));
+            "overlay-ready; building asset index over <game-root>/Data + "
+            "<game-root>/Engine (the overlay map is complete — loose overrides "
+            "will overwrite their pak entries)."));
 
     const std::wstring dataDir =
         (kcdx::paths::GameRootDirPath() / L"Data").wstring();
-    AssetIndex index = BuildAssetIndex(dataDir);
+    const std::wstring engineDir =
+        (kcdx::paths::GameRootDirPath() / L"Engine").wstring();
+    AssetIndex index = BuildAssetIndex(dataDir, engineDir);
     const size_t entryCount = index.size();
     SetBuiltIndex(std::move(index));
 

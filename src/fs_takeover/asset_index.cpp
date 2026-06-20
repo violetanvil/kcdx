@@ -26,84 +26,130 @@ namespace {
 
 constexpr const char* kCat = "FS_INDEX";
 
-}  // namespace
-
-AssetIndex BuildAssetIndex(const std::wstring& gameDataDir) {
+// Walk ONE vanilla-pak root: discover every `<root>/*.pak`, CDR-parse each, and
+// insert every entry as a Pak ByteSource keyed by the normalized vpath. Shared
+// by every vanilla root the index covers — `<game>/Data` AND `<game>/Engine`
+// (design §5: the index covers the FULL vanilla-pak set the engine draws from,
+// so an engine-pak-resident file like %engine%/config/engine_core.thread_config
+// is an index HIT kcdx serves, not a miss the engine fatals on — KI-0026).
+// `pakCount`/`pakEntryInserts` accumulate ACROSS roots (the caller passes the
+// same counters per root) so the build summary totals every root walked.
+void IndexPakRoot(AssetIndex& index, const std::wstring& root,
+                  size_t& pakCount, size_t& pakEntryInserts) {
     namespace fs = std::filesystem;
-    AssetIndex index;
 
-    // ---- 1. Vanilla paks: discover + CDR-parse, keyed by normalized vpath. --
-    //
-    // Discover the vanilla pak set by enumerating <gameDataDir>/*.pak (the §5
+    // Discover this root's pak set by enumerating <root>/*.pak (the §5
     // `assumes` vanilla-pak discovery, resolved as a checkable directory
-    // enumeration — not a runtime-mechanism probe). Same std::filesystem
-    // iteration pattern mod_absorb/enabled_list_builder.cpp uses for mod paks.
-    size_t pakCount = 0;
-    size_t pakEntryInserts = 0;
-
+    // enumeration — not a runtime-mechanism probe; no hardcoded pak list).
+    // Same std::filesystem iteration pattern mod_absorb/enabled_list_builder.cpp
+    // uses for mod paks.
     std::error_code ec;
-    fs::directory_iterator it(gameDataDir, ec);
+    fs::directory_iterator it(root, ec);
     if (ec) {
-        // The Data dir does not resolve (wrong path / absent on this machine).
-        // Log + continue: the index is still well-formed (empty of vanilla
-        // sources); a caller pointing at a real dir gets the full set. Never a
+        // This root does not resolve (wrong path / absent on this machine — an
+        // absent Engine dir is NOT fatal, same as an absent Data dir). Log +
+        // continue: the index is still well-formed (this root contributes no
+        // vanilla sources); the other root(s) + overlay still build. Never a
         // crash, never a silent empty list passed off as whole.
-        LOG_ERROR_KV(kCat, "data_dir_open_failed",
-                     kcdx::log::KV("data_dir",
-                         fs::path(gameDataDir).string()),
+        LOG_ERROR_KV(kCat, "pak_root_open_failed",
+                     kcdx::log::KV("root",
+                         fs::path(root).string()),
                      kcdx::log::KV("error", ec.message()),
                      kcdx::log::KV::BareStr("detail",
-                         "vanilla Data dir did not open — index built with no "
-                         "vanilla pak sources (overlay sources still ingested)"));
-    } else {
-        for (const fs::directory_entry& entry : it) {
-            std::error_code fec;
-            if (!entry.is_regular_file(fec) || fec) continue;
-            const std::wstring ext = entry.path().extension().wstring();
-            if (_wcsicmp(ext.c_str(), L".pak") != 0) continue;
+                         "a vanilla pak root did not open — index built with no "
+                         "vanilla pak sources from THIS root (other roots + "
+                         "overlay sources still ingested)"));
+        return;
+    }
 
-            const std::wstring pakPath = entry.path().wstring();
-            std::vector<PakEntry> entries;
-            std::string parseErr;
-            if (!ParsePakCentralDirectory(pakPath, entries, parseErr)) {
-                // One bad pak does not abort the whole index — log + skip it,
-                // continue with the rest (logging.md every-failure-logged;
-                // input-validation.md — a malformed pak is a contract
-                // violation to skip, not to trust or crash on).
-                LOG_ERROR_KV(kCat, "pak_parse_skipped",
-                             kcdx::log::KV("pak", entry.path().string()),
-                             kcdx::log::KV("error", parseErr),
-                             kcdx::log::KV::BareStr("detail",
-                                 "pak central-directory parse failed — this pak "
-                                 "skipped, index build continues"));
-                continue;
-            }
-            ++pakCount;
+    for (const fs::directory_entry& entry : it) {
+        std::error_code fec;
+        if (!entry.is_regular_file(fec) || fec) continue;
+        const std::wstring ext = entry.path().extension().wstring();
+        if (_wcsicmp(ext.c_str(), L".pak") != 0) continue;
 
-            for (const PakEntry& pe : entries) {
-                ByteSource src;
-                src.kind    = ByteSource::Kind::Pak;
-                src.pakFile = pakPath;
-                src.offset     = pe.local_header_offset;
-                src.size       = pe.uncompressed_size;
-                src.compressed = pe.compressed_size;  // the byte count ReadPakEntry reads (DEFLATE != size)
-                src.method     = pe.method;
-                src.crc        = pe.crc32;
-                // LAST-pak-wins on a vanilla-vs-vanilla collision: operator[]
-                // INSERTS-OR-OVERWRITES, so a later pak in iteration order
-                // replaces an earlier one at the same vpath. This is a
-                // deterministic FALLBACK for a case the vanilla set does not
-                // exhibit: a static scan of the vanilla Data paks found ZERO
-                // cross-pak vpath collisions (each vanilla pak owns a disjoint
-                // vpath set — split by content). §5/§7 do not pin vanilla-vs-
-                // vanilla precedence precisely because it does not arise; the
-                // rule is here so a future game patch that introduced one would
-                // resolve predictably (last-mounted wins, mirroring CryEngine's
-                // later-pak-overrides), not silently nondeterministically.
-                index[asset_overlay::NormalizeVPath(pe.name)] = std::move(src);
-                ++pakEntryInserts;
-            }
+        const std::wstring pakPath = entry.path().wstring();
+        std::vector<PakEntry> entries;
+        std::string parseErr;
+        if (!ParsePakCentralDirectory(pakPath, entries, parseErr)) {
+            // One bad pak does not abort the whole index — log + skip it,
+            // continue with the rest (logging.md every-failure-logged;
+            // input-validation.md — a malformed pak is a contract
+            // violation to skip, not to trust or crash on).
+            LOG_ERROR_KV(kCat, "pak_parse_skipped",
+                         kcdx::log::KV("pak", entry.path().string()),
+                         kcdx::log::KV("error", parseErr),
+                         kcdx::log::KV::BareStr("detail",
+                             "pak central-directory parse failed — this pak "
+                             "skipped, index build continues"));
+            continue;
         }
+        ++pakCount;
+
+        for (const PakEntry& pe : entries) {
+            ByteSource src;
+            src.kind    = ByteSource::Kind::Pak;
+            src.pakFile = pakPath;
+            src.offset     = pe.local_header_offset;
+            src.size       = pe.uncompressed_size;
+            src.compressed = pe.compressed_size;  // the byte count ReadPakEntry reads (DEFLATE != size)
+            src.method     = pe.method;
+            src.crc        = pe.crc32;
+            // LAST-pak-wins on a vanilla-vs-vanilla collision: operator[]
+            // INSERTS-OR-OVERWRITES, so a later pak in iteration order (and a
+            // later ROOT — Engine after Data, since the caller walks Data then
+            // Engine) replaces an earlier one at the same vpath. This is a
+            // deterministic FALLBACK for a case the vanilla set does not
+            // exhibit: a static scan of the vanilla Data paks found ZERO
+            // cross-pak vpath collisions (each vanilla pak owns a disjoint
+            // vpath set — split by content), and the Data/Engine roots carry
+            // disjoint namespaces in practice (engine/* vs game-data trees,
+            // §5). §5/§7 do not pin vanilla-vs-vanilla precedence precisely
+            // because it does not arise; the rule is here so a future game
+            // patch that introduced one would resolve predictably (last-mounted
+            // wins, mirroring CryEngine's later-pak-overrides), not silently
+            // nondeterministically.
+            index[asset_overlay::NormalizeVPath(pe.name)] = std::move(src);
+            ++pakEntryInserts;
+        }
+    }
+}
+
+}  // namespace
+
+AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
+                           const std::wstring& engineDir) {
+    AssetIndex index;
+
+    // ---- 1. Vanilla paks: discover + CDR-parse EVERY vanilla root. ----------
+    //
+    // The index covers the FULL vanilla-pak set the engine reads — `<game>/Data`
+    // (game-data + mod paks) AND `<game>/Engine` (the engine's own archives:
+    // Engine.pak, Shaders.pak, ShadersBin.pak, ShaderCache.pak,
+    // ShaderCacheStartup.pak, and any future engine pak, discovered by
+    // enumeration — design §5, v1.8). Indexing only Data MISSED the engine's
+    // own config/shader files (e.g. %engine%/config/engine_core.thread_config in
+    // Engine.pak): the miss arm _wfopen'd a non-existent loose path, the open
+    // failed, and the engine raised CSystem::FatalError(0xC8) at graphics-init
+    // (KI-0026). Covering Engine/ makes every engine-pak file an index HIT kcdx
+    // serves through its own PKZIP/DEFLATE reader. An empty engineDir means a
+    // caller that only indexes Data (the standalone tests) — Engine is skipped,
+    // the Data walk is unchanged.
+    //
+    // The per-root walk (discover → CDR-parse → insert, LAST-pak-wins, one bad
+    // pak logged + skipped) is IndexPakRoot; the counters accumulate across
+    // roots so the build summary totals every root.
+    size_t pakCount = 0;
+    size_t pakEntryInserts = 0;
+    size_t rootsWalked = 0;
+
+    if (!gameDataDir.empty()) {
+        IndexPakRoot(index, gameDataDir, pakCount, pakEntryInserts);
+        ++rootsWalked;
+    }
+    if (!engineDir.empty()) {
+        IndexPakRoot(index, engineDir, pakCount, pakEntryInserts);
+        ++rootsWalked;
     }
 
     // ---- 2. Overlay (loose) sources: ingest + OVERWRITE pak — loose wins. ---
@@ -126,8 +172,12 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir) {
 
     // One build summary so the index is observable in kcdx-dev.log (§5 the
     // build is a logged lifecycle event; the test-bar dev-log observation).
+    // `roots` makes clear how many vanilla roots were walked (2 = Data + Engine
+    // at the seat; 1 = a Data-only standalone-test build) so a boot log shows
+    // the Engine root was indexed (KI-0026).
     LOG_DEBUG_KV(kCat, "asset_index_built",
                  kcdx::log::KV("entries", (uint64_t)index.size()),
+                 kcdx::log::KV("roots", (uint64_t)rootsWalked),
                  kcdx::log::KV("paks", (uint64_t)pakCount),
                  kcdx::log::KV("pak_entries", (uint64_t)pakEntryInserts),
                  kcdx::log::KV("loose", (uint64_t)looseInserts));

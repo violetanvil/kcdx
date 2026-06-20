@@ -1,0 +1,64 @@
+# CAP-115 — the unified asset index covers the Engine pak root (KI-0026 fix).
+#
+# The regression proof for the file-system-takeover index covering BOTH vanilla
+# pak roots — <game>/Data AND <game>/Engine (design file-system-takeover.md §5,
+# v1.8). The engine reads its own config/shader files from the Engine/*.pak
+# archives (e.g. engine_core.thread_config in Engine.pak); before the fix the
+# index walked only <game>/Data, so that file was an index MISS → kcdx _wfopen'd
+# a non-existent loose path → the open failed → the engine fatalled with
+# CSystem::FatalError(0xC8) at graphics-init (KI-0026). Indexing the Engine root
+# makes every engine-pak file an index HIT kcdx serves through its own reader.
+#
+# Shape: NATIVE C++ DLL plugin (the cap-112 shape) — the DLL compiles the engine's
+# own asset_index.cpp + pak_reader.cpp into itself PLUS the vendored miniz.c
+# (pak_reader.cpp's read path includes miniz), with a log-sink stub for kcdx::log
+# AND an overlay-SEAM stub supplying asset_overlay::NormalizeVPath + GetOverlayMap
+# (kept empty — pure vanilla-pak resolution). asset_index.cpp is BYTE-IDENTICAL
+# between the engine and this build. It runs TWO assertions at kcdxPlugin_Load —
+# pure CPU + file reads, no engine lifecycle dependency:
+#
+#   (a) DATA-ONLY MISS (the negative control): build the index over <game>/Data
+#       ALONE; assert the engine vpath 'config/engine_core.thread_config' does
+#       NOT resolve (nullptr) — it is Engine-pak-resident only (the KI-0026 miss).
+#   (b) DATA+ENGINE HIT (the fix): build the index over <game>/Data + <game>/Engine;
+#       assert that SAME vpath now resolves to a Pak ByteSource with Engine.pak's
+#       CDR-recorded {size=20096, compressed=3950, method=8 (DEFLATE)}.
+#
+# The row:
+#
+#   * cap-115-engine-pak-index  boot-only. PASS requires BOTH: the engine config
+#     file MISSES in a Data-only index and HITS once the Engine root is covered.
+#
+# FALSIFIABLE — this row FAILS if:
+#   - (a) the engine vpath resolves in a Data-only index (the fixture target is
+#     wrong — it lives in a Data pak — or the negative control is invalid); OR
+#   - (b) the engine vpath does NOT resolve in the Data+Engine index (the Engine
+#     root was not walked / indexed — the KI-0026 crash path: index miss →
+#     _wfopen a non-existent loose path → open fails → fatal at graphics-init); OR
+#   - (b) the resolved source is not a Pak source, or its {size,compressed,method}
+#     differ from Engine.pak's CDR values (a wrong Engine-root parse / pak change); OR
+#   - the fixture pak / Data or Engine dir is absent at the known path (reported
+#     FAIL with a clear reason — never a silent skip, never a crash).
+# Not a tautology: (a) MISS + (b) HIT together prove the file is reachable through
+# the index ONLY because the index now covers the Engine root. This is a DIRECT
+# index-hit assertion against the exact file KI-0026's evidence names — NOT a
+# boot-survival proxy.
+#
+# Test mode: boot-only (HEADLESS). The row self-verifies at kcdxPlugin_Load; NO
+# console gestures, NO save/load, NO in-game action, NO live swapped vtable needed.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_115_engine_pak_index"
+display_name        = "CAP-115 Engine pak root in the asset index"
+author              = "ts"
+description         = "C++ DLL compiling the engine's own asset_index.cpp + pak_reader.cpp and asserting an Engine.pak-resident file (engine_core.thread_config) MISSES a Data-only index but HITS once the Engine root is covered — the file-system-takeover Data+Engine index (design §5 v1.8, KI-0026 fix)."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+test_names          = ["cap-115-engine-pak-index"]
+
+[entrypoints]
+dll = "cap-115.dll"

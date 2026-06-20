@@ -70,31 +70,49 @@ struct ByteSource {
 // for the overlay-wins precedence.
 using AssetIndex = std::unordered_map<std::string, ByteSource>;
 
-// Build the unified index over gameDataDir (cold path, at load — §5).
+// Build the unified index over EVERY vanilla pak root (cold path, at load — §5).
+//
+// The index covers the FULL vanilla-pak set the engine reads — both the Data
+// root and the Engine root (design §5, v1.8). The engine reads its own config /
+// shader files (e.g. %engine%/config/engine_core.thread_config) from the
+// `Engine/*.pak` archives; indexing only `Data/` MISSED those, so the miss arm
+// _wfopen'd a non-existent loose path, the open failed, and the engine fatalled
+// at graphics-init with CSystem::FatalError(0xC8) (KI-0026). Covering both roots
+// makes every engine-pak file an index HIT kcdx serves through its own PKZIP/
+// DEFLATE reader.
 //
 // Build order (precedence by construction — §5/§7):
-//   1. Discover + CDR-parse every `<gameDataDir>/*.pak` (the vanilla pak set;
-//      the §5 `assumes` vanilla-pak discovery, resolved as a checkable
-//      directory enumeration — std::filesystem). For each entry insert a Pak
-//      ByteSource keyed by NormalizeVPath(entry.name). When two paks carry the
-//      same vpath, LAST-pak-wins by directory-iteration order (a later pak
-//      overwrites an earlier one) — see asset_index.cpp for the rule + its
-//      §-cite + the surfaced question (§5/§7 do not pin vanilla-vs-vanilla
-//      precedence). One pak that fails to parse is logged + skipped, never
-//      aborting the whole index (logging.md, input-validation.md).
+//   1. Discover + CDR-parse every `<root>/*.pak` for each vanilla root passed —
+//      `gameDataDir` (Data: game-data + mod paks) then `engineDir` (Engine: the
+//      engine's own archives, discovered by enumeration, no hardcoded list; the
+//      §5 `assumes` vanilla-pak discovery, resolved as a checkable directory
+//      enumeration — std::filesystem). For each entry insert a Pak ByteSource
+//      keyed by NormalizeVPath(entry.name). When two paks carry the same vpath,
+//      LAST-pak-wins by directory-iteration order (a later pak — and a later
+//      ROOT, Engine after Data — overwrites an earlier one); the roots carry
+//      disjoint namespaces in practice (engine/* vs game-data trees). One pak
+//      that fails to parse is logged + skipped, never aborting the whole index;
+//      a root that does not open (absent on this machine — an absent Engine dir
+//      is NOT fatal) is logged + skipped too (logging.md, input-validation.md).
 //   2. Ingest asset_overlay::GetOverlayMap(): for each OverlayEntry insert/
 //      OVERWRITE a Loose ByteSource at its (already-normalized) key. LOOSE WINS
 //      VANILLA — the only precedence the index itself applies. The loose-vs-
 //      loose + cross-mod precedence was ALREADY decided in the overlay map
 //      (§4.4/§5.3); the index does not re-do it.
 //
-// Emits one LOG_DEBUG_KV summary (entry/pak/loose counts) so the build is
-// observable in kcdx-dev.log. Pass gameDataDir as a parameter (testable: a test
-// can point it at a fixture set). Returns the built index by value.
+// `engineDir` is optional (default empty) — an empty root is skipped, so a
+// caller that only indexes a Data fixture set (the standalone test plugins)
+// passes one root and gets the unchanged single-root Data walk. The seat passes
+// BOTH `<game-root>/Data` and `<game-root>/Engine`.
+//
+// Emits one LOG_DEBUG_KV summary (entry/roots/pak/loose counts) so the build is
+// observable in kcdx-dev.log. Pass the roots as parameters (testable: a test
+// can point them at a fixture set). Returns the built index by value.
 //
 // NOTE — this does NOT wire the index into boot/init or consult it from any
 // slot; that is a later step. This step builds the index + its builder + the lookup.
-AssetIndex BuildAssetIndex(const std::wstring& gameDataDir);
+AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
+                           const std::wstring& engineDir = std::wstring());
 
 // Resolve a vpath to its winning ByteSource, or nullptr on a miss.
 //

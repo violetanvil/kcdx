@@ -3,6 +3,39 @@
 Newest-first. The canonical spec is [`file-system-takeover.md`](file-system-takeover.md);
 this records its revisions.
 
+## 2026-06-20 — v1.8 §5 widens the index to cover the `Engine/*.pak` archives, not just `Data/*.pak`
+
+- **What this settles (a coverage gap §5 left, root-caused at KI-0026):** §5's
+  index-build vanilla-pak discovery scoped the index to `<game>/Data/*.pak` only.
+  The engine reads its OWN config/shader/runtime files from the `Engine/*.pak`
+  archives (`Engine.pak`, the shader paks). Under the full takeover an engine-pak
+  file was an index MISS: kcdx's miss arm resolved the name to a loose path and
+  `_wfopen`d it, but the file is pak-resident in an engine pak kcdx never indexed,
+  so the open returned not-found and the engine raised `CSystem::FatalError(0xC8)`
+  ("Error loading thread config '%engine%/config/engine_core.thread_config'") — the
+  KI-0026 boot crash (verified end to end via PROBE P/P2:
+  `docs/known-issues/KI-0026-fs-takeover-metadata-slots-graphics-init-fatal.md`).
+- **The settled resolution (option A1):** the index walks BOTH `<game>/Data/*.pak`
+  AND `<game>/Engine/*.pak`, discovered by directory enumeration (no hardcoded pak
+  list — a new engine pak is picked up automatically). The whole engine-pak set is
+  covered, not just the one file that crashed first (the shader paks would
+  otherwise be the next miss). kcdx serves every engine-pak file through its OWN
+  PKZIP/DEFLATE reader — no engine-CRT fallback, no coexistence; the takeover stays
+  total (it just stops having a `Data`-only blind spot). Loose overlay still wins
+  every pak; this honors the §1 totalizing invariant rather than handing the
+  engine-pak long tail back to the engine.
+- **Rejected:** indexing only `Engine.pak` (fixes the one crash, leaves the shader
+  paks a known blind spot — a deferred-correctness gap); and a miss-arm fall-through
+  to the engine's original FOpen for the pak walk (reintroduces an engine-CRT
+  handle, the cross-CRT hazard KI-0006/0019 are about, and is a coexistence retreat
+  from the total takeover).
+- **Integrated in:** `file-system-takeover.md` §5 (the index-build vanilla-pak
+  discovery clause + the new "covers every vanilla pak root" paragraph).
+- **Why:** the takeover claims every file op (§1) but its index covered only
+  `Data/`; an engine-pak-resident file the engine itself opens was unreachable,
+  fatal at boot. The index must cover the full vanilla-pak set the engine draws
+  from.
+
 ## 2026-06-15 — v1.7 §5 pins the index-build cross-thread sequencing: the seat gates on a dedicated overlay-ready event
 
 - **What this settles (a sequencing gap §5 left open, surfaced at the step-3.2

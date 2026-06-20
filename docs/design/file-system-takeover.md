@@ -1,6 +1,6 @@
 # File-system takeover — kcdx IS the engine filesystem (the settled design)
 
-**Status:** v1.7 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; v1.7 §5 index-build cross-thread sequencing — the seat gates on a dedicated overlay-ready event; changelog `file-system-takeover-changelog.md`).
+**Status:** v1.8 (settled 2026-06-14; P1/P3 resolved 2026-06-15; v1.5 slot-38 reclassified + slot-35 ABI; v1.6 §5 complete resolution model — kcdx owns every FOpen; v1.7 §5 index-build cross-thread sequencing — the seat gates on a dedicated overlay-ready event; v1.8 §5 index covers `Engine/*.pak` too, not just `Data/*.pak` — KI-0026 root-cause fix; changelog `file-system-takeover-changelog.md`).
 **Supersedes:** the asset-resolution *seam* settled in
 [`asset-replacement.md`](asset-replacement.md) §7 (the two-hook
 `AdjustFileName`-replace + `FOpen`-overlay mechanism) — that seam is a PARTIAL
@@ -256,8 +256,9 @@ reimplement CRC, or pool memory, or all 102 slots, is a local, incremental chang
 implementation detail: the build MUST produce a per-slot table, and a reviewer
 checks that no code outside the table assumes a slot's ownership.
 
-**`assumes` — P4 (thunked-slot `this` compatibility, UNVERIFIED — probe before
-building §8):** a thunked original slot runs the ORIGINAL engine body against
+**`assumes` — P4 (thunked-slot `this` compatibility, RESOLVED — PASS, live
+2026-06-15, `_research/probe-archive/p2-p4-seating-and-ki0019-persists.md`; §8):**
+a thunked original slot runs the ORIGINAL engine body against
 kcdx's `CCryPak` object. The original bodies read engine member offsets
 (`[this+0x40]` pak-stream vector, `[this+0x120..0x128]` loaded-pak array,
 `[this+0x198..0x1a0]` search-path vector, `[this+0x1b0]` alias table,
@@ -451,9 +452,27 @@ entry's `{offset, size, method, crc}` — that parse is kcdx's own PKZIP reader
 **`assumes` — index-build vanilla-pak discovery:** kcdx must know which vanilla
 paks to index and where they are on disk. kcdx already owns mod-pak + Workshop
 discovery (the init-cycle takeover, `init-cycle-ownership` memory); vanilla-pak
-discovery (the game's own `Data/*.pak` set + any patch paks) is the additive piece
-— a checkable list (enumerate `<game>/Data/*.pak`), not a runtime-mechanism
-assumption. Stated here as an index-build input the build resolves, not a probe.
+discovery is the additive piece — a checkable list (directory enumeration), not a
+runtime-mechanism assumption. Stated here as an index-build input the build
+resolves, not a probe.
+
+**The index covers EVERY vanilla pak root the engine reads — `Data/` AND
+`Engine/`.** Under the total-takeover invariant (§1: kcdx IS the engine
+filesystem, every file operation is kcdx's), the index walks BOTH `<game>/Data/*.pak`
+(the game-data + mod paks) and `<game>/Engine/*.pak` (the engine's own archives —
+`Engine.pak`, `Shaders.pak`, `ShadersBin.pak`, `ShaderCache.pak`,
+`ShaderCacheStartup.pak`, and any future engine pak, discovered by enumeration,
+never a hardcoded list). The engine reads its own config, shader, and runtime
+files (e.g. `%engine%/config/engine_core.thread_config`) from the `Engine/*.pak`
+archives; a takeover that indexed only `Data/` would MISS those — kcdx's
+index-miss arm resolves the name to a loose path and `_wfopen`s it, but the file
+is pak-resident in an engine pak, so the open fails and the engine fatals on the
+missing file. The index therefore covers the FULL vanilla-pak set the engine
+draws from, so every file the engine opens — game-data, mod, or engine-pak — is an
+index hit kcdx serves through its own PKZIP/DEFLATE reader. Loose overlay still
+wins every pak (the only index precedence, §5/§7); `Data`-vs-`Engine` vanilla-pak
+vpath collisions follow the same last-pak-wins-by-iteration rule as within a root
+(the roots carry disjoint namespaces in practice — `engine/*` vs game-data trees).
 
 **Index-build sequencing — the seat gates on a dedicated overlay-ready event,
 never a timing margin.** The index is built ON THE GAME THREAD, at the CCryPak
@@ -599,20 +618,28 @@ deployed; the user launches; the agent reads the log (`agent-builds-and-deploys.
   **Decision:** a kcdx handle-id (honoring the tagged-union contract; the read
   family kcdx-owned, never thunked) — §4.4 settled. Capture:
   `_research/probe-archive/p3-off-vtable-handle-rep.md`.
-- **P4 — thunked-slot `this` compatibility (gates the thunk approach).** *Probe:*
-  with the vtable swapped on the existing object, call one thunked internal slot
-  (a pool accessor or CRC) and confirm it runs correctly against the kcdx-vtable'd
-  object. *Outcome map:* runs correctly → thunks are sound (the object layout is
-  preserved because kcdx swaps only the vtable pointer); crashes/misbehaves → a
-  thunked original body cannot run against the swapped object → either own that
-  slot too, or the swap model needs revisiting. Confirms §4.3's reversibility rests
-  on a sound foundation.
+- **P4 — thunked-slot `this` compatibility (gates the thunk approach). RESOLVED —
+  PASS (live launch 2026-06-15 10:06:34, `_research/probe-archive/p2-p4-seating-and-ki0019-persists.md`).**
+  *Probe:* with the vtable swapped on the existing object, call one thunked internal
+  slot (a pool accessor or CRC) and confirm it runs correctly against the
+  kcdx-vtable'd object. *Outcome:* the boot ran a chain of **101 thunked original
+  slot bodies** against the swapped (layout-preserved) object and reached the world
+  without crashing — thunks are sound; the object layout is preserved because kcdx
+  swaps only the vtable pointer. §4.3's reversibility rests on a sound foundation.
+  **Scope of the PASS (do NOT overclaim):** the P4 PASS boot had `kcdx_owned=1`
+  (only slot 36) — so it proves a *thunked-ORIGINAL* body runs correctly against the
+  swapped object. It does NOT cover a slot flipped to a **KCDX index-answering**
+  impl returning a value that DIFFERS from the original engine body (the metadata
+  slots 13/45/67/68/69/70/92/93 are now KCDX index-answering, `kcdx_owned=28`); that
+  answer-divergence question is OPEN and is KI-0026 PROBE I, a separate axis from
+  P4's thunk-correctness.
 
 P1 and P2 are the load-bearing seating probes. P1 is RESOLVED (static binary
 read, outcome (c) — swap seats at the construction site, not the ready-bracket);
 P2 still gates everything after seating (no build proceeds without it). P3 is
 RESOLVED (static binary read, outcome 1 — a kcdx handle-id is safe; the read family
-is kcdx-owned; §4.4 settled). P4 still gates the thunk-correctness decision.
+is kcdx-owned; §4.4 settled). P4 is RESOLVED (PASS, live — thunked originals run
+against the swapped object; capture above).
 
 ---
 
