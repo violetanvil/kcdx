@@ -33,6 +33,7 @@ per phase; flips to `DONE` when its last step lands. `/plan` authored all rows
 | Phase 2 — pak reader + unified index ([phase-02](phase-02-pak-reader-index/README.md)) | DONE | 63daea9 |
 | Phase 3 — real file slots + seam subsumption ([phase-03](phase-03-file-slots/README.md)) | NOT STARTED | — |
 | Phase 4 — verification + closure ([phase-04](phase-04-verification-closure/README.md)) | NOT STARTED | — |
+| Phase 5 — directory enumeration (FindFirst/FindNext/FindClose triplet, slots 63/64/65) ([phase-05](phase-05-directory-enumeration/README.md)) | NOT STARTED | — |
 
 ## Phases at a glance
 
@@ -45,3 +46,10 @@ per phase; flips to `DONE` when its last step lands. `/plan` authored all rows
   handle representation (P3), then subsumes the live `asset_overlay.cpp` seam.
 - **Phase 4** ships the regression tests + subsystem doc and closes
   KI-0019/KI-0006 with a repro-clean launch.
+- **Phase 5** (v1.9 — design `ed402c9`) builds kcdx ownership of the stateful
+  directory-enumeration triplet (`FindFirst`/`FindNext`/`FindClose`, slots
+  63/64/65) over the unified set — the surface the table-DB override-glob
+  dispatches through that Phase 3 left THUNK — and closes KI-0027 (the table-DB
+  load fatal). Its own track: a distinct KI from Phase 4's KI-0019/0006, so it can
+  land independently. P5 (find-data ABI) probes first, then the slot cutover + the
+  KI-0027 repro-clean launch, then closure.

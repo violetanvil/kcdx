@@ -125,7 +125,11 @@ section by section (the raw artifact, per `.claude/rules/spec-conformance.md`).
 | E11 — kcdx read family operating handle-ids on kcdx CRT (38/39/40/41/53/54/55/56 + variants) | Step 3.2 | design §4.5, §4.4 — flipped TOGETHER with open (merged cutover); the cross-CRT class dies here |
 | E12 — kcdx handle representation (settled by P3) | Step 3.1 | design §4.4 |
 | E13 — kcdx existence/metadata slots (13/45/67/68/69/70/92/93) | Step 3.3 | design §4.5 |
-| E14 — kcdx directory-enum slots (14/15/101) | Step 3.3 | design §4.5 |
+| E14 — kcdx directory-enum: slot 14 `ForEachFile` (single-call callback API) | Step 3.3 | design §4.5, §5.1 — slot 14 only; slots 15/101 stay THUNK (3.3 probe-confirmed 101's engine iterator walks the pak-dir itself, `_research/fs-takeover-slot101-callers-recon/`). The stateful triplet (63/64/65) is E31 (v1.9 — the table-DB glob's actual dispatch, design §5.1). |
+| E31 — kcdx directory-enum: `FindFirst`/`FindNext`/`FindClose` triplet (slots 63/64/65) over the unified set | Step 5.2 | design §5.1, §4.5, §10 (v1.9). The engine's GENERAL by-name dir enumeration the table-DB `__*` override-glob dispatches through (body-verified `FUN_180974484`); kcdx mints+owns the find-handle lifecycle. Slot 101 stays THUNK. |
+| E32 — find-data buffer ABI (the layout slots 63/64 fill) | Step 5.1 (probe P5) | design §8 P5, §5.1 — the hard prerequisite; a wrong layout mis-reads every enumerated entry. Static binary read, ordered first. |
+| E33 — KI-0027 resolution + closure (table-DB glob unserved) | Step 5.3 | design §5.1, §9-pattern; the table-DB load fatal (`err_id=259`) closes when the triplet serves the glob. |
+| E34 — directory-enumeration regression plugin (cap-118) + matrix row | Step 5.2 | `.claude/rules/test-suite.md` — a glob over a pak-resident `__*`-style override resolves the expected unified set. |
 | E15 — kcdx pak/archive-mgmt slots (7/17/32/33/34/71/72/91/100) | Step 3.4 | design §4.5 |
 | E16 — kcdx search-path/alias/mods slots (19–24/94) | Step 3.4 | design §4.5 |
 | E17 — kcdx delete/copy slots (49/50/52) | Step 3.4 | design §4.5 |
@@ -143,10 +147,22 @@ section by section (the raw artifact, per `.claude/rules/spec-conformance.md`).
 | E29 — file-system subsystem reference doc | Step 4.1 | `.claude/rules/structure-by-responsibility.md` |
 | E30 — KI-0019/KI-0006 routing correction | Step 1.1 | design §11 (repoint the KI routing from Phase-11 to this design) |
 
-No element is DEFERRED or OUT-OF-SCOPE — every one (E1–E30) resolves to a step. The
+No element is DEFERRED or OUT-OF-SCOPE — every one (E1–E34) resolves to a step. The
 design's own v1 deferrals (reimplementing thunked slots; pak-writing — design
 §10) are outside the design's v1 scope and so are not plan elements; this plan
 covers exactly the design's v1.
+
+The design §5.1 `assumes` clause "engine FindFirst pak-vs-disk behavior" is
+design-marked NON-load-bearing (kcdx's impl walks the unified set regardless; it
+affects only the DESCRIPTION of the engine original, not what kcdx builds) — so it
+is NOT a plan element (no build rests on it), per the design's own honesty note.
+
+**Phase 5 (E31–E34) is the v1.9 enumeration addition.** The design grew from v1.8
+to v1.9 (committed `ed402c9`) folding directory enumeration over the unified set
+into v1 scope (design §10) — the table-DB override-glob is its first hard consumer
+(KI-0027). Phase 3 step 3.3 owned only slot 14; the stateful 63/64/65 triplet the
+glob actually dispatches through was never built (the v1.9 recon discovered the
+dispatch goes through 63/64/65, not slot 14 or 101). Phase 5 builds it.
 
 ## Reference
 
