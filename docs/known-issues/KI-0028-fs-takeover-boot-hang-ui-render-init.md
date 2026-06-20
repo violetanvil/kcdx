@@ -30,49 +30,81 @@ is downstream of it.
 
 ## Symptom
 
-- Game launched with the KI-0027-fixed engine (`4befc07`): **audio loads** (sound
-  audible), but **no video/render output** appears and **input is unresponsive**. The
-  main menu never renders. The process does not crash or self-terminate — it hangs
-  indefinitely until killed.
-- No crash dump (a hang, not a crash — killed via Task Manager).
+- **User-reported** (the live experience): game launched with the KI-0027-fixed engine
+  (`4befc07`): sound loaded, "no video", input unresponsive; the user killed the process
+  via Task Manager (a hang, not a crash; no crash dump).
+- **Log-corrected** (see §Reframe — the user report was a perception, not ground truth):
+  `kcd.log` proves the **main menu DID render** — `PlayVideoOnly 'main_menu_kutnohorsko3'`
+  (menu background video), `[MFX] Loading FXLib` (material effects), and `[Pros]` online
+  banners downloaded over HTTP (200 OK) and shown. The boot completed to a live, rendering,
+  networked main menu, THEN hung — input dead, no further log output on the single boot
+  thread. The "no video" was almost certainly "menu up but frozen / no gameplay", not a
+  black screen.
+
+## Reframe (2026-06-20 — /debug §B static-log pass; corrects the original premise)
+
+The original Facts were authored from the **kcdx-dev log tail alone** and never read
+`kcd.log`. Reading both logs together by timestamp corrects the picture: the menu
+rendered, and the cursor serve the original facts blamed actually **succeeded**.
+
+**Corrected boot timeline (single thread, `tid=46452`, both logs merged):**
+
+| Time | Log | Event |
+|------|-----|-------|
+| 15:58:24–26 | dev | fs-takeover `FindFirst` enum over saves / materialeffects / table `__*` globs — all `matched=N` correct (KI-0027 holds) |
+| 15:58:26.472 | dev | `read_entry ... cursor_green.dds` (name **`engineassets/...`**, no alias) served OK → boot continues 24 s more |
+| 15:58:46.584 | dev | suite SUMMARY `passing=320 ... pending=21 total=343` |
+| 15:58:47.549 | kcd | LAST `kcd.log` line: live menu — banners over HTTP 200, MFX libs, `PlayVideoOnly 'main_menu_kutnohorsko3'` |
+| 15:58:50.093 | dev | LAST dev line: `read_entry ... cursor_green.dds` (name **`%engine%/engineassets/...`**, aliased) — same `data_off=79371331`, `usize=4232`, **served OK** |
+| (after) | — | nothing further in EITHER log; process hangs; user kills it |
 
 ## Facts
 
 - The table-DB load SUCCEEDS — zero "Database system error" / `err_id=259` in
   `kcd.log` this run (the KI-0027 fix holds). (FACT — `kcdx_2026-06-20_15-58-02.log`)
-- The dev log's LAST line is `[15:58:50.093][PAK_READER] read_entry pak="Engine.pak"
-  name="%engine%/engineassets/textures/cursor_green.dds"` — the boot wedged right at
-  (or after) loading the main-menu cursor texture. The test-suite SUMMARY
-  (`passing=320 reported=322 pending=21 total=343`) logged ~3.5s earlier at
-  15:58:46.584. (FACT — `kcdx-dev_2026-06-20_15-58-02.log`, line 83562, the final line)
-- The file-system-takeover directory enumeration is functioning: 381 `FindFirst`
-  fires, the table `__*` globs return correct (small) match counts, the find-data ABI
-  is served correctly. The `FindClose fires: 0` in the trace is a LOGGING gap
-  (`kcdx_FindClose` emits no `TraceEnum` line — the close logic itself is correct:
-  FindNext returns -1 at exhaustion, the consumer's `while(-1<ret)` exits, FindClose
-  is called), NOT a handle leak. (FACT — same log + `src/fs_takeover/find_slots.cpp`
-  FindNext/FindClose bodies read)
-- `cursor_green.dds` is served from `Engine.pak` by kcdx's pak reader correctly
-  (`method=8 usize=4232` — a normal DEFLATE entry read). The hang is AFTER the bytes
-  are served, in whatever consumes them (the UI/render init), not in the FS serve.
-  (FACT — same log)
+- **The main menu rendered** — `kcd.log` (652 lines, ZERO error/fatal/assert) ends at a
+  live menu: `PlayVideoOnly 'main_menu_kutnohorsko3'`, MFX FXLibs loaded, 3 online banners
+  downloaded (HTTP 200) and shown. The original "menu never renders" is disproven.
+  (FACT — `kcd.log` lines 600–652, `game/kcd.log` in the crash zip)
+- **The last cursor serve SUCCEEDED — kcdx did NOT wedge inside the read.** The final dev
+  line logs a completed `read_entry` (valid `data_off`, `usize=4232`); PAK_READER logs the
+  successful serve, not an attempt. The engine got its bytes and then stopped asking kcdx
+  for anything. The hang is in the engine's consumer of those bytes / the single boot
+  thread, NOT in the kcdx FS read. (FACT — `kcdx-dev` line 83562 + `src/fs_takeover` read path)
+- **The `%engine%/` alias prefix on the last read resolves correctly** — `data_off` is
+  identical to the earlier un-aliased serve of the same file, so `ExpandEngineAliasToIndexKey`
+  mapped it to the same pak entry. The alias is not failing. (FACT —
+  `src/fs_takeover/asset_index.cpp` `ExpandEngineAliasToIndexKey` + the two matching `data_off`)
+- **There is no engine crash.** The crash zip at the failing timestamp is the watchdog's
+  kill-time snapshot; `crash/bugsplat_F62P7UL5.log` is empty (BOM only). Confirms hang, not
+  fault. (FACT — `crash_2026-06-20_15-58-02.zip` contents)
+- The `[Warning] Unknown command: kcdx_find WHGame.dll --string "..."` in `kcd.log` is a
+  benign red herring — a config/autoexec replay of a leftover console line, not on the hang
+  path (`[Pros]` banner activity continues normally after it). (FACT — `kcd.log` line 645 +
+  `src/console_commands_find.cpp` registration)
+- Everything ran on ONE thread (`tid=46452`). A block on that single thread explains why
+  BOTH logs stop simultaneously with no further FS or engine output. (FACT — every dev line
+  tagged `tid=46452`)
 - The boot reached deep init: trampoline pool, LUA_SHIM passes, FOREIGN_HOOK selftest,
-  320 suite tests passing — so the engine, hooks, Lua VM, and FS are all up. Only the
-  render/UI frontend bring-up is wedged. (FACT — `kcd.log` tail)
+  320 suite tests passing — engine, hooks, Lua VM, FS all up. (FACT — `kcd.log` + dev tail)
 
-## Open questions (for /debug)
+## Open questions (for /debug — narrowed)
 
-- WHERE exactly does the render/UI thread block — is it (a) a kcdx file slot
-  mis-serving an engine asset the render device needs (a metadata/size/enum answer the
-  graphics path consumes, the KI-0026-adjacent "kcdx slot answer-divergence" axis), (b)
-  a genuine engine render-device init that always stalls in this environment
-  (windowed/fullscreen/adapter), or (c) a deadlock between a kcdx slot's pool lock and
-  the render thread? Needs a probe that observes the render-init thread's last action
-  + whether any kcdx slot is on its stack. The dev log ending mid-asset-load (no fatal,
-  no further FS activity) suggests the render/UI consumer thread is blocked, not a kcdx
-  FS loop. (`/debug KI-0028` — get ground truth: which thread is wedged and on what.)
-- Does a non-kcdx (vanilla) boot reach the menu in this same environment? (Establishes
-  whether this is kcdx-introduced or a pre-existing environment issue the takeover
-  merely exposed.)
-- Is the suite's `pending=21` (21 tests never reported) significant, or just the
-  in-game/manual rows that need a menu the boot never reached?
+The axis is settled: the menu rendered and the FS serve succeeded, so this is NOT a kcdx
+FS read-loop or a "menu never renders" failure. The remaining unknown is what `tid=46452`
+is blocked ON after the last successful serve — and the only way to read that is to observe
+the **wedged process's thread stacks live** (the static logs are exhausted).
+
+- **P-A (decisive): capture the wedged process's thread stacks.** On the next launch, let
+  it reach the hung menu, then attach `cdb`/procdump to the LIVE process (or take a full
+  dump of the hung process) and read `~* k` — WHICH thread(s) are blocked and on what, and
+  **is any kcdx symbol (a `kcdx.dll` frame — a file slot, the pool lock `g_poolLock`, a
+  hook trampoline) on the wedged stack?** This is a hang, so a live/hung-process dump — NOT
+  a crash dump — is the ground truth. Outcome map: kcdx frame on the blocked stack → kcdx
+  slot/lock is the wedge (probe that slot next); no kcdx frame, pure engine/driver stack →
+  the takeover unblocked the boot far enough to expose an engine/environment stall (P-B).
+- **P-B (control): does a VANILLA (no-kcdx) boot reach AND get past this menu in this same
+  environment?** Disambiguates kcdx-introduced vs. a pre-existing environment/menu issue the
+  takeover merely let the boot reach. Cheap, no instrumentation — just launch unmodded.
+- The suite's `pending=21` is the in-game/manual rows that need menu interaction the hang
+  prevents — not a separate signal. (Resolved — not a probe.)
