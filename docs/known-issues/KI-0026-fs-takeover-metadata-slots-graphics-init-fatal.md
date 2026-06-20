@@ -79,6 +79,8 @@ observable for the next probe.
 | K | DONE — DECISIVE | Read-family boot-window trace (OBSERVATION, takeover intact). RESULT: **read family reached with CORRECT kcdx handles, all `tag=1`, full open→read→close lifecycle clean** on system.cfg + pak.cfg, then `0xC8` ~354ms later with no kcdx file op feeding it. The handle-id-straddle theory is DEAD (the engine does NOT mis-route the kcdx handle through its own pak-arm test). With ALL 28 kcdx slots now instrumented, EVERY dispatch in the crash window returns correctly — the last "kcdx serves/operates a wrong value" axis is eliminated. (First run was invalid — copy-mode left ON; re-run with `kcdx_owned=28` was decisive.) |
 | L (static) | DONE — LEAD NARROWED | STATIC EVIDENCE FIRST (results-driven §4) — REUSED `_research/asset-fopen-handle-recon/FINDINGS.md` (body-read of the engine FOpen `FUN_1804614a0`, 2026-06-03). FINDING: the engine's original FOpen, on the PAK path, **writes the open entry into the pak-handle VECTOR at `param_1[8]` = `[this+0x40]`** (walks for a free slot, writes the entry at :260, returns `slot+1`). kcdx's FOpen mints into its OWN private pool and writes NOTHING into `[this+0x40]` — the vector stays empty. The engine's own FReadRaw dispatch reads that vector's element COUNT (`FUN_180427e40([RBX+0x40])` = `(end-begin)/0x18`). So `[this+0x40]` (the pak-handle vector) is the concrete engine member the original FOpen mutates and kcdx omits — the fresh-frame mechanism, body-read and OFFSET-NAMED. CAVEAT: applies only if system.cfg/pak.cfg take the engine's PAK path (loose files return a `FILE*` and write no vector entry) — L-live must confirm pak-vs-loose + that graphics-init reads `[this+0x40]`. |
 | L (live) | DONE — FALSIFIED THE `[+0x40]` READING FOR THESE FILES | RESULT: across all 3 boot-window FOpens (system.cfg, pak.cfg, engine_core.thread_config), the vector triple at `[CCryPak+0x40/+0x48/+0x50]` reads **`begin=0 end=0 cap=0 count=0`, `pre`==`post`**. Re-read of the FOpen body (asset-fopen-handle-recon) shows the `[+0x40]` pak-handle vector is written ONLY on the **pak-resident** path; the **loose** path (`:200-205`) returns a `FILE*` and writes NO vector entry. These 3 files are LOOSE config files (all `how=miss-original`, not pak) → the engine's OWN original FOpen would ALSO leave `[+0x40]` at `0/0/0` for them → `[+0x40]` is the WRONG member to watch for these opens (reading (b)). The `0/0/0` falsifies the pak-vector reading for the crash-window files, it does not confirm a mechanism. **BUT** the loose path makes two ENGINE MEMBER-CALLS kcdx omits: `vtable[0x2c8](this,…)` at `:203` and `vtable[0x268](this, FILE*, …)` at `:204` — engine open-file registration for the loose handle. kcdx's FOpen makes NEITHER. The mechanism candidate REFRAMES from "the pak vector at `[+0x40]`" to "the loose-handle registration via `vtable[0x268]`/`[0x2c8]` that kcdx omits". → PROBE L2 watches what THOSE write. |
+| Gate B | DONE — probe-required HALT | root-cause-verifier (WITHHELD context) REJECTED the cross-CRT-fseek root cause: KI-0019's raw-`FILE*` hazard does NOT transfer to KI-0026's tagged-int `3` (a valid-looking low fd, not an invalid one); contradicted by PROBE K (`Fileno` through kcdx, kcdx-CRT fd, tag=1); ~354ms gap rules out a sync fseek-fault; AV vs deliberate `RaiseException(0xC8)` is a real surface diff. Resolution does NOT land. Owes PROBE P. |
+| P | pending — OWED (Gate B) | Ground-truth at the `0xC8` site. Instrument the engine `ucrtbase` `_get_osfhandle`/`fseek` entry (or the NGX/FSR2 call site `WHGame+0x871b5a`) to log the fd/handle ARGUMENT received in the boot window, AND capture what `ffxFsr2ResourceIsNull` reads null at the raise site. Outcomes: (a) get_osfhandle/fseek called on `3`/kcdx handle OUTSIDE a kcdx slot + faults → cross-CRT confirmed FOR KI-0026 (rewrite Resolution to cite THIS); (b) no off-vtable CRT op on the handle, `0xC8` on a null resource with no kcdx op feeding → swap-write side-effect (PROBE G direction), different root; (c) fd reached via `kcdx_Fileno` (valid) → handle clean, look at the resource NGX reads. Theory-independent, falsifying. |
 | N | DONE — DECISIVE (kills object-member theory) | RESULT: for ALL 3 loose config opens, **`engine diffs=0`, `kcdx diffs=0`, `revert diffs=0`** (over a `0x400` window). The engine's OWN original FOpen of a loose file writes ZERO object-member bytes — so kcdx is missing NOTHING at the object level; kcdx's open and the engine's open produce BYTE-IDENTICAL object state. The object-member-write mechanism (pak-vector AND registration-call) is DEAD. Crash still reproduced (`code=200`, same culprit) — genuine ground truth. Per the outcome map, `engine diffs=0` ⇒ the divergence is NOT an object member → global/TLS or handle-identity/consumability (fresh-frame P2/P3). CAVEAT to close: confirm the `0x400` window wasn't too small (a write at `≥0x408` would also read `diffs=0`) — though zero writes across 1KB for BOTH opens strongly indicates loose-open is object-state-free, not a windowing miss. | At slot-36, for each boot-window loose open: SNAP_A = `self[0..N)` before; run the ENGINE original FOpen (`originalVtable[36]`, forced `"rb"`) → SNAP_B; close via the ENGINE original FClose (`originalVtable[55]`) → SNAP_C; run kcdx_FOpen → SNAP_D. Report every 8-byte offset where A≠B (engine wrote) and A≠D (kcdx wrote); the MISSING-WRITE SET = `(A≠B)\(A≠D)`. Straddle-SAFE: original open+close both on the ENGINE CRT, same scope, rb-only, handle never reaches kcdx; SNAP_C==SNAP_A asserts the engine close reverted (kcdx's diff uncontaminated). Outcome: `(A≠B)\(A≠D)` non-empty ⇒ the omitted object-member write at offset X is the mechanism (read the engine FOpen store to [self+X], replicate). `(A≠B)` empty ⇒ engine writes NO object member for a loose open ⇒ divergence is global/TLS/handle-identity → P2 (global-region diff). `(A≠B)⊆(A≠D)` ⇒ kcdx already replicates ⇒ object-member theory dead → P2. Falsifying on all branches. Needs: object size N (err high, ~0x400; over-read safe read-only) + originalVtable[36]/[55] reachable from the marker (store process-lifetime at swap). |
 | L (orig design) | superseded | OBSERVATION (user chose the snapshot probe over the hybrid). Snapshot the CCryPak object member window `[pCryPak+0x00..+0x100]` (covers the pak-handle vector triple) + the records the vector points at, BEFORE kcdx's FOpen, AFTER kcdx's FOpen, and after the captured ORIGINAL FOpen body run for the SAME name (its handle closed via the original FClose — engine open+close pair entirely on the engine CRT, NO kcdx CRT touch = no straddle, per the user's safety call). Log every offset where original-after ≠ before but kcdx-after == before. Built on the live full takeover, one variable = kcdx-body vs original-body object side-effect. EXACT offsets to watch (from L-static body read): `[+0x40]` vector BEGIN (`param_1[8]`/`plVar1`), `[+0x48]` END (`param_1[9]`), `[+0x50]` CAP (`param_1[10]`); the entry is a `0x18`-byte record written at `begin + index*0x18` via `FUN_1823c9004`. Original writes `[+0x40..+0x58]`/the record + kcdx does NOT ⇒ mechanism CONFIRMED (fix = kcdx FOpen replicates the vector write). No divergence ⇒ widen window / it is loose-not-pak ⇒ re-frame. |
 
@@ -216,12 +218,53 @@ fresh-frame probe designer, rather than another ad-hoc offset guess. The crash
 trigger (swap-write) and the direction (kcdx omits an engine open-side effect) are
 solid; the EXACT omitted write is unread.
 
-## ROOT CAUSE FOUND (research-disassembly, tier-2 reuse hit — the cross-CRT fseek/get_osfhandle hazard)
+## ROOT CAUSE — REJECTED BY GATE B (probe-required HALT). The cross-CRT-fseek mechanism does NOT hold for KI-0026.
 
-`/research-disassembly` (top-down: read the FSR2 fault site instead of more bottom-up
-handle probing) hit a TIER-2 reuse answer in `_research/ki0019-inventory-av-recon/
-FINDINGS.md` (2026-06-13, dump-observed + source-confirmed). KI-0026 and KI-0019 are
-the SAME cross-CRT hazard (the KI-0006 family), surfacing two ways.
+The "cross-CRT fseek/get_osfhandle" mechanism below was proposed (research-disassembly
+tier-2 reuse of KI-0019) and **HALTED by the root-cause-verifier (Gate B)** — it does
+NOT meet the AP17 bar for KI-0026. The verifier's independent re-derivation (working
+agent's reasoning WITHHELD) found four defeating gaps; this section is kept as a
+KILLED theory, not a Resolution.
+
+- **Handle-representation conflation (the load-bearing defect).** KI-0019's cross-CRT
+  fault was on a raw **`FILE*`** (the old asset_overlay HOOK 2 returned an actual
+  `FILE*` to the engine). KI-0026's takeover returns a **tagged integer `3`** =
+  `(id<<1)|1`, NOT a `FILE*` (file_handle.h / open_slots.cpp; trace `result=3`). In
+  the engine's ucrtbase fd table, `3` is a *valid-looking low fd*, not an invalid
+  kcdx-origin fd. The KI-0019 mechanism does not transfer across this boundary.
+- **Contradicted by the doc's OWN decisive PROBE K.** `Fileno` (slot 46 — the exact
+  call `get_osfhandle` sources its fd from) dispatched THROUGH kcdx's read slot with
+  `tag=1`, computing `_fileno` on kcdx's CRT. The fd path was traced and went through
+  kcdx correctly. "PROBE K couldn't see the direct fseek" was an unbacked assertion to
+  save the theory (a confirm-only rationalization — results-driven violation).
+- **Timing.** A cross-CRT `fseek` fault fires SYNCHRONOUSLY during the fseek; KI-0026's
+  `0xC8` fires ~354ms after a clean FClose with NO intervening kcdx file op.
+- **Over-claim.** KI-0019 = `0xC0000005` AV (CRT null-write); KI-0026 = deliberate
+  `RaiseException(0xC8)` from NVSDK_NGX on an `ffxFsr2ResourceIsNull` check (NGX
+  reading a wrong RESULT). "Same root, different surface" papered over this.
+- KI-0019 is itself OPEN / leading-diagnosis with an unconfirmed HIT-vs-MISS residual
+  — reusing it imported an unverified edge as a closed root cause.
+
+**Gate B's owed probe (one variable, theory-independent, falsifying):** instrument the
+engine `ucrtbase` `_get_osfhandle`/`fseek` entry (or the NGX/FSR2 call site at
+`WHGame+0x871b5a`) to log the fd/handle ARGUMENT it receives in the boot window, AND
+capture at the `0xC8` raise site what `ffxFsr2ResourceIsNull` evaluated (which
+resource/pointer it read null). Ground-truth first. Outcomes: (a) `get_osfhandle`/
+`fseek` IS called on `3`/the kcdx handle OUTSIDE a kcdx slot and faults there →
+cross-CRT-fseek confirmed FOR KI-0026 (rewrite the Resolution to cite THIS, not
+KI-0019); (b) no off-vtable CRT op on the kcdx handle; `0xC8` raises on a null/wrong
+resource with no kcdx file op feeding it → the mechanism is the swap-write's
+side-effect on engine/NGX state (PROBE G's direction), a DIFFERENT root cause; (c) the
+fd reached `get_osfhandle` THROUGH `kcdx_Fileno` (valid kcdx-CRT fd) and did not fault
+→ handle path clean, look at the resource NGX reads.
+
+---
+
+### (KILLED) The rejected cross-CRT-fseek mechanism — kept for the trail
+
+`/research-disassembly` hit a TIER-2 reuse answer in `_research/ki0019-inventory-av-recon/
+FINDINGS.md` (2026-06-13, dump-observed + source-confirmed). The claim was that KI-0026
+and KI-0019 are the SAME cross-CRT hazard (the KI-0006 family). Gate B rejected it (above).
 
 **Mechanism (dump-observed call-edge, §3.5-grounded — a real faulting stack, not an
 inference):** FSR2/DLSS init (`ffxFsr2ResourceIsNull` → `NVSDK_NGX_UpdateFeature`,
@@ -262,12 +305,21 @@ route to the fs-takeover design, NOT decided here.
 
 ## Facts
 
-- ROOT CAUSE (research-disassembly tier-2): the `0xC8` is the cross-CRT
-  `fseek`/`get_osfhandle` hazard — FSR2 init calls `fseek` DIRECTLY on a kcdx-returned
-  handle, the engine's `ucrtbase` `get_osfhandle` rejects the kcdx-origin fd →
-  invalid-parameter fault. Same family as KI-0019 (AV surface) / KI-0006. Evidence:
-  `_research/ki0019-inventory-av-recon/FINDINGS.md` dump-observed fault chain. The
-  takeover's `FRead`-scoped cross-CRT proof does not cover the direct-fseek path.
+- (KILLED — Gate B HALT) The proposed "cross-CRT fseek/get_osfhandle" root cause does
+  NOT hold for KI-0026: it imports KI-0019's raw-`FILE*` hazard onto KI-0026's
+  tagged-integer handle (`3`, a valid-looking low fd in ucrtbase, not an invalid one);
+  it is contradicted by PROBE K (`Fileno` dispatched THROUGH kcdx, fd computed on
+  kcdx's CRT, tag=1); a sync fseek-fault cannot explain the ~354ms gap; and AV
+  (`0xC0000005`) vs deliberate `RaiseException(0xC8)` is a real surface difference, not
+  "the same root". The mechanism is UNVERIFIED; Gate B owes a fd-argument/resource
+  probe (see the rejected-root-cause section). This supersedes the prior ROOT CAUSE
+  fact line.
+- STILL THE STRONGEST EVIDENCE-BACKED DIRECTION (PROBE G+N, un-refuted): the swap-WRITE
+  is the trigger (PROBE G), and kcdx's open produces byte-identical object state to the
+  engine's (PROBE N), so the cause is the STATE the swap-write leaves the CCryPak
+  object / engine in that NGX/FSR2 graphics-init trips on — NOT a wrong per-open value
+  or handle op (every one observed correct). The owed probe targets what NGX/FSR2 reads
+  at the `0xC8` site + whether any off-vtable CRT op touches the kcdx handle.
 - DECISIVE (PROBE L): the crash-window files (system.cfg, pak.cfg,
   engine_core.thread_config) are LOOSE (all `how=miss-original`), and the engine's
   FOpen writes the pak-handle vector at `[+0x40]` ONLY on the PAK path — so `[+0x40]`
