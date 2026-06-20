@@ -236,6 +236,7 @@ KcdxHandle OpenResolvedAndMint(void* self, const char* pName, const char* szMode
             return 0;
         }
         resolvedDisk = resolvedC;
+
         handle = OpenLooseAndMint(resolvedDisk, szMode, whichSlot, key.c_str());
     }
 

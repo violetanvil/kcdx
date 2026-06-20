@@ -75,7 +75,8 @@ size_t kcdx_FReadRaw(void* self, void* buf, size_t size, void* handle) {
     const KcdxHandle h = H(handle);
     Seek(h, 0, SEEK_SET);  // the body's leading fseek-to-0
     bool ok = false;
-    return Read(h, buf, size, ok);
+    const size_t got = Read(h, buf, size, ok);
+    return got;
 }
 
 // slot 40 — FGetCachedFileData (BODY-VERIFIED). Returns the cached whole-file
@@ -122,8 +123,10 @@ int kcdx_FSeek(void* self, void* handle, long offset, int origin) {
 // slot 54 — FTell (LEAF-IDENTIFIED, _ftelli64-shaped). Current position, or -1.
 long long kcdx_FTell(void* self, void* handle) {
     (void)self;
-    TraceRead("FTell", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
-    return Tell(H(handle));
+    const KcdxHandle h = H(handle);
+    TraceRead("FTell", static_cast<long long>(h));  // FS_BOOT_TRACE (PROBE K)
+    const long long pos = Tell(h);
+    return pos;
 }
 
 // slot 55 — FClose (LEAF-IDENTIFIED, fclose-shaped). Closes the handle on kcdx's

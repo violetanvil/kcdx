@@ -1,7 +1,8 @@
 ---
 id: KI-0026
 opened: 2026-06-16
-status: open
+status: closed
+closed: 2026-06-20
 commit_at_filing: ba391e0
 ---
 
@@ -27,6 +28,7 @@ lifecycle question); it never got past init.
 
 | Date       | Action | Result |
 |------------|--------|--------|
+| 2026-06-20 | Mode-sanitize fix acceptance launch (`kcdx-dev_2026-06-20_13-30-23.log`, 69577 lines) | **MODE FIX CONFIRMED + HUGE PROGRESS — boot now reaches the GAME-DATA / TABLE-DB load (4th onion layer, a NEW subsystem).** The mode fix engaged: `loose_mode_normalized engine_mode=rbx kcdx_mode=rb` for settings.xml AND default/attributes.xml — no fast-fail. The suite roll-up is REACHED for the first time (`suite: 25/311 passing` at kPostLoad; cap-116 + cap-117 both PASS, cap-111 PASS confirms pak-entry read is CRC-correct). Boot ran the FULL early sequence (Cry3DEngine, machine-spec autodetect, CryScriptSystem, CryEntitySystem, AI, DRS, 1623 prefab templates, Pros init, Ansel) — vastly past every prior crash — then the engine raises `fatalerror_fired err_id=259` (0x259, NOT 0xC8/0xC8-family) and shows the dialog "Database system error - tables can't be loaded. Possibly caused by outdated or corrupted mods." NOT a crash/fast-fail — a clean engine DB-load abort. **MECHANISM (read, not theorized — `_research`-grade from the log): the table system's WILDCARD-GLOB enumeration is unserved.** The engine loads each base table (e.g. `libs/tables/rpg/gender.xml` → index-pak-serve HIT) then GLOBS for override-patch files via a path containing a literal `*`: `libs/tables/rpg/gender__*.xml` (the `__` = table-merge override naming). **292** such `__*.xml` glob opens ALL hit `how=miss-original result=0`, and there are **ZERO `FS_ENUM`/ForEachFile enum-slot fires** — kcdx's slot-1 AdjustFileName treats `gender__*.xml` as a LITERAL name (misses; no file named `*`), instead of enumerating the pak-resident matches. The engine expects the FS layer to enumerate the `<table>__*.xml` override set; it gets nothing → the table DB load aborts. (288 base `Tables.pak` reads succeeded — the single-file read path is correct; only the directory-GLOB/enumeration is unserved.) This is the **ForEachFile/FindFiles takeover surface** the memory + cap-114 flagged as DEFERRED (slots 15/101 stayed THUNK — "a separable concern surfaced as decisions"); the table DB load is its first hard consumer. A genuinely NEW subsystem (enum/glob), not a continuation of the read/size/mode path. err_id=259 ≠ the original 0xC8 (the graphics-init crash KI-0026 was filed for is GONE — peeled by cap-115/116/117). → surfaced to the user as a new design/scope layer (glob-enumeration over the unified index). PROBE Q-mode captured + removed (the mode fix landed). Slot-46 + mode fixes committed (`68cf9f6`, + the mode commit). |
 | 2026-06-20 | PROBE Q-mode launch (`kcdx-dev_2026-06-20_13-19-51.log`) | **DECISIVE — MECHANISM FULLY NAMED. The engine opens `settings.xml` with mode `"rbx"`, which MSVC's strict CRT rejects.** The LAST line before the log ends: `probe_qmode_premode slot=FOpen mode=rbx mode_hex=72 62 78 disk="c:\users\michael\saved games\kingdomcome2\profiles\settings.xml"`. Every OTHER loose open used `mode=rb` (hex `72 62`, valid) and was fine; ONLY `settings.xml` uses `rbx` (hex `72 62 78` = `r`+`b`+`x`). The `x` flag = C11 exclusive-create ("fail if file exists"), valid ONLY with a write mode (`w`/`w+`). `x`-with-`r` is invalid per the C standard → MSVC's `__acrt_stdio_parse_mode` fast-fails (`_invalid_parameter`→`_invoke_watson`, `c0000409`) — no SEH, process terminated, "no bugsplat". CryEngine passes `rbx` expecting lenient handling (glibc / a lenient CRT silently ignores an unknown mode flag; kcdx's statically-linked strict UCRT does not). ROOT CAUSE: kcdx's `OpenLooseAndMint` forwards the engine's mode verbatim to `_wfopen_s`; the engine's `rbx` form crashes kcdx's strict CRT where the engine's own CRT tolerated it. This is independent of the slot-46 fix (that is confirmed working — the thread-config sizes+reads+closes clean immediately before this line). NOT a 0xC8 — a CRT mode-parse fast-fail. → the fix is a design call on how kcdx normalizes/sanitizes the engine's loose-open mode (surfaced to the user). PROBE Q-mode is captured (answered) — scratch, removed at KI close. |
 | 2026-06-20 | Slot-46 fix acceptance launch (`kcdx-dev_2026-06-20_13-07-46.log`, swap seated) | **SLOT-46 FIX CONFIRMED WORKING — and the `0xC8` thread-config crash is GONE. A DIFFERENT crash now blocks, further along (a new onion layer).** The thread-config lifecycle is now fully clean: `FGetSize handle=3 ret=20096` (was `-1` — the fix returns the correct SIZE), `FReadRaw_byPakIndex req_size=1 req_count=20096 want=20096 got=20096` (was `req_count=0xFFFFFFFF` — the engine now reads the CORRECT count), head/tail match ground truth, `FClose` clean. The boot PROCEEDS PAST the thread-config (it reached `%user%/profiles/settings.xml`, far later than any prior run) — NO `fatalerror_fired`, NO `err_id=200` anywhere near the end. The slot-46 FGetSize root cause + fix are VERIFIED correct. **NEW CRASH (distinct mechanism, "no bugsplat"):** the kcdx watchdog did NOT capture it (no `kcdx_2026-06-20_13-07-46.dmp`), but a Windows WER dump did (`%LOCALAPPDATA%\CrashDumps\KingdomCome.exe.18724.dmp`, 13:07:51). cdb (`.ecxr;!analyze -v`): `ExceptionCode c0000409` (security check / `_invalid_parameter` FAST-FAIL), `FAILURE_BUCKET_ID FAIL_FAST_INVALID_ARG_c0000409_kcdx.dll!_invoke_watson`. Stack (bottom-up): `WHGame!C_Game::CreateInstance → KcdxFOpenMarker → kcdx_FOpen → OpenResolvedAndMint+0x62d → OpenLooseAndMint+0x185 → kcdx!_wfopen_s → common_fsopen<wchar_t> → _wopenfile → __acrt_stdio_parse_mode<wchar_t>+0x2e4 → _invalid_parameter → _invoke_watson`. MECHANISM: kcdx's `OpenLooseAndMint` calls `_wfopen_s` with a MODE STRING the kcdx statically-linked CRT's `__acrt_stdio_parse_mode` rejects as malformed → CRT fast-fail terminates the process (no SEH, no `0xC8`, no BugSplat — that is the "no bugsplat"). The faulting open is the LOOSE/miss path (`OpenLooseAndMint`), reached for `%user%/profiles/settings.xml` (the last logged resolve, a writable user-profile settings file the engine likely opens with a read-write/update mode kcdx's CRT parses more strictly than the engine's own CRT did). NOT the 0xC8/NGX family — a CRT-mode fast-fail in the loose-open path the slot-46 fix unblocked the boot far enough to reach. Pre-existing latent defect in `OpenLooseAndMint`'s mode handling, newly exposed. → surfaced to the user (new mechanism). Owes: capture the exact rejected `szMode` (a probe logging `m` before `_wfopen_s`, or the engine's mode for settings.xml), then the mode-normalization fix. cap-116 report not reached (crash precedes the suite roll-up). |
 | 2026-06-20 | /research-disassembly + gated verifier (PROCEED) — what consumes the slot-46 return | **ROOT CAUSE OF THE RESIDUAL NAMED: kcdx mis-implements slot 46.** WHGame slot 46 (`FUN_180460c08`, RVA 0x460C08, +0x170) is **`CCryPak::FGetSize`** — it returns the file's byte SIZE, NOT a `_fileno`. BODY-VERIFIED (fresh disasm `_research/ki0026-fs-takeover-slot46-recon/_slot46_body.txt`): handle-tag dispatched — PAK arm returns the uncompressed-size field `*(entry+0x28)+8`; OS arm does `_fileno → _fstat64i32 → st_size` (the `_fileno` is only the first hop, never the return). The engine's FRead OS arm (`FUN_18051cd00` L121-138) calls `(this+0x170)`, stores the return as `*param_3`, and passes it AS THE SIZE to the CRT `fread(buf,1,SIZE,fp)` then compares bytes-read==SIZE. kcdx's `kcdx_Fileno` (slot 46) returns the raw fd (-1 for a pak handle, BY DESIGN as a fileno) → the engine stores -1 as the size → `req_count=0xFFFFFFFF` (PROBE P-read live) → the config loader can't get a valid length → `CSystem::FatalError` "Couldn't get length for Config file" / "Error loading thread config" (0xC8). Same mislabel class as slot 66 (front1 marked it fileno-variant off a `_fileno` leaf fingerprint; the body showed `_fileno→_get_osfhandle→GetFileTime` returning a TIME). The readslot-abi FINDINGS slot-46 label "_fileno" was LEAF-IDENTIFIED-ARGS-INFERRED, never a body read — now superseded. FIX: kcdx's slot 46 must return the file SIZE (pak: the ByteSource size; loose: stat/_filelength), not the fd. cap-115 unaffected. |
@@ -628,3 +630,85 @@ route to the fs-takeover design, NOT decided here.
 - Static recon context: `_research/fs-takeover-pak-mount-recon/FINDINGS.md`
   (the pak-mgmt slot model), KI-0012 (the mod-mount-list graphics-init fatal),
   KI-0019 (the cross-CRT FSR2/DLSS-init crash family).
+
+## Resolution
+
+**Root cause (the mechanism, falsifiable).** The `0xC8` (`CSystem::FatalError`,
+err_id=200) at graphics-init was NEVER an NGX/FSR2 assertion — the NGX/FSR2 frame
+names in the stack were nearest-export noise (WHGame ships no PDB). The engine
+fatals on a FAILED LOAD of `%engine%/config/engine_core.thread_config`
+(P-live deref'd the fatal's message arg from the dump:
+`"Error loading thread config '%engine%/config/engine_core.thread_config'"`).
+That config is pak-resident (`Config/engine_core.thread_config` inside
+`Engine/Engine.pak`). Under the file-system takeover, graphics-init's load of it
+failed for THREE distinct, sequential reasons — each masked by the one before it,
+each peeled by a verified fix:
+
+1. **Index miss (file-not-found).** kcdx's unified asset index walked only
+   `<game>/Data`, not `<game>/Engine`, so the engine-pak config was not indexed →
+   FOpen index-miss → kcdx's miss arm resolved it to a loose path and `_wfopen`'d
+   it → the loose file does not exist (it is pak-resident) → not-found → 0xC8. AND
+   a key-namespace mismatch: the engine opens the `%engine%/`-aliased form, which
+   kcdx must own and expand to the pak-root key. **Fix:** `BuildAssetIndex` walks
+   Data+Engine; `ResolveVPath` owns the `%engine%` alias (expands `%engine%/X` to
+   the pak-root key `X`); slot-1's pak hit returns the original `%engine%/...` form
+   so FOpen re-resolves through the strip and serves pak bytes. (cap-115; the
+   index/alias commits.)
+
+2. **Wrong size (served-but-rejected).** With the file served, the engine read
+   the correct bytes but sized its read off CCryPak slot 46 — which kcdx
+   implemented as `kcdx_Fileno` (returned the raw fd; -1 for a pak handle, which
+   has no fd). Slot 46 (`+0x170`, `FUN_180460c08`, RVA 0x460C08) is BODY-VERIFIED
+   `CCryPak::FGetSize` (returns the byte SIZE; both arms — the pak arm returns the
+   stored uncompressed-size field, the OS arm does `_fileno→_fstat64i32→st_size`).
+   The engine's FRead OS arm (slot 40, `+0x140`) calls slot 46, STORES the return
+   as the size, and reads that many bytes — so kcdx returning -1 made the engine
+   compute size = -1 (`req_count=0xFFFFFFFF`, observed live by PROBE P-read) → the
+   config loader could not get a valid length → 0xC8 "couldn't get length for
+   Config file". The "_fileno (LEAF-IDENTIFIED)" label was a leaf-mislabel (the
+   import-table `_fileno` read as the role without reading that it is a sub-step of
+   the size computation — AP19). **Fix:** slot 46 is `kcdx_FGetSize`, returning the
+   file's byte size (Pak → inflated buffer length; Loose → cached size or
+   seek-end/`_ftelli64` position-restored, kcdx CRT); a bad handle returns 0 + a
+   loud LOG_ERROR, never -1. (cap-116; commit `68cf9f6`.)
+
+3. **CRT mode fast-fail (`rbx`).** With the config sized + read, the boot
+   proceeded — and later, a loose open of `settings.xml` with the engine's mode
+   `"rbx"` fast-failed kcdx's strict static UCRT (`__acrt_stdio_parse_mode` →
+   `_invalid_parameter` → `_invoke_watson`, c0000409 — process killed, no SEH, "no
+   bugsplat"). `x` is C11 exclusive-create, valid only on a write base; on a read
+   base the strict UCRT rejects it where the engine's own lenient CRT tolerated it.
+   PROBE Q-mode captured the exact mode (`mode_hex=72 62 78`). **Fix:**
+   `SanitizeLooseMode` normalizes the engine's mode to a UCRT-valid one (drops `x`
+   on a read base, keeps it on a write base, keeps every other flag) before
+   `_wfopen_s`. (cap-117; the mode commit.)
+
+Each fix was necessary; together they make graphics-init read its pak-resident
+configs correctly. Live-verified (`kcdx-dev_2026-06-20_13-30-23.log`): the
+thread-config sizes (`FGetSize ret=20096`), reads (`req_count=20096`), and closes
+clean; the mode normalizes (`loose_mode_normalized engine_mode=rbx kcdx_mode=rb`);
+and the boot passes graphics-init entirely (Cry3DEngine, ScriptSystem,
+EntitySystem, AI, DRS, 1623 prefab templates, Pros, Ansel) — the `0xC8`
+graphics-init fatal this KI was filed for is GONE.
+
+**Fix commits.** Index/Engine-root + `%engine%` alias + slot-1-pak-serve (cap-115,
+prior commits `47db4ec` / `20e42c3`); slot-46 `FGetSize` (cap-116, `68cf9f6`);
+`rbx` mode sanitize (cap-117, the mode commit).
+
+**Verification.** cap-115 (engine-pak index + alias), cap-116
+(`FileSize`/`FGetSize` by-handle), cap-117 (loose-mode sanitize) — all built,
+deployed, and live-PASS in the suite roll-up (`suite: 25/311` reached for the
+first time; cap-116 + cap-117 + cap-111 PASS). User-confirmed the boot passes
+graphics-init across three sequential launches (each fix peeled the next layer).
+
+**The remaining boot blocker is a DIFFERENT issue — KI-0027.** With graphics-init
+fixed, the boot reaches the table-DB load, which fails because kcdx does not serve
+wildcard-glob directory enumeration (the deferred `ForEachFile` surface). That is a
+distinct subsystem (enumeration vs single-file read) and a different fatal
+(`err_id=259` ≠ `0xC8`) — tracked as KI-0027, not a fourth mechanism here.
+
+## Diagnostic-archive note
+
+PROBE K/M/P/P2/P-read + Q-mode were the investigation instrumentation. Their
+findings are captured in this Trail + `_research/probe-archive/`; the in-source
+probe scratch is removed at this close (no-residue — `.claude/rules/working-artifacts.md`).

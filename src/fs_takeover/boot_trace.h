@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>  // uintptr_t (PROBE L object-member snapshot)
+#include <cstring>  // std::memcpy (PROBE L unaligned member read)
+
 #include "../init_phase.h"
 #include "../log.h"
 
@@ -30,8 +33,8 @@
 //   borrowed), the slot by a string literal, the result as an integer/bool — no
 //   std::string construction, no string building on the traced path. Same
 //   hot-path discipline as the existing first-only latches, applied to a
-//   bounded window instead of a single fire. Mirrors the phase-gate shape of
-//   probe_m_pak_lifecycle.cpp (init::Current() vs AfterGameApply).
+//   bounded window instead of a single fire. The gate is the monotonic
+//   init-phase compare (init::Current() vs AfterGameApply).
 //
 // Greppable tag: "FS_BOOT_TRACE" — the entire crash-window slot stream is one
 // grep of the dev log.
@@ -112,6 +115,57 @@ inline void TraceRead(const char* slot, long long handle) {
         kcdx::log::KV::BareStr("slot", slot),
         kcdx::log::KV("handle", handle),
         kcdx::log::KV("tag", static_cast<long long>(handle & 1)));
+}
+
+// === DIAGNOSTIC (PROBE N) — wide whole-object image diff ======================
+// KI-0026: the missing-write OFFSET is unknown (the pak-vector [+0x40] reading was
+// falsified for loose files; the registration-call theory is unread/ambiguous).
+// PROBE N observes the divergence DIRECTLY without pre-guessing any offset: snapshot
+// the WHOLE object image before/after the engine original open and before/after the
+// kcdx open, and REPORT which 8-byte offsets each open wrote. The orchestration (the
+// two opens + close) lives in the slot-36 marker (it needs kcdx_FOpen + the captured
+// originals); these two helpers are the pure snapshot + diff primitives.
+//
+// kProbeN_ObjSize: snapshot width. Err HIGH — over-reading read-only object memory
+// is safe; a too-small window is the only way to MISS the divergence. 0x400 covers
+// well past the highest member offset any FOpen-body write touches ([+0x50], [+0x268]
+// is a VTABLE offset not an object member).
+constexpr size_t kProbeN_ObjSize = 0x400;
+
+// Snapshot `self[0 .. kProbeN_ObjSize)` into `dst` (a caller-provided buffer of at
+// least kProbeN_ObjSize bytes). Read-only byte copy; no allocation. Caller gates on
+// BootWindowActive() + non-null self.
+inline void SnapObject(uint8_t* dst, const void* self) {
+    std::memcpy(dst, self, kProbeN_ObjSize);
+}
+
+// Log every 8-byte offset where snapshot `a` differs from `b`, under FS_BOOT_TRACE
+// action "objdiff". `label` names the transition (e.g. "engine" = A→B = what the
+// engine open wrote; "kcdx" = A→D = what kcdx wrote). `vpath` is the file. One log
+// line per differing word (offset + before + after). Boot-window-gated by the
+// caller. A diff with ZERO differing words logs a single "objdiff label=… diffs=0"
+// summary so a no-write outcome is explicit, not silent.
+inline void LogObjDiff(const char* label, const char* vpath,
+                       const uint8_t* a, const uint8_t* b) {
+    long long diffs = 0;
+    for (size_t off = 0; off + 8 <= kProbeN_ObjSize; off += 8) {
+        uintptr_t wa = 0, wb = 0;
+        std::memcpy(&wa, a + off, sizeof(wa));
+        std::memcpy(&wb, b + off, sizeof(wb));
+        if (wa != wb) {
+            ++diffs;
+            LOG_DEBUG_KV("FS_BOOT_TRACE", "objdiff",
+                kcdx::log::KV::BareStr("label", label),
+                kcdx::log::KV("vpath", vpath ? vpath : "<null>"),
+                kcdx::log::KV("off", static_cast<long long>(off)),
+                kcdx::log::KV("before", static_cast<long long>(wa)),
+                kcdx::log::KV("after", static_cast<long long>(wb)));
+        }
+    }
+    LOG_DEBUG_KV("FS_BOOT_TRACE", "objdiff_summary",
+        kcdx::log::KV::BareStr("label", label),
+        kcdx::log::KV("vpath", vpath ? vpath : "<null>"),
+        kcdx::log::KV("diffs", diffs));
 }
 
 }  // namespace kcdx::fs_takeover

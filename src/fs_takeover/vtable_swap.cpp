@@ -6,6 +6,7 @@
 #include "vtable_table.h"
 #include "open_slots.h"      // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
 #include "metadata_slots.h"  // SetMetadataOriginals (the 8 metadata-slot originals captured for the miss thunk)
+#include "boot_trace.h"      // === DIAGNOSTIC (PROBE L) === pak-handle-vector snapshot around the open
 #include "../log.h"
 #include "../test.h"
 
@@ -14,6 +15,49 @@ namespace kcdx::fs_takeover {
 namespace {
 
 constexpr const char* kCat = "FS_TAKEOVER";
+
+// === DIAGNOSTIC (PROBE G) — gate the swap-WRITE, build everything else ========
+// KI-0026: graphics-init 0xC8 fatal from the fs-takeover. Every "kcdx serves a
+// wrong file answer" axis is eliminated (file-dispatch correct, thunks P4-safe,
+// metadata slots never index-queried in the crash window). The remaining suspect
+// is the STATE the vtable swap leaves the CCryPak object / engine in — the swap's
+// SIDE-EFFECT, not its DISPATCH. PROBE G isolates exactly that one variable: when
+// true, the swap-write (the memcpy of kcdxVtablePtr into [pCryPak+0x00]) is
+// SKIPPED — the kcdx vtable is still built, the originals still captured, the
+// index still built downstream, but the object KEEPS its native engine CCryPak
+// vtable, so the engine never dispatches into kcdx this boot. If the 0xC8 is GONE
+// this run, the swap's side-effect is the mechanism; if it PERSISTS, the swap is
+// innocent and the cause is upstream (ctor-bracket / hooks). Default true for THIS
+// probe run. Scratch — captured-and-removed when answered (working-artifacts.md
+// no-residue). Greppable tag: "PROBE_G".
+constexpr bool kProbeG_BypassSwap = false;
+
+// === DIAGNOSTIC (PROBE J) — swap the pointer, but to an EXACT copy of the
+// original vtable ============================================================
+// KI-0026: PROBE G proved the swap-WRITE is the trigger (bypassing it boots
+// clean; re-enabling it crashes). PROBE J discriminates WHY. When true,
+// g_kcdxVtable is built as a FAITHFUL COPY of the engine's own vtable — every
+// slot = originalVtable[row.slot], ZERO kcdx slots, NO thunk wrap (not even
+// PROBE M's) — so the pointer IS swapped onto the object, but the array it
+// points at is byte-identical to the engine's vtable. The ONLY variable vs a
+// normal full swap is g_kcdxVtable's CONTENTS (all-original vs kcdx-slots): the
+// pointer swap, the object, the memory location of g_kcdxVtable, the captures,
+// the seating all stay identical. So:
+//   STILL CRASHES ⇒ pointer-identity / memory-location is the cause (the engine
+//     cares the pointer changed or where it points — a cached-original mismatch,
+//     an address-range / RTTI / identity check), NOT slot behavior.
+//   BOOTS CLEAN  ⇒ a kcdx SLOT impl that graphics-init dispatches behaves wrong,
+//     NOT the pointer.
+// PROBE G must be OFF for this (the pointer must actually swap). Scratch —
+// captured-and-removed when answered (working-artifacts.md no-residue).
+// Greppable tag: "PROBE_J".
+//
+// KI-0026 PROBE K: set back to FALSE — the real full takeover (kcdx slots live)
+// must be active for the read-family boot-window trace to observe anything. With
+// copy-mode ON every slot was the engine's own body (kcdx_owned=0), so zero kcdx
+// read slots ran and FS_BOOT_TRACE.read logged nothing. PROBE K needs the live
+// read family, i.e. copy-mode OFF.
+constexpr bool kProbeJ_CopyOriginalVtable = false;
 
 // The test-suite row this seating spike reports into (matches the manifest
 // stub's test_names + the matrix row). PASS = the slot-36 marker fired (the
@@ -51,6 +95,18 @@ using AdjustFileNameFn_t = void* (*)(void* self, const char* pName, void* outBuf
 // cap-108 signal exactly once (the FIRST fire), never per-call.
 std::atomic<bool> g_markerFired{false};
 
+// === DIAGNOSTIC (PROBE N) — captured original FOpen (slot 36) + FClose (slot 55)
+// bodies, stored process-lifetime so the marker can run the ENGINE original open
+// (then close it on the engine CRT) to image-diff the object against kcdx's open.
+// Member-call shapes: FOpen (this, pName, mode, flags) → handle; FClose
+// (this, handle) → int. Captured at swap time from the live original vtable.
+// Scratch — removed when PROBE N is answered (working-artifacts.md no-residue). ===
+using FOpenFn_t  = void* (*)(void* self, const char* pName, const char* mode,
+                            uint32_t flags);
+using FCloseFn_t = int   (*)(void* self, void* handle);
+std::atomic<FOpenFn_t>  g_probeN_origFOpen{nullptr};
+std::atomic<FCloseFn_t> g_probeN_origFClose{nullptr};
+
 }  // namespace
 
 // Slot-36 impl: the seating marker IN FRONT OF the real kcdx FOpen. On its FIRST
@@ -86,12 +142,46 @@ void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
             "kcdx) and boot reached the first open through thunked slots");
     }
 
-    // Delegate to the real kcdx FOpen — EVERY fire (the cap-108 signal is the
-    // only first-fire-only work). The real impl resolves via the unified index,
-    // opens the byte-source on kcdx's CRT, and mints a kcdx handle-id (§5: every
-    // FOpen mints a kcdx handle — asset, non-asset, write alike). 0 = a failed
-    // open (loud in the impl), which the engine reads as a null open exactly as
-    // its own FOpen returns null — never a silent broken handle (AP14).
+    // === DIAGNOSTIC (PROBE N) — wide whole-object image diff (fresh-frame #2) ==
+    // The missing-write offset is unknown. Observe it directly: image-diff the
+    // object across the ENGINE original open vs the KCDX open of the SAME loose
+    // file, reporting which offsets each wrote. The omitted-write set =
+    // (engine-wrote) \ (kcdx-wrote). No offset pre-guessed.
+    //
+    // Straddle-SAFE: the original open + close run BOTH on the engine CRT
+    // (g_probeN_origFOpen/FClose, captured from the original vtable), in this
+    // scope, forced "rb", the handle never reaching kcdx — the non-straddling
+    // case. SNAP_C==SNAP_A asserts the engine close reverted its own writes, so
+    // the kcdx diff is uncontaminated. Boot-window-gated (zero cost after boot);
+    // scratch — removed when answered.
+    if (BootWindowActive() && self) {
+        FOpenFn_t  origOpen  = g_probeN_origFOpen.load(std::memory_order_acquire);
+        FCloseFn_t origClose = g_probeN_origFClose.load(std::memory_order_acquire);
+        if (origOpen && origClose) {
+            static uint8_t snapA[kProbeN_ObjSize];
+            static uint8_t snapB[kProbeN_ObjSize];
+            static uint8_t snapC[kProbeN_ObjSize];
+            static uint8_t snapD[kProbeN_ObjSize];
+            SnapObject(snapA, self);
+            // Engine original open (rb-only) + immediate engine close — both
+            // engine CRT, same scope. Its object-member writes are SNAP_A→SNAP_B.
+            void* hOrig = origOpen(self, pName, "rb", nFlags);
+            SnapObject(snapB, self);
+            if (hOrig) origClose(self, hOrig);
+            SnapObject(snapC, self);  // revert check (should == snapA)
+            // kcdx open — its object-member writes are SNAP_A→SNAP_D.
+            void* result = kcdx_FOpen(self, pName, szMode, nFlags);
+            SnapObject(snapD, self);
+            LogObjDiff("engine", pName, snapA, snapB);  // what the engine wrote
+            LogObjDiff("revert", pName, snapA, snapC);  // 0 diffs = clean revert
+            LogObjDiff("kcdx",   pName, snapA, snapD);  // what kcdx wrote
+            return result;
+        }
+    }
+
+    // Normal delegate (post-boot, or if the originals are unavailable): resolve via
+    // the unified index, open on kcdx's CRT, mint a kcdx handle-id (§5). 0 = a
+    // failed open, read by the engine as a null open as its own FOpen returns null.
     return kcdx_FOpen(self, pName, szMode, nFlags);
 }
 
@@ -133,6 +223,14 @@ bool SwapVtableOnObject(void* pCryPak) {
         size_t kcdxOwned = 0;
         for (size_t i = 0; i < count; ++i) {
             const SlotRow& row = table[i];
+            // === DIAGNOSTIC (PROBE J) === copy mode: every slot is the BARE
+            // engine original — no kcdx_fn, no PROBE-M wrap, no instrumentation.
+            // The only variable vs the engine's own vtable becomes the pointer
+            // location. Must come BEFORE the KCDX/THUNK branch so it shadows both.
+            if (kProbeJ_CopyOriginalVtable) {
+                g_kcdxVtable[i] = originalVtable[row.slot];
+                continue;
+            }
             if (row.impl == Impl::Kcdx) {
                 g_kcdxVtable[i] = row.kcdx_fn;
                 ++kcdxOwned;
@@ -162,6 +260,37 @@ bool SwapVtableOnObject(void* pCryPak) {
         // impls into g_kcdxVtable; this captures the originals those impls thunk.
         SetMetadataOriginals(
             reinterpret_cast<const void* const*>(originalVtable));
+        // === DIAGNOSTIC (PROBE N) === capture the original FOpen (slot 36) +
+        // FClose (slot 55) bodies process-lifetime, so the marker can run the
+        // engine original open + close (engine CRT both ends) for the object
+        // image-diff. Captured from the SAME live original vtable. Removed with
+        // the probe.
+        g_probeN_origFOpen.store(
+            reinterpret_cast<FOpenFn_t>(originalVtable[kSlotFOpen]),
+            std::memory_order_release);
+        g_probeN_origFClose.store(
+            reinterpret_cast<FCloseFn_t>(originalVtable[55]),
+            std::memory_order_release);
+        // === DIAGNOSTIC (PROBE J) === unmistakable copy-mode state in the log.
+        // Fires once, inside the build block. When copy mode is active the
+        // kcdx_vtable_built line below still logs (the captures + index build
+        // ran), but this line is the load-bearing one: g_kcdxVtable holds the
+        // engine's own slot bodies, so the swap changes ONLY the pointer.
+        if (kProbeJ_CopyOriginalVtable) {
+            LOG_INFO_KV(kCat, "probe_j_copy_vtable",
+                kcdx::log::KV("slots", static_cast<uint64_t>(count)),
+                kcdx::log::KV::BareStr("detail",
+                    "PROBE J: g_kcdxVtable was built as an EXACT COPY of the "
+                    "original engine vtable (every slot = the engine's own body, "
+                    "ZERO kcdx slots, no thunk wrap). The pointer IS swapped to "
+                    "kcdx's array, but its CONTENTS are byte-identical to the "
+                    "engine vtable — the only variable vs a normal full swap is "
+                    "the pointer's target location. If the KI-0026 0xC8 PERSISTS "
+                    "this run, the mechanism is pointer-identity / memory-location "
+                    "(the engine cares the pointer changed or where it points); if "
+                    "it is GONE, the mechanism is a kcdx slot impl, not the "
+                    "pointer."));
+        }
         LOG_INFO_KV(kCat, "kcdx_vtable_built",
             kcdx::log::KV("slots", static_cast<uint64_t>(count)),
             kcdx::log::KV("kcdx_owned", static_cast<uint64_t>(kcdxOwned)),
@@ -182,6 +311,27 @@ bool SwapVtableOnObject(void* pCryPak) {
     // no fresh object — so every THUNK forwards to a body that reads the same
     // intact object layout.
     void* kcdxVtablePtr = static_cast<void*>(g_kcdxVtable);
+
+    // === DIAGNOSTIC (PROBE G) — gate ONLY the swap-WRITE ======================
+    // Everything above ran (vtable built, originals captured, kcdx_vtable_built
+    // logged). When bypassing, we do NOT write the object — the engine keeps its
+    // native CCryPak vtable this boot. This is the probe's ground-truth marker.
+    if (kProbeG_BypassSwap) {
+        LOG_INFO_KV(kCat, "probe_g_swap_bypassed",
+            kcdx::log::KV("object", reinterpret_cast<uintptr_t>(pCryPak)),
+            kcdx::log::KV("original_vtable", reinterpret_cast<uintptr_t>(originalVtable)),
+            kcdx::log::KV("kcdx_vtable", reinterpret_cast<uintptr_t>(kcdxVtablePtr)),
+            kcdx::log::KV::BareStr("detail",
+                "PROBE G: the kcdx vtable was BUILT but the swap-WRITE was SKIPPED "
+                "— the object keeps its NATIVE engine CCryPak vtable this boot; the "
+                "engine does NOT dispatch into kcdx. If the KI-0026 0xC8 is GONE "
+                "this run, the swap's SIDE-EFFECT is the mechanism; if it PERSISTS, "
+                "the swap is innocent and the cause is upstream (ctor-bracket / "
+                "hooks). Returning success: the build + capture succeeded; only the "
+                "install was intentionally skipped."));
+        return true;
+    }
+
     std::memcpy(static_cast<uint8_t*>(pCryPak) + kVtablePtrOffset,
                 &kcdxVtablePtr, sizeof(kcdxVtablePtr));
 
