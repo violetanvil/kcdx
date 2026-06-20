@@ -88,23 +88,65 @@ rendered, and the cursor serve the original facts blamed actually **succeeded**.
 - The boot reached deep init: trampoline pool, LUA_SHIM passes, FOREIGN_HOOK selftest,
   320 suite tests passing — engine, hooks, Lua VM, FS all up. (FACT — `kcd.log` + dev tail)
 
-## Open questions (for /debug — narrowed)
+## P-A — live thread-stack capture (RAN 2026-06-20, cdb on the hung process)
 
-The axis is settled: the menu rendered and the FS serve succeeded, so this is NOT a kcdx
-FS read-loop or a "menu never renders" failure. The remaining unknown is what `tid=46452`
-is blocked ON after the last successful serve — and the only way to read that is to observe
-the **wedged process's thread stacks live** (the static logs are exhausted).
+Attached `cdb -pn KingdomCome.exe` to the live hung process, dumped all 199 thread stacks,
+and re-sampled the main thread twice to confirm a true wedge vs. progress.
 
-- **P-A (decisive): capture the wedged process's thread stacks.** On the next launch, let
-  it reach the hung menu, then attach `cdb`/procdump to the LIVE process (or take a full
-  dump of the hung process) and read `~* k` — WHICH thread(s) are blocked and on what, and
-  **is any kcdx symbol (a `kcdx.dll` frame — a file slot, the pool lock `g_poolLock`, a
-  hook trampoline) on the wedged stack?** This is a hang, so a live/hung-process dump — NOT
-  a crash dump — is the ground truth. Outcome map: kcdx frame on the blocked stack → kcdx
-  slot/lock is the wedge (probe that slot next); no kcdx frame, pure engine/driver stack →
-  the takeover unblocked the boot far enough to expose an engine/environment stall (P-B).
-- **P-B (control): does a VANILLA (no-kcdx) boot reach AND get past this menu in this same
-  environment?** Disambiguates kcdx-introduced vs. a pre-existing environment/menu issue the
-  takeover merely let the boot reach. Cheap, no instrumentation — just launch unmodded.
+**Result: the main thread (#0 "Main") is genuinely wedged (two samples byte-identical), in
+a stack that passes THROUGH `kcdx!HookedUpdate`:**
+
+```
+ntdll!NtDelayExecution -> KERNELBASE!SleepEx+0x91      <- TOP: sleeping (not a lock wait)
+WHGame!...+0x36af90
+WHGame!wh::game::C_Game::CreateInstance+0x2e8c63
+WHGame!wh::game::C_Game::CreateInstance+0x2e8d7d
+WHGame!...+0x16cce2   (ret-addr 0x91b42a15 - in kcdx range)
+kcdx!kcdx::hooks::`anonymous namespace'::HookedUpdate+0x945   <- OUR per-frame update hook
+WHGame!...+0x16c7a0   (the engine's update dispatcher - calls HookedUpdate)
+KingdomCome+0x36db / +0x4ad5 / +0x898a (main)
+```
+
+- **FACT — no DEADLOCK.** The other 198 threads are all idle worker pools
+  (`NtWaitForSingleObject` x127, `NtWaitForAlertByThreadId` x34, `NtWaitForWorkViaWorkerFactory`,
+  etc.). No thread is blocked on a kcdx lock; `g_poolLock` is not held anywhere. (PROBE P-A)
+- **FACT — the wedge is a `SleepEx`, on the MAIN thread, inside WHGame's
+  `C_Game::CreateInstance` -> FSR2 code path** — reached via our `HookedUpdate` trampoline
+  calling the game's original `update`. The thread is sleeping/spinning in the GAME's own
+  upscaler/instance-create code, NOT in kcdx code. (PROBE P-A)
+- **FACT — kcdx does NOT hook any FSR2 / render / present / swapchain / d3d12 function.** The
+  ONLY per-frame kcdx hook is `update` itself (`HookedUpdate`); `find_slots` (the Phase-5
+  triplet) is file-ops only, off the frame path. So the FSR2 frames above `HookedUpdate` are
+  the GAME's code reached through our pass-through update hook, not a kcdx FSR hook. (FACT —
+  `grep` of `src/*.cpp` install sites + `src/fs_takeover/find_slots.*`)
+- **CORRECTION to a sample-1 reading:** the FIRST cdb sample (before symbols fully reloaded)
+  showed the frame as a bare `WHGame!...` address and I read it as "no kcdx frame on the
+  stack." Samples 2/3, with kcdx symbols loaded, resolve it to `kcdx!HookedUpdate` — kcdx IS
+  on the wedged stack (as the per-frame update pass-through). The corrected fact supersedes
+  the sample-1 reading. (Per results-driven: re-observe, don't carry a stale read.)
+
+## Open questions (for /debug — after P-A)
+
+P-A localizes the wedge to a `SleepEx` on the main thread inside WHGame's
+`C_Game::CreateInstance`/FSR2 path, reached via our `HookedUpdate`. Two causes remain, and
+they are genuinely different — P-B (the vanilla control) is the falsifying test between them:
+
+- **H1 (kcdx-caused):** something `HookedUpdate` does each frame — the original-`update`
+  trampoline call OR the `hook_chain::DispatchPre` per-frame pump it drives — makes the
+  game's `CreateInstance`/FSR2 path spin/sleep forever. The FS takeover changed boot enough
+  that the game reaches this path in a state where it busy-waits.
+- **H2 (engine/environment):** the game's own FSR2/DLSS upscaler init at first-menu spins
+  here regardless of kcdx — `HookedUpdate` is just the innocent per-frame call path, and a
+  vanilla boot stalls identically in `C_Game::CreateInstance`/FSR2 in this environment.
+
+- **P-B (decisive control): does a VANILLA (no-kcdx) boot reach AND get past the main menu in
+  this same environment?** Vanilla ALSO hangs in `C_Game::CreateInstance`/FSR2 -> H2 (engine/
+  environment; kcdx innocent, the takeover merely exposed it). Vanilla boots to a working,
+  interactive menu -> H1 (kcdx-introduced; probe `HookedUpdate`/`DispatchPre` + what the FS
+  takeover changed about the state `CreateInstance` reads). Cheap, no instrumentation — boot
+  unmodded.
+- If H1: the next probe bypasses `hook_chain::DispatchPre` in `HookedUpdate` for one launch
+  (does the wedge clear with the per-frame chain pump disabled?) — isolates trampoline-call
+  vs. chain-dispatch as the cause.
 - The suite's `pending=21` is the in-game/manual rows that need menu interaction the hang
   prevents — not a separate signal. (Resolved — not a probe.)
