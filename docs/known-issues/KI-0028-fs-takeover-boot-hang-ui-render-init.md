@@ -418,6 +418,28 @@ PROVEN facts:
 
 **The earlier P-E "SleepConditionVariableSRW in NGX UpdateFeature" capture was a DIFFERENT wait** than this `SleepEx`/FSR2 loop — either a different point in the same stuck init, or the P-E capture caught a transient. The decisive, reproducible state is THIS one: the byte-identical SleepEx/FSR2 loop in CreateInstance.
 
+### Static recon (`/research-disassembly`, 2026-06-20) — the loop is a WINDOW-FOCUS poll, NOT FSR2/filesystem
+
+Disassembled the `SleepEx` frame (`ffxFsr2ResourceIsNull+0x36af90`, RVA 0x865fb4) — body-read, verified:
+- **It is a window-activation poll, not an FSR2 resource wait.** `ffxFsr2ResourceIsNull`
+  is just the nearest export symbol. The loop calls **`USER32!GetActiveWindow`**, compares
+  the active window to an expected handle (`rsi`), and **`KERNEL32!Sleep(5)`s up to 5×**
+  then returns — BOUNDED ~25ms, not the infinite hang itself. (FACT — resolved IAT slots:
+  Sleep @ RVA 0x3a02738, GetActiveWindow @ RVA 0x3a03260; `_research/ki0028-fsr2-poll-loop-recon/`)
+- The polled globals g1/g2 both resolve to one window/system-manager singleton at **RVA
+  0x492b890** (a gEnv-family global, adjacent to gEnv id-11 base 0x492b800; NULL in the
+  static image, runtime-populated). (FACT — rip-relative resolve)
+- Single call site `0x667ddd` inside a larger frame/tick-step fn; no local back-edge. The
+  infinite repetition is `CreateInstance`'s OUTER loop re-running this step — that outer
+  body is NOT yet read (AP19: not asserting its exact exit condition). (FACT — caller scan)
+
+**DIRECTION CHANGE:** KI-0028 is NOT "the FS takeover serves FSR2 wrong content." It is a
+**window activation / focus handshake that never completes** — the game window never becomes
+the active window, so the outer init loop never proceeds → no menu; the window never enters
+its normal message loop → Alt+F4 ignored (mechanism now explained). The kcdx suspect surface
+shifts from FS-content to **whether kcdx's init perturbs window creation / activation / focus
+/ the window-manager singleton at 0x492b890.**
+
 **Gate A corrections (architect-review, BINDING — the build MUST honor these):**
 - **F1 (CRITICAL, source-confirmed):** every `LOG_*_KV` takes the stream mutex (`src/log.cpp:520/529/538`).
   Suspending threads from the tick callback and then logging their frames DEADLOCKS the game (a
