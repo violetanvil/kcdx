@@ -843,6 +843,43 @@ inside the CreateInstance window and diff swap-on vs swap-off, OR identify `0x36
 what it loops on. Fix stays in kcdx full-init ownership (no thunk-back). KI stays OPEN until the
 mechanism paragraph names the wrong-served value (AP17).
 
+### FS-op logging contract upgrade + freeze-window capture (2026-06-21) — the wedge is FS-SILENT compute, NOT a filesystem serve
+
+User flagged the logging as too weak (cost cycles). Upgraded the FS-op trace contract (commit
+`48165ca`): every read line now names its FILE (vpath resolved from the handle) + bytes want/got +
+ok/FAIL; FindFirst logs the returned ENTRY NAMES (capped), not just a count. Then widened the trace
+window past the freeze + filtered the innocent looping menu video (commit `50bbb92`).
+
+Two launches with the upgraded logging:
+- **Ruled out the KI-0027 suspect FROM THE LOG ALONE** (the upgrade's first payoff): the entity
+  enum `Libs\Tables/ai/smartEntity/SmartEntity__*.xml matched=577` is mask-CORRECT — every returned
+  name is `smartentity__*.xml`, ZERO non-`__` over-match (KI-0027 was a 528 whole-dir over-match;
+  this is not that). The 316× `gfxfontlib_glyphs.gfx` re-read is normal (26 ms, progressing chunks,
+  not a spin). Both eliminated without cdb. (PROVEN — enum entry-name sets)
+- **THE FREEZE WINDOW IS FS-SILENT.** With the window covering the freeze (run open 6 min,
+  heartbeat → tick 121853), the 4-minute freeze gap (10:53–10:57) has **ZERO FS operations**. The
+  only freeze-period FS is benign `kcd.log` open-misses (the engine's own log, a write retry) + one
+  periodic cursor-texture reload. NO entity reads, NO enumerations, NO game-data loads, NO failures
+  during the wedge. (PROVEN — `grep FS_BOOT_TRACE` in 10:53–10:57 window = 0)
+
+**DECISIVE REFRAME — the wedge is COMPUTE/SYNC inside `CreateInstance`, not a filesystem serve.**
+`CreateInstance` (where Main + RenderThread both sit, PROBE K.3) does NO file I/O while wedged — the
+tick keeps running, but instance construction spins in compute/sync without finishing and without
+touching the FS. So the FS-takeover swap perturbs `CreateInstance` through something that is NOT a
+file op: a STATE value the swap changed, an object/pointer/handle the swap altered, or an
+init-ordering/threading effect — NOT a wrong-served file (FS content exonerated by PROBE I diffs=0;
+FS serving exonerated by this FS-silent freeze). The KI-0026/KI-0027 "wrong-served-file" class is
+RULED OUT for this wedge.
+
+**OWED next (off the FS axis entirely):** instrument `C_Game::CreateInstance` INTERNALS, not the
+filesystem. Identify what the entity-init loop (`0x36eb39` + its caller) spins/waits on in compute —
+a state flag, a counter, a cross-thread sync object, an entity-registry value — that the swap leaves
+in a never-satisfied state. Candidate probes: (a) read `0x36eb39`'s caller body for the loop's exit
+condition (static, AP19 — read the body); (b) a swap-on vs swap-off diff of the non-FS state the
+swap touches at seating (what besides the CCryPak vtable does the swap change?); (c) instrument the
+CreateInstance loop's condition variable / counter directly. Fix stays in kcdx full-init ownership
+(no thunk-back). KI OPEN (AP17 — no mechanism paragraph yet).
+
 **Outcome→meaning map (pre-committed, flat — first row FALSIFIES the present framing):**
 - `d_present ≈ 0` each interval → present essentially never called → loop never reaches
   present → **wedge is UPSTREAM (entity/instance init, P-J.5)** → next: identify `0x36eb39`'s
