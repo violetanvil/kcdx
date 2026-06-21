@@ -8,6 +8,22 @@ this investigation) from INFERRED claims (reasoned but not fully proven) from OP
 prior commit or the KI body states something with more confidence than the evidence supports, this
 document supersedes it and says so. Do not act on an INFERRED claim as if VERIFIED.
 
+> **CORRECTION — 2026-06-21 (supersedes the "entity-init" identification throughout this doc and the
+> KI body).** The wedge-stack frames `WHGame!ffxFsr2ResourceIsNull+0x36eb39` / `+0x36ff17` / `+0x36af90`
+> are `ffxFsr2ResourceIsNull` (a NEAREST-EXPORT label, §2.6) **+ offset** — NOT raw RVAs. The prior
+> work stripped the prefix and disassembled the bare offset `0x36eb39` AS a raw RVA, landing in an
+> unrelated entity-name stub (which holds `"dummy_no_ai"`/`"player"`/GUID strings by coincidence), and
+> concluded "entity/AI init." **That identification is an offset-vs-RVA conflation artifact.** Real RVA
+> = export `0x4fb100` + offset → the wedge fn is **`0x869c39`**, a **window/display-mode/fullscreen**
+> function (reads `r_Fullscreen`, polls the `0x492b890` window-manager singleton). Proven 3 ways:
+> (1) `0x4fb100+0x36af90 = 0x866090` = Main's confirmed focus-poll RIP (§2.5); (2) raw `0x36eb39` has 0
+> back-edges, real `0x869c39` has the enclosing loop; (3) `0x869c39` carries `r_Fullscreen` + the
+> window-mgr singleton KI line 436 already ID'd. **Every "entity-init"/"CreateInstance entity
+> construction" claim below (2.4 and downstream) is downgraded to "window/display-mode loop."** Full
+> read + the pinned mechanism: `FINDING-real-rva-window-mode-loop.md` (this dir). The offset-vs-RVA trap
+> applies to EVERY `ffxFsr2ResourceIsNull+0x…` / `NVSDK_NGX_…+0x…` frame in the trail — add the export
+> RVA before disassembling.
+
 ---
 
 ## 1. The symptom (what the user observes)
@@ -58,12 +74,15 @@ Each fact cites its evidence. "VERIFIED" means observed directly this investigat
   (VERIFIED — `cdb_pl_probeL_wedge.txt`, kcdx PDB loaded, frames resolved.)
 - This stack is byte-for-byte identical across runs (P-A and PROBE L). The wedge shape is stable.
 
-### 2.4 `0x36eb39` is the entity/AI-init function (identified by its string constants)
-- The WHGame function at RVA `0x36eb39` carries the string constants `"dummy_no_ai"`, `"player"`,
-  `"<INVALID>"`, and 8 entity-class GUIDs. These are CryEngine entity archetype/soul names + entity
-  class IDs. (VERIFIED — `disasm_pj3_compute_frame.py`, KI-0026 string-ref method.)
-- `0x36eb39` appears directly on the wedge stack (2.3). So the code Main runs at the wedge is
-  game-instance / entity construction.
+### 2.4 ~~`0x36eb39` is the entity/AI-init function~~ — WITHDRAWN (offset-vs-RVA artifact); the real frame is a WINDOW/DISPLAY-MODE loop at RVA 0x869c39
+- **WITHDRAWN.** The stack frame is `ffxFsr2ResourceIsNull+0x36eb39`; `0x36eb39` is an OFFSET, not an
+  RVA (see the CORRECTION at the top). The prior read disassembled raw `0x36eb39` (an unrelated entity-
+  name stub holding `"dummy_no_ai"`/`"player"`/GUID strings) and mis-identified the wedge as entity-init.
+- **The real wedge frame is RVA `0x869c39`** (= `ffx export 0x4fb100 + 0x36eb39`): a window/display-mode
+  function that reads the `r_Fullscreen` cvar and polls the `0x492b890` window-manager singleton, with an
+  enclosing loop around the wedge call site. (VERIFIED — `disasm_36eb39_outer_loop.py` /
+  `disasm_869c39_exit_cond.py`; 3-way cross-check in the CORRECTION above.)
+- So the code Main runs at the wedge is **window/display-mode bring-up**, NOT entity construction.
 
 ### 2.5 The window/focus poll at the TOP of the stack is BOUNDED, not the infinite loop
 - The function at RVA `0x865fb4` (the `SleepEx` caller, labeled `…+0x36af90` on the stack) is a
@@ -160,11 +179,18 @@ the two diagnostic threads to test whether they (not the FS swap) cause the wedg
   wait has NOT been independently suppressed and tested. So "the FS dispatch alone causes it" is not
   proven; it is one of two remaining candidates.
 
-### 4.2 "`0x36eb39`'s outer loop is the infinite repetition" — INFERRED, NOT proven
-- The focus poll (2.5) is bounded, so SOMETHING above re-runs the chain. `0x36eb39` is the nearest
-  named frame above it. But `0x36eb39`'s outer back-edge / loop exit condition has NOT been read
-  (`FINDINGS.md` line 52 explicitly flags it AP19-unread). The infinite loop could be in `0x36eb39`,
-  `0x36ff17` (the frame between), or the engine update dispatcher. NOT established.
+### 4.2 The outer loop IS now read (RVA 0x869c39) — its exit condition is a completion-token spin; the ACTOR is still INFERRED
+- **UPDATE (2026-06-21): the outer loop has been read.** The focus poll (2.5) is bounded; the enclosing
+  loop is in the real wedge fn `0x869c39` (the window/display-mode fn — §2.4 corrected). It re-runs
+  WHILE a counter (`0x56628d8`/`0x56628dc`, `.data`) is `!= -1`, and exits (`ret`) when it is `-1`.
+  Helper `0x1c1e988` (EnterCriticalSection-guarded) flips the counter to `-1` only when it reads 0;
+  helper `0x1c1e91c` registers a task id into the counter + a TLS slot. So it is a critical-section-
+  guarded **producer/consumer completion handshake**: the loop spins waiting for a registered task to
+  complete (counter → `-1`); under the swap it never does. (VERIFIED static — `disasm_869c39_exit_cond.py`.)
+- **INFERRED, NOT proven:** WHICH task/producer, WHICH thread completes it, and HOW the swap stalls it.
+  Those are runtime facts (the live counter value + the critical-section owner + who registered the id) —
+  the owed live probe. It is also NOT yet proven that this loop's own spin is the wedge vs. the loop
+  returning each frame and being re-entered from above (the live counter value decides this).
 
 ### 4.3 "The wedge is compute/sync, not I/O" — PARTIALLY supported
 - 2.8 (no FS during the freeze) is VERIFIED. But "compute/sync" is a characterization of what's left
@@ -208,17 +234,22 @@ the two diagnostic threads to test whether they (not the FS swap) cause the wedg
 
 ## 6. OPEN questions (what is genuinely unknown)
 
-1. **What is the outer-loop exit condition that never flips?** The bounded focus poll (2.5) is
-   re-entered by an unread outer loop. The exact loop (in `0x36eb39`, `0x36ff17`, or the dispatcher)
-   and its exit condition are NOT read. This is the recorded next step (static disassembly, AP19).
+1. **~~What is the outer-loop exit condition?~~ READ (2026-06-21).** It is a critical-section-guarded
+   completion-token spin in the window/display-mode fn `0x869c39`: loop re-runs while counter
+   `0x56628d8`/`0x56628dc` `!= -1` (§4.2). The remaining unknown is the live counter value + the
+   producer that should flip it — a runtime fact (owed live probe), not a static one.
 2. **Of P-F's two remaining differentiators (FS dispatch vs the index-build INFINITE wait on Main),
-   which causes the wedge?** Not separated. The `BuildAssetIndexAtSeat()` `WaitForSingleObject(gate,
-   INFINITE)` runs on the main thread inside `CSystem::Init` — it has not been independently
-   suppressed-and-tested.
+   which causes the wedge?** Not separated by a probe — BUT the index-build wait is near-eliminable
+   from existing logs: `BuildAssetIndexAtSeat()` logs `seat_index_stored entries=307006` on wedging
+   runs (`src/fs_takeover/seating_hook.cpp:267`), i.e. its `WaitForSingleObject(gate, INFINITE)`
+   demonstrably RETURNED — a wait that returns is not where Main is stuck. This re-collapses the
+   suspect to the FS-dispatch/swap (consistent with P-F). Still worth a clean P-L.2 confirm, but
+   weaker than "two equal candidates."
 3. **If it is the FS dispatch: what state/value does the swapped CCryPak answer differently that the
-   entity-init loop consumes?** 2.8 rules out an in-progress file op AT wedge time, but not a value
-   served wrong EARLIER whose effect surfaces in the entity-init loop. PROBE I checked content for
-   SOME files (diffs=0), not all files the entity system reads.
+   window/display-mode completion-handshake consumes?** 2.8 rules out an in-progress file op AT wedge
+   time, but not a value served wrong EARLIER, or a NON-FS side effect of the swap, that stalls the
+   producer the `0x869c39` loop waits on. The handshake is cross-thread (critical section + TLS id),
+   so the swap likely perturbs the producer thread or a state it needs — to be observed live (Q#1).
 4. **Does the menu ever render if left long enough (latency) or never (true wedge)?** The heartbeat
    runs 9+ minutes with no menu, which strongly suggests a true wedge, but a definitive "never" has
    not been asserted with a controlled long wait + a menu-ready signal.

@@ -14,6 +14,17 @@ commit_at_filing: 4befc07
 > investigation log; where an earlier entry states something with more confidence than the handoff,
 > the **handoff governs**. Several earlier "PROVEN"/"converged"/"exonerated" claims have been
 > downgraded in place — read the handoff first.
+>
+> **CORRECTION (2026-06-21) — the wedge is a WINDOW/DISPLAY-MODE loop, NOT entity-init.** Every
+> "entity-init" / "`0x36eb39`" / "`CreateInstance` entity construction" claim in this trail is an
+> **offset-vs-RVA conflation artifact**: the cdb frames are `ffxFsr2ResourceIsNull` (nearest-export
+> NOISE) **+ offset**, and the bare offset `0x36eb39` was disassembled as a raw RVA (an unrelated
+> entity-name stub). The REAL wedge fn is RVA **`0x869c39`** (= export `0x4fb100` + `0x36eb39`): a
+> window/display-mode/fullscreen function (`r_Fullscreen`, the `0x492b890` window-mgr singleton) whose
+> outer loop is a **critical-section-guarded completion-token spin** (re-runs while counter
+> `0x56628d8`/`0x56628dc` `!= -1`) the FS swap leaves never-satisfied. Proof + the pinned mechanism +
+> the owed live probe: `_research/ki0028-fsr2-poll-loop-recon/FINDING-real-rva-window-mode-loop.md`.
+> Read "entity-init" anywhere below as "window/display-mode loop (RVA 0x869c39)".
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
@@ -843,17 +854,23 @@ The evidence points at one area; NOT every link is proven:
 3. The game is NOT hung — the main-thread heartbeat advances continuously (VERIFIED, 2.2 of handoff).
 4. Present is idle because never called, not blocked (PROBE K, on a pre-PROBE-L build). (VERIFIED on
    that build.)
-5. **Main is in `C_Game::CreateInstance` at the wedge** (VERIFIED — stack, §2.3 of handoff). The
-   claim that RenderThread is ALSO "stuck in CreateInstance" rests on frames labeled by nearest
-   export (NGX/FSR2), which are NOISE (§2.6) — so the RenderThread half of this item is NOT reliably
-   established; treat "Main is in CreateInstance" as the proven part.
+5. **Main is at the wedge in a WINDOW/DISPLAY-MODE loop (RVA `0x869c39`)** (VERIFIED — stack §2.3 +
+   the offset-vs-RVA correction at the top of this file + `FINDING-real-rva-window-mode-loop.md`). The
+   earlier "Main is in `C_Game::CreateInstance` entity-init" framing was the offset-vs-RVA artifact —
+   `C_Game::CreateInstance+0x2e8c63` is itself a nearest-export-relative label; the real fn is the
+   window/display-mode `0x869c39`. The RenderThread "also in CreateInstance" claim was already flagged
+   as nearest-export NOISE (§2.6) and stays withdrawn.
 
-**ROOT-CAUSE QUESTION (still open):** of {FS dispatch, the index-build INFINITE wait}, which causes
-the wedge, and via what value/state the entity-init loop consumes? FS content was byte-correct where
-checked and the freeze window is FS-silent (so not an in-progress wrong serve AT wedge time), but a
-value served wrong EARLIER in boot is not ruled out. Next: read `0x36eb39`/`0x36ff17` for the outer
-loop's exit condition (AP19); separate the two P-F differentiators (P-L.2); read the unread
-`game/kcd.log` in the PROBE L crash bundle. Fix stays in kcdx full-init ownership (no thunk-back). KI
+**ROOT-CAUSE QUESTION (still open) — now PINNED to a mechanism class:** the window/display-mode loop
+`0x869c39` is a critical-section-guarded **completion-token spin** (re-runs while `0x56628d8`/
+`0x56628dc` `!= -1`; helper `0x1c1e988` flips to `-1` on completion, `0x1c1e91c` registers the task).
+It waits for a registered task to complete; under the swap it never does. OPEN: WHICH task/producer,
+WHICH thread completes it, and HOW the swap stalls it (runtime facts). The index-build INFINITE wait is
+near-eliminated (it logs `seat_index_stored` on wedging runs — it returned). FS content was byte-correct
+where checked and the freeze is FS-silent (not an in-progress wrong serve AT wedge time), but a value
+set wrong EARLIER, or a non-FS swap side effect that stalls the producer, is not ruled out. Next: a live
+theory-independent read of the counters + the critical-section owner swap-on vs swap-off (the owed probe
+in `FINDING-real-rva-window-mode-loop.md`). Fix stays in kcdx full-init ownership (no thunk-back). KI
 stays OPEN until the Resolution names the mechanism (AP17).
 
 ### FS-op logging contract upgrade + freeze-window capture (2026-06-21) — the wedge is FS-SILENT compute, NOT a filesystem serve
