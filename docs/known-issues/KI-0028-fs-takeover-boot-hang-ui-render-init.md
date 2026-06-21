@@ -484,7 +484,7 @@ of times → an outer loop exists and the logged caller RVA names it exactly (no
 never fires but boot still hangs → the helper is innocent and the old captures were a
 dead-process artifact (the wedge is elsewhere). Built on the existing boot_watch wiring.
 
-### PROBE I RESULT (RAN 2026-06-21 09:25–09:28) — FS FULLY EXONERATED; the wedge is NGX/FSR2 UpdateFeature on the RenderThread
+### PROBE I RESULT (RAN 2026-06-21 09:25–09:28) — FS FULLY EXONERATED; the wedge is a RenderThread SRW-condvar wait (subsystem UNidentified — NGX/FSR2 labels are nearest-export NOISE)
 
 PROBE I extended the FS_BOOT_TRACE window 600 frames past the first tick (the render/UI-init
 phase the original gate left dark). Outcome: **PROBE I's Outcome 2 — the filesystem is exonerated
@@ -501,26 +501,38 @@ PROVEN:
   extended trace = empty)
 - **NGX's own files NEVER route through kcdx** — `nvngx|dlss|fsr|ngx` served-path count = 0. The
   FS is doubly exonerated for the NGX wedge. (PROVEN — grep = 0)
-- **The RenderThread (`17d8.42a8`, cdb-named "RenderThread") is a dedicated FSR2/NGX thread blocked
-  in `NVSDK_NGX_UpdateFeature` on an SRW condvar:** `NtWaitForAlertByThreadId ←
-  RtlSleepConditionVariableSRW ← SleepConditionVariableSRW ← NVSDK_NGX_UpdateFeature+0x20139e ←
-  ffxFsr2ResourceIsNull+0x4b1cfb ← +0x36c3d3 ← +0x567a86 ← BaseThreadInitThunk` (its thread root is
-  FSR2 — a dedicated upscaler thread). A second thread is in `NVSDK_NGX_UpdateFeature+0x1eea94`.
-  (PROVEN — `ki0028-probei-allthreads-0928.txt`)
+- **The RenderThread (`17d8.42a8`, cdb-named "RenderThread") is blocked on an SRW CONDITION
+  VARIABLE:** `NtWaitForAlertByThreadId ← RtlSleepConditionVariableSRW ← SleepConditionVariableSRW
+  ← [WHGame, unidentified function] ← [WHGame] ← [WHGame] ← BaseThreadInitThunk`. The
+  `SleepConditionVariableSRW` wait is REAL (a kernel call, not a label). (PROVEN —
+  `ki0028-probei-allthreads-0928.txt`)
+- **⚠ THE `NVSDK_NGX_UpdateFeature` / `ffxFsr2ResourceIsNull` FRAME NAMES ARE NEAREST-EXPORT NOISE —
+  NOT verified as NGX/FSR2.** WHGame has no PDB; cdb labels every address by the nearest export
+  below it. The frame offsets are **2–9 MB PAST the export** (`ffxFsr2ResourceIsNull` export = RVA
+  `0x4fb100`; frames at `+0x4b1cfb`/`+0x567a86`/`+0x866ca3` = real RVAs `0x9acdfb`/`0xa62b86`/
+  `0xd61da3`; `NVSDK_NGX_UpdateFeature` export = `0x1be7ef0`; frame `+0x20139e` = RVA `0x1de928e`,
+  2 MB past). A real function is a few KB, not megabytes — these are unrelated WHGame functions
+  across a multi-MB span. **This is the EXACT KI-0026 trap:** there the identical
+  `NVSDK_NGX_UpdateFeature+…`/`ffxFsr2ResourceIsNull+…` labels were read as an NGX/FSR2 abort and
+  were WRONG — the real function was `CSystem::FatalError` (a CryEngine config-load failure), the
+  labels nearest-export noise. The real functions at these RVAs are NOT yet identified. (PROVEN —
+  export RVAs computed; offsets 2–9 MB; KI-0026 closed/ precedent)
 - **The heartbeat (Main) is STILL advancing** — tick=13377 at `09:28:20`, ~240fps. Main is not
   hung; audio plays (audio thread independent). (PROVEN — dev-log heartbeat)
 
-**CONVERGENCE — the investigation has eliminated the filesystem and localized the wedge:** the
-engine fully loads the menu (all FS correct, menu video streaming) and begins rendering, but the
-**RenderThread is blocked forever inside `NVSDK_NGX_UpdateFeature` (NVIDIA NGX / FSR2 upscaler) on
-an SRW condition variable that is never signaled → no frame ever presents → no visuals** (audio is
-on an independent thread). This is the SAME NGX wait the very first P-A capture saw — but now the
-entire path from boot to it is PROVEN clean (FS serves every render asset; NGX files never touch
-kcdx). The kcdx connection is NOT "what does kcdx serve wrong" (FS content is correct) — it is "what
-STATE does kcdx's takeover change that makes NGX's UpdateFeature wait forever." The remaining
-candidates are kcdx-introduced effects OTHER than FS content: an init ORDERING/timing difference, a
-resource/handle the NGX init consumes, or a threading effect — to be probed next. KI stays OPEN
-(no root-cause mechanism named yet, AP17).
+**CONVERGENCE — the investigation has eliminated the FILESYSTEM; the wedge is in the render path
+(subsystem NOT yet identified):** the engine fully loads the menu (all FS correct, menu video
+streaming) and begins rendering, but the **RenderThread is blocked forever on an SRW condition
+variable that is never signaled → no frame ever presents → no visuals** (audio independent). The FS
+is doubly exonerated (PROBE I: clean render-init stream; NGX/dlss/fsr files never route through
+kcdx). **What the RenderThread is waiting IN is NOT yet known** — the `NGX/FSR2` frame names are
+nearest-export noise (above), the same mislabel that misdirected KI-0026. It could be the upscaler,
+the swapchain/present, a render-resource fence, or any render-path condvar. The kcdx connection is
+NOT "serves wrong content" (FS is correct) — it is "what STATE does the takeover change that makes a
+render-path thread wait forever on a condvar nothing signals." OWED next: identify the REAL
+functions at RVAs `0x1de928e` / `0x9acdfb` / `0xa62b86` (disasm the containing functions + their
+string refs, KI-0026's method) BEFORE naming any subsystem. KI stays OPEN; no root-cause mechanism,
+no subsystem named yet (AP17 — do not assign blame to FSR2/NGX on a nearest-export label).
 
 ### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
 
