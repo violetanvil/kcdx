@@ -484,6 +484,44 @@ of times → an outer loop exists and the logged caller RVA names it exactly (no
 never fires but boot still hangs → the helper is innocent and the old captures were a
 dead-process artifact (the wedge is elsewhere). Built on the existing boot_watch wiring.
 
+### PROBE I RESULT (RAN 2026-06-21 09:25–09:28) — FS FULLY EXONERATED; the wedge is NGX/FSR2 UpdateFeature on the RenderThread
+
+PROBE I extended the FS_BOOT_TRACE window 600 frames past the first tick (the render/UI-init
+phase the original gate left dark). Outcome: **PROBE I's Outcome 2 — the filesystem is exonerated
+and the wedge is downstream, in the render path.** (RAN — `_research/probe-archive/ki0028-probei-*`)
+
+PROVEN:
+- **The extended window covered the FULL menu/render init** — the trace shows the menu's own
+  assets served correctly: every `shaders/*.ext`, `textures/.../*.dds`, and the MAIN-MENU BACKGROUND
+  VIDEO `videos/menu/main_menu_kutnohorsko3/main_menu_kutnohorsko3.bk2` (Bink) opened and streaming
+  (a `FReadRaw handle=3` re-read ~3/sec = the looping menu video). The engine REACHED the menu-load
+  stage and got all its assets. (PROVEN — PROBE I FS trace, `ki0028-probei-fstrace-fullwindow.txt`)
+- **ZERO anomalous FS results in the render-init window** — no `size=0`/`size=-1`/error/false-exist
+  on any render/shader/UI asset. kcdx served every render asset correctly. (PROVEN — grep of the
+  extended trace = empty)
+- **NGX's own files NEVER route through kcdx** — `nvngx|dlss|fsr|ngx` served-path count = 0. The
+  FS is doubly exonerated for the NGX wedge. (PROVEN — grep = 0)
+- **The RenderThread (`17d8.42a8`, cdb-named "RenderThread") is a dedicated FSR2/NGX thread blocked
+  in `NVSDK_NGX_UpdateFeature` on an SRW condvar:** `NtWaitForAlertByThreadId ←
+  RtlSleepConditionVariableSRW ← SleepConditionVariableSRW ← NVSDK_NGX_UpdateFeature+0x20139e ←
+  ffxFsr2ResourceIsNull+0x4b1cfb ← +0x36c3d3 ← +0x567a86 ← BaseThreadInitThunk` (its thread root is
+  FSR2 — a dedicated upscaler thread). A second thread is in `NVSDK_NGX_UpdateFeature+0x1eea94`.
+  (PROVEN — `ki0028-probei-allthreads-0928.txt`)
+- **The heartbeat (Main) is STILL advancing** — tick=13377 at `09:28:20`, ~240fps. Main is not
+  hung; audio plays (audio thread independent). (PROVEN — dev-log heartbeat)
+
+**CONVERGENCE — the investigation has eliminated the filesystem and localized the wedge:** the
+engine fully loads the menu (all FS correct, menu video streaming) and begins rendering, but the
+**RenderThread is blocked forever inside `NVSDK_NGX_UpdateFeature` (NVIDIA NGX / FSR2 upscaler) on
+an SRW condition variable that is never signaled → no frame ever presents → no visuals** (audio is
+on an independent thread). This is the SAME NGX wait the very first P-A capture saw — but now the
+entire path from boot to it is PROVEN clean (FS serves every render asset; NGX files never touch
+kcdx). The kcdx connection is NOT "what does kcdx serve wrong" (FS content is correct) — it is "what
+STATE does kcdx's takeover change that makes NGX's UpdateFeature wait forever." The remaining
+candidates are kcdx-introduced effects OTHER than FS content: an init ORDERING/timing difference, a
+resource/handle the NGX init consumes, or a threading effect — to be probed next. KI stays OPEN
+(no root-cause mechanism named yet, AP17).
+
 ### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
 
 The confound check RESOLVED the contradiction and overturned the whole "init hang" premise:
