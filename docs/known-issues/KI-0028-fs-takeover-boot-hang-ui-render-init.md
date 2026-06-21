@@ -433,12 +433,85 @@ Disassembled the `SleepEx` frame (`ffxFsr2ResourceIsNull+0x36af90`, RVA 0x865fb4
   infinite repetition is `CreateInstance`'s OUTER loop re-running this step — that outer
   body is NOT yet read (AP19: not asserting its exact exit condition). (FACT — caller scan)
 
-**DIRECTION CHANGE:** KI-0028 is NOT "the FS takeover serves FSR2 wrong content." It is a
-**window activation / focus handshake that never completes** — the game window never becomes
-the active window, so the outer init loop never proceeds → no menu; the window never enters
-its normal message loop → Alt+F4 ignored (mechanism now explained). The kcdx suspect surface
-shifts from FS-content to **whether kcdx's init perturbs window creation / activation / focus
-/ the window-manager singleton at 0x492b890.**
+**LEAD (NOT yet a grounded conclusion — corrected 2026-06-21):** the inner `SleepEx` helper
+(RVA 0x865fb4) is a window/activation poll, but it is **BOUNDED to 5 iterations** (~25ms) and
+returns regardless — it is NOT itself the infinite hang. P-H's byte-identical 2s-apart samples
+caught Main inside THIS bounded helper's `Sleep`, but the never-ending repetition is the OUTER
+`CreateInstance` loop (above call site 0x667ddd), whose exit condition is **UNREAD**. So
+"KI-0028 is a window-focus handshake that never completes" is an **extrapolation from the inner
+helper, not yet verified** — the earlier "DIRECTION CHANGE" framing over-claimed it.
+
+USER EVIDENCE that the window-focus story is at least incomplete: launches WITH focus acquired
+(mouse cursor changed on click → the window WAS active at the OS level) ALSO hung. If the gate
+were purely "window never becomes active," a focused launch would proceed. It didn't. So the
+gate is NOT simply GetActiveWindow-matching; re-observe, do not theory-hop.
+
+**The unread load-bearing fact (next, static — no launch):** read the OUTER `CreateInstance`
+loop body around 0x667ddd for its TRUE exit condition (AP19 — read the caller's body, do not
+infer). Batch with: what `[vtbl+0x2d0]/[+0x740]` returns (the engine's "expected window" rsi),
+the four inner early-exits (`[rcx+0x5c1]`, `[rcx+0x5b1]`, the two `[rip]` globals), and the
+identity of the singleton at 0x492b890. Only once the outer gate is known is a launch probe
+(launcher-method vs in-process-takeover) the right spend.
+
+### Step-by-step static verification (2026-06-21) — a VERIFIED CONTRADICTION, probe owed
+
+Verified each part against the binary; results graded:
+- **VERIFIED** — Main's RIP `0x866090` = `inc edi` immediately after `call Sleep` (the helper's
+  Sleep-return); RVA mapping `ffxFsr2ResourceIsNull(0x4fb100)+0x36af90` confirmed.
+- **VERIFIED** — the helper (RVA 0x865fb4) is BOUNDED: `mov ecx,5; call KERNEL32!Sleep; inc edi;
+  cmp edi,5; jl 0x866023`. `Sleep(5)`, 5 iterations max, `edi` never reset → ~25ms then returns.
+  (Re-read twice; imports resolved: Sleep @ IAT 0x3a02738, GetActiveWindow @ 0x3a03260.)
+- **FALSIFIED** — `0x667ddd` was NOT the caller (a stray E8-scan match in an unrelated fn). The
+  REAL caller return addr is `CreateInstance(0xda65e4)+0x2e8d7d = 0x108f361`; the frames read
+  around it are bounded count-loops + an epilogue, no infinite loop.
+- **THE CONTRADICTION (the real signal):** the three captures (22:38 all-threads + sampleA +
+  sampleB, ~2s apart) show Main at the IDENTICAL RIP `0x866090` AND identical RSP chain
+  (`8010d0e8/d120/d1b0/d1e8` byte-for-byte). A bounded ~25ms helper CANNOT hold Main 2s, and an
+  outer-loop re-call would SHIFT the RSP. Identical RIP+RSP across 2s with a provably-bounded
+  body is impossible under normal execution.
+- **The likely confound (checkable only by a fresh probe):** the cdb captures were `-pv`
+  NONINVASIVE ("Process is not attached as a debuggee; debug events will not be received") on a
+  process that may already have been frozen / mid-teardown (post-AltF4). A dead/suspended process
+  yields identical snapshots trivially — so "identical 2s apart" may be an ARTIFACT of a
+  non-running process, NOT evidence of a hang-in-place. This cannot be resolved from the stale
+  captures.
+
+**PROBE OWED (user-chosen: probe the helper directly).** Instrument helper `0x865fb4` ENTRY on a
+FRESH live run: log a fire counter + the caller return address (read `[rsp]` at entry) under a
+stable tag, bounded to the first ~200 fires. Outcome map: fires ONCE and Main genuinely sits in
+it → the "bounded" read is somehow wrong OR Sleep isn't returning (re-examine); fires THOUSANDS
+of times → an outer loop exists and the logged caller RVA names it exactly (no more guessing);
+never fires but boot still hangs → the helper is innocent and the old captures were a
+dead-process artifact (the wedge is elsewhere). Built on the existing boot_watch wiring.
+
+### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
+
+The confound check RESOLVED the contradiction and overturned the whole "init hang" premise:
+- **The heartbeat tid is `44480` = `0xadc0` = the SAME thread cdb labeled "Main"** (`90c4.adc0`),
+  and `CGame::Update` (the heartbeat source) is "Main-thread by construction" (seed id-2). (PROVEN
+  — heartbeat `tid=44480`; Main `90c4.adc0`; `0xadc0`=44480.)
+- **The heartbeat advanced to tick=58253 at 22:43:29** — long AFTER the cdb samples (22:40:11–14)
+  and the first all-threads capture (22:38:54). Main ran `HookedUpdate` continuously the whole
+  time. (PROVEN — dev-log heartbeat stream.)
+- **∴ Main is NOT stuck.** It runs the normal per-frame loop; each frame it passes through the
+  window/`Sleep(5)` helper (per-frame pacing/yield, bounded ~25ms). The cdb `-pv` NONINVASIVE
+  samples just repeatedly caught Main during that recurring per-frame Sleep at the same call
+  depth — NOT a freeze. "Identical RIP+RSP across 2s" was a sampling artifact of a RECURRING
+  per-frame Sleep, not a pinned thread.
+
+**The premise INVERTS:** the game's main loop is RUNNING at full rate (58k+ ticks), yet the user
+sees no menu and Alt+F4 doesn't close it. This is NOT an init-never-completes hang — it is a
+RUNNING game that does not RENDER / does not process window input. The whole "C_Game::CreateInstance
+never returns" framing is WRONG: `CreateInstance` (or the frame path cdb labels with its nearest
+export) is being entered every frame as part of the live update; the labels are nearest-export
+noise, not a stuck init.
+
+**Investigation reset (theories hopped 3×: deadlock → latency → sleep-loop → not-hung-at-all).**
+Per `results-driven.md` (re-observe, don't theory-hop) + `/debug` §B.5 (2+ hops → fresh frame):
+the next step is NOT another guess. Direct observable: a RUNNING main loop + no render + no input.
+The probe target shifts from "find the hang" to "the game runs but doesn't present a frame / pump
+window messages — why." Owed: fresh-frame observation of the render/present + window-message path,
+NOT the (innocent, bounded, per-frame) Sleep helper.
 
 **Gate A corrections (architect-review, BINDING — the build MUST honor these):**
 - **F1 (CRITICAL, source-confirmed):** every `LOG_*_KV` takes the stream mutex (`src/log.cpp:520/529/538`).
