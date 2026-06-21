@@ -39,7 +39,6 @@ KcdxHandle H(void* handle) {
 size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
                                 size_t count, long long taggedHandle) {
     (void)self;
-    TraceRead("FReadRaw_byPakIndex", taggedHandle);  // FS_BOOT_TRACE (PROBE K)
     // SOURCE: FINDINGS slot-38 body — FUN_180461304(p1,p2,p3,p4,p5); p5 (arg 5,
     // `taggedHandle`) is the tagged handle/pak-index. This is the ONE read slot
     // whose handle is arg 5, not the FILE*-position arg its siblings use — a
@@ -58,6 +57,11 @@ size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
     bool ok = false;
     const size_t want = size * count;
     const size_t got = Read(static_cast<KcdxHandle>(taggedHandle), buf, want, ok);
+    // FS-op trace AFTER the read — names the file (resolved from the handle) +
+    // bytes wanted/got + result, so a wrong/short/failed read is readable in the
+    // log (was: opaque handle only). FS_BOOT_TRACE (PROBE K).
+    TraceRead("FReadRaw_byPakIndex", taggedHandle,
+              static_cast<long long>(want), static_cast<long long>(got), ok);
     // The engine's FReadRaw returns the byte count read (front-3 body — the OS
     // arm returns fread's element count*size). Return bytes read; a short read
     // at EOF is normal (ok stays true). ok==false means a bad handle / CRT error
@@ -71,11 +75,12 @@ size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
 // seek-to-0 then read `size` bytes on kcdx's CRT.
 size_t kcdx_FReadRaw(void* self, void* buf, size_t size, void* handle) {
     (void)self;
-    TraceRead("FReadRaw", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     const KcdxHandle h = H(handle);
     Seek(h, 0, SEEK_SET);  // the body's leading fseek-to-0
     bool ok = false;
     const size_t got = Read(h, buf, size, ok);
+    TraceRead("FReadRaw", static_cast<long long>(h),
+              static_cast<long long>(size), static_cast<long long>(got), ok);  // FS_BOOT_TRACE
     return got;
 }
 
@@ -84,10 +89,12 @@ size_t kcdx_FReadRaw(void* self, void* buf, size_t size, void* handle) {
 // inflated buffer zero-copy, a loose source's whole-file cache.
 void* kcdx_FGetCachedFileData(void* self, void* handle, long long* outSizeDst) {
     (void)self;
-    TraceRead("FGetCachedFileData", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     long long sz = 0;
     const void* data = GetCachedFileData(H(handle), &sz);
     if (outSizeDst) *outSizeDst = sz;
+    // FS-op trace AFTER — want=-1 (whole-file fetch, no count), got=sz, ok=data!=null.
+    TraceRead("FGetCachedFileData", static_cast<long long>(H(handle)),
+              -1, sz, data != nullptr);  // FS_BOOT_TRACE
     return const_cast<void*>(data);  // the engine reads it; the pool owns it (stable until Close)
 }
 
@@ -96,7 +103,6 @@ void* kcdx_FGetCachedFileData(void* self, void* handle, long long* outSizeDst) {
 size_t kcdx_FWrite(void* self, const void* buf, size_t size, size_t count,
                    void* handle) {
     (void)self;
-    TraceRead("FWrite", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
     if (count != 0 && size > SIZE_MAX / count) {
         // size*count would overflow → a wrapped small/zero count is a silent
         // short write reported as success (AP14). Untrusted engine multiplicands
@@ -109,23 +115,28 @@ size_t kcdx_FWrite(void* self, const void* buf, size_t size, size_t count,
         return 0;
     }
     bool ok = false;
-    return Write(H(handle), buf, size * count, ok);
+    const size_t want = size * count;
+    const size_t wrote = Write(H(handle), buf, want, ok);
+    TraceRead("FWrite", static_cast<long long>(H(handle)),
+              static_cast<long long>(want), static_cast<long long>(wrote), ok);  // FS_BOOT_TRACE
+    return wrote;
 }
 
 // slot 53 — FSeek (LEAF-IDENTIFIED, fseek-shaped). Seeks the handle; returns 0
 // on success, non-zero on failure (libc fseek convention).
 int kcdx_FSeek(void* self, void* handle, long offset, int origin) {
     (void)self;
-    TraceRead("FSeek", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
-    return Seek(H(handle), static_cast<long long>(offset), origin);
+    const int rc = Seek(H(handle), static_cast<long long>(offset), origin);
+    TraceRead("FSeek", static_cast<long long>(H(handle)), -1, -1, rc == 0);  // FS_BOOT_TRACE
+    return rc;
 }
 
 // slot 54 — FTell (LEAF-IDENTIFIED, _ftelli64-shaped). Current position, or -1.
 long long kcdx_FTell(void* self, void* handle) {
     (void)self;
     const KcdxHandle h = H(handle);
-    TraceRead("FTell", static_cast<long long>(h));  // FS_BOOT_TRACE (PROBE K)
     const long long pos = Tell(h);
+    TraceRead("FTell", static_cast<long long>(h), -1, pos, pos >= 0);  // FS_BOOT_TRACE
     return pos;
 }
 
@@ -133,14 +144,16 @@ long long kcdx_FTell(void* self, void* handle) {
 // CRT (kcdx fclose for loose; drop the pak buffer). Returns 0 / EOF.
 int kcdx_FClose(void* self, void* handle) {
     (void)self;
-    TraceRead("FClose", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    // Trace BEFORE Close — after close the handle is dead and the vpath cannot
+    // resolve (VpathForHandle rejects a closed slot). FS_BOOT_TRACE.
+    TraceRead("FClose", static_cast<long long>(H(handle)), -1, -1, true);
     return Close(H(handle));
 }
 
 // slot 56 — FEof (LEAF-IDENTIFIED, feof-shaped). Non-zero at EOF, 0 otherwise.
 int kcdx_FEof(void* self, void* handle) {
     (void)self;
-    TraceRead("FEof", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FEof", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return Eof(H(handle)) ? 1 : 0;
 }
 
@@ -149,15 +162,17 @@ int kcdx_FEof(void* self, void* handle) {
 // slot 43 — FGets (LEAF-IDENTIFIED, fgets-shaped). Returns buf / nullptr.
 char* kcdx_FGets(void* self, char* buf, int maxCount, void* handle) {
     (void)self;
-    TraceRead("FGets", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
-    return Gets(H(handle), buf, maxCount);
+    char* r = Gets(H(handle), buf, maxCount);
+    TraceRead("FGets", static_cast<long long>(H(handle)), maxCount, -1, r != nullptr);  // FS_BOOT_TRACE
+    return r;
 }
 
 // slot 44 — FGetc (LEAF-IDENTIFIED, fgetc-shaped). Next byte as int, or EOF(-1).
 int kcdx_FGetc(void* self, void* handle) {
     (void)self;
-    TraceRead("FGetc", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
-    return Getc(H(handle));
+    const int c = Getc(H(handle));
+    TraceRead("FGetc", static_cast<long long>(H(handle)), -1, -1, c != -1);  // FS_BOOT_TRACE
+    return c;
 }
 
 // slot 46 — FGetSize-by-handle (BODY-VERIFIED, FUN_180460c08, RVA 0x460C08).
@@ -175,35 +190,36 @@ int kcdx_FGetc(void* self, void* handle) {
 long long kcdx_FGetSize(void* self, void* handle) {
     (void)self;
     const KcdxHandle h = H(handle);
-    TraceRead("FGetSize", static_cast<long long>(h));  // FS_BOOT_TRACE (PROBE K)
-    return FileSize(h);
+    const long long sz = FileSize(h);
+    TraceRead("FGetSize", static_cast<long long>(h), -1, sz, sz >= 0);  // FS_BOOT_TRACE
+    return sz;
 }
 
 // slot 47 — FUngetc (LEAF-IDENTIFIED, ungetc-shaped). The char / EOF(-1).
 int kcdx_FUngetc(void* self, int ch, void* handle) {
     (void)self;
-    TraceRead("FUngetc", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FUngetc", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return Ungetc(H(handle), ch);
 }
 
 // slot 57 — FError (LEAF-IDENTIFIED, ferror-shaped). 0 = no error.
 int kcdx_FError(void* self, void* handle) {
     (void)self;
-    TraceRead("FError", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FError", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return Error(H(handle));
 }
 
 // slot 58 — FGetErrno (LEAF-IDENTIFIED, _errno-shaped). The stream errno.
 int kcdx_FGetErrno(void* self, void* handle) {
     (void)self;
-    TraceRead("FGetErrno", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FGetErrno", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return GetErrno(H(handle));
 }
 
 // slot 59 — FFlush (LEAF-IDENTIFIED, fflush-shaped). 0 on success.
 int kcdx_FFlush(void* self, void* handle) {
     (void)self;
-    TraceRead("FFlush", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FFlush", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return Flush(H(handle));
 }
 
@@ -211,7 +227,7 @@ int kcdx_FFlush(void* self, void* handle) {
 // FILETIME last-write time (__int64). RDX=handle, RAX=FILETIME.
 long long kcdx_FGetModificationTime(void* self, void* handle) {
     (void)self;
-    TraceRead("FGetModificationTime", static_cast<long long>(H(handle)));  // FS_BOOT_TRACE (PROBE K)
+    TraceRead("FGetModificationTime", static_cast<long long>(H(handle)), -1, -1, true);  // FS_BOOT_TRACE
     return GetModificationTime(H(handle));
 }
 

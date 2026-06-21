@@ -271,6 +271,11 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
         names.push_back(std::move(e.name));
         isDir.push_back(e.isDir ? 1 : 0);
     }
+    // FS-op trace contract: log the returned ENTRY NAMES (capped), not just the
+    // count — the KI-0027-class gap (a 528-over-match looked identical to a right
+    // walk by count alone). Traced from `names` BEFORE the move into the pool;
+    // gated (boot window only), so the sample-string build is a cold-path cost.
+    TraceEnumNames("FindFirst", pattern, names);
     const KcdxHandle h = MintFind(std::move(names), std::move(isDir));
     if (h == 0) {
         // Mint failed (logged loud by the pool) — fail to the no-match contract
@@ -310,7 +315,7 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
                 "back to kcdx's FindNext/FindClose; no engine CCryPakFindData, no "
                 "engine-CRT iterator state in kcdx's path (§5.1)."));
     }
-    TraceEnum("FindFirst", pattern, static_cast<long long>(entries.size()));
+    // (FindFirst entry-set already traced via TraceEnumNames above, before the move.)
 
     // The find-handle is returned as the engine's iterator handle. It is the
     // odd-tagged kcdx handle id (a small positive value ≥ 3, well above -1), so

@@ -88,7 +88,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     std::vector<uint8_t> bytes(kN, 0xAB);
 
     // --- (a) PAK SIZE: FileSize(pak handle) == N (NOT -1, NOT 0). -----------
-    fst::KcdxHandle hPak = fst::MintPak(std::move(bytes));
+    fst::KcdxHandle hPak = fst::MintPak(std::move(bytes), "cap-116-test-pak");
     if (hPak == 0) {
         Report(false, "(a) MintPak returned 0 (pool mint failed) — cannot test "
                       "the FGetSize contract");

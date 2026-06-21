@@ -114,7 +114,7 @@ bool IsKcdxHandle(KcdxHandle h) {
     return (h & kKcdxTag) != 0;
 }
 
-KcdxHandle MintLoose(FILE* fp) {
+KcdxHandle MintLoose(FILE* fp, const std::string& vpath) {
     if (!fp) return 0;
     std::lock_guard<std::mutex> lock(g_poolLock);
     const size_t id = AllocSlotLocked();
@@ -131,10 +131,11 @@ KcdxHandle MintLoose(FILE* fp) {
     s.kind   = OpenFile::Kind::Loose;
     s.closed = false;
     s.fp     = fp;
+    s.vpath  = vpath;  // FS-op trace contract — names this handle's file
     return Encode(id);
 }
 
-KcdxHandle MintPak(std::vector<uint8_t>&& bytes) {
+KcdxHandle MintPak(std::vector<uint8_t>&& bytes, const std::string& vpath) {
     std::lock_guard<std::mutex> lock(g_poolLock);
     const size_t id = AllocSlotLocked();
     if (id == 0) {
@@ -152,7 +153,19 @@ KcdxHandle MintPak(std::vector<uint8_t>&& bytes) {
     s.pakBytes = std::move(bytes);
     s.cursor   = 0;
     s.size     = s.pakBytes.size();
+    s.vpath    = vpath;  // FS-op trace contract — names this handle's file
     return Encode(id);
+}
+
+// === DIAGNOSTIC (FS-op trace contract) — resolve a handle's vpath. ==========
+// Leaf-lock lookup + string copy (SlotLocked rejects closed/find/bad). Returns
+// "" for a bad/closed/non-byte-source handle. Called ONLY from the boot-window-
+// gated read trace (never the steady-state read path), so the lock + copy never
+// touch the read hot path.
+std::string VpathForHandle(KcdxHandle h) {
+    std::lock_guard<std::mutex> lock(g_poolLock);
+    const OpenFile* s = SlotLocked(h);
+    return s ? s->vpath : std::string();
 }
 
 KcdxHandle MintFind(std::vector<std::string>&& names,

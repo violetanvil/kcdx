@@ -118,6 +118,17 @@ struct OpenFile {
     std::vector<std::string> findNames;
     std::vector<uint8_t>     findIsDir;  // 1 = directory (attr 0x10), 0 = file.
     size_t                   findCursor = 0;
+
+    // === DIAGNOSTIC (FS-op trace contract) — the vpath this handle opened. ===
+    // Set ONCE at mint (the cold open path); read ONLY by the boot-window read
+    // trace (gated by BootWindowActive — a predicted-skip after boot, so this
+    // string is never touched on the steady-state read path; memory.md/logging.md
+    // hot-path discipline holds). Lets a read-family trace line name the FILE it
+    // operates instead of only an opaque handle id — the systemic gap that made
+    // 35k boot reads unreadable. NO-RESIDUE: the field can stay (one std::string
+    // per open file, set on a cold path) as a kept diagnostic, or be removed with
+    // the trace; it costs nothing on the read hot path.
+    std::string vpath;
 };
 
 // The opaque handle the engine holds. A void*-width odd-tagged integer (the
@@ -135,12 +146,22 @@ bool IsKcdxHandle(KcdxHandle h);
 // closes it on Close()). Returns the opaque KcdxHandle (odd-tagged). Returns 0
 // on pool failure (logged loud) — 0 is never a valid kcdx handle (its tag bit
 // is clear), so a caller treats 0 as "mint failed" and fails the open loud.
-KcdxHandle MintLoose(FILE* fp);
+// `vpath` is the virtual path this handle opened (stored for the read trace; see
+// OpenFile::vpath). Pass "" if unknown.
+KcdxHandle MintLoose(FILE* fp, const std::string& vpath);
 
 // Mint a handle for a freshly-opened PAK source (takes ownership of the
 // inflated byte buffer by move). Returns the opaque KcdxHandle, or 0 on pool
-// failure (logged loud).
-KcdxHandle MintPak(std::vector<uint8_t>&& bytes);
+// failure (logged loud). `vpath` is the virtual path this handle opened (stored
+// for the read trace).
+KcdxHandle MintPak(std::vector<uint8_t>&& bytes, const std::string& vpath);
+
+// === DIAGNOSTIC (FS-op trace contract) ======================================
+// Resolve the vpath a kcdx handle opened (OpenFile::vpath), for a read-family
+// trace line. Returns the stored vpath, or "" for a bad/closed/non-kcdx handle.
+// Takes the pool lock briefly (a leaf-lock lookup + string copy). Called ONLY
+// from the boot-window-gated read trace, never on the steady-state read path.
+std::string VpathForHandle(KcdxHandle h);
 
 // === The find-handle (directory-iterator) ops — slots 63/64/65 ==============
 //

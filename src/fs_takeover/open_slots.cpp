@@ -111,7 +111,7 @@ KcdxHandle OpenLooseAndMint(const std::string& diskPath, const char* mode,
             kcdx::log::KV("errno", static_cast<long long>(oerr)));
         return 0;
     }
-    const KcdxHandle h = MintLoose(fp);
+    const KcdxHandle h = MintLoose(fp, std::string(vpathForLog ? vpathForLog : ""));
     if (h == 0) {
         std::fclose(fp);  // mint failed (logged in MintLoose) — don't leak the FILE*
         return 0;
@@ -149,7 +149,7 @@ KcdxHandle OpenPakAndMint(const ByteSource& src, const char* whichSlot,
             kcdx::log::KV("error", err));
         return 0;
     }
-    return MintPak(std::move(bytes));
+    return MintPak(std::move(bytes), std::string(vpathForLog ? vpathForLog : ""));
 }
 
 // The shared open body for slot 36 / slot 35: resolve pName via the unified
