@@ -534,6 +534,186 @@ functions at RVAs `0x1de928e` / `0x9acdfb` / `0xa62b86` (disasm the containing f
 string refs, KI-0026's method) BEFORE naming any subsystem. KI stays OPEN; no root-cause mechanism,
 no subsystem named yet (AP17 — do not assign blame to FSR2/NGX on a nearest-export label).
 
+### PROBE J — static identification EXHAUSTED → invasive live cdb (2026-06-21)
+
+Followed the owed step: ran KI-0026's identify-by-string-refs on the three real RVAs
+(`_research/ki0028-fsr2-poll-loop-recon/disasm_identify_renderwait.py`).
+
+PROVEN (static, no launch):
+- **All three RenderThread wait-frames are anonymous sync/dispatch leaf helpers with
+  ZERO string literals** — `0x1de928e` (the `_Cnd_wait` caller, 0x3e bytes), `0x9acdfb`
+  (its caller, 0x2b bytes), `0xa62b86` (0xea bytes). KI-0026's method needs a string
+  to name the function (`CSystem::FatalError` had a config-path string); these condvar
+  primitives carry none. **The string-ref method cannot name them.** (PROVEN — disasm)
+- **`0xa62b86` is the generic thread-pool trampoline, NOT render-specific** — it is the
+  IDENTICAL bottom frame across RenderThread (`17d8.42a8`), ShaderCompile (`17d8.93d0`),
+  AND AsyncCommandQueue (`17d8.9620`): `…+0x567a86 ← ucrtbase!thread_start ←
+  BaseThreadInitThunk`. So the earlier "three threads parked in NGX/FSR2" reading
+  OVERCOUNTED — the shared NGX-labeled bottom frame is the worker-pool entry, mislabeled
+  by nearest-export. Only the distinguishing upper frames matter. (PROVEN — PROBE I dump,
+  threads 25/26/27)
+- **∴ static is exhausted.** What the condvar waits to be signaled BY is a RUNTIME
+  relationship (the live `CONDITION_VARIABLE`/`SRWLOCK` address + who else references it)
+  that no static read settles (results-driven §4). (PROVEN — negative result recorded)
+
+| # | Probe | Status | Outcome |
+|---|-------|--------|---------|
+| J.1 | Static identify the 3 wait-frame RVAs (KI-0026 method) | DONE | anonymous sync helpers + thread-pool trampoline, 0 strings — un-nameable static |
+| J.2 | INVASIVE cdb on the live hung process: read the RenderThread's condvar/SRWLOCK address, find who else holds/waits it | pending | — |
+
+**P-J.2 (live, user-chosen option 1):** the game is live + wedged (PID 6104, 2.2 GB).
+Attach cdb INVASIVELY (`-p`, not `-pv`) — the prior captures were `-pv` noninvasive,
+which Reframe 6 proved mislead on a running game. Break in, locate the RenderThread,
+read the actual condvar + lock address its `RtlSleepConditionVariableSRW` is parked on
+(walk the frame locals / the `SleepConditionVariableSRW` args), then search all threads
++ memory for who else references that same address (the signaller). Outcome map:
+- A distinct subsystem's thread holds/owns the lock → names the real owning subsystem
+  (NOT from export labels) → next: how kcdx's takeover perturbs that subsystem's state.
+- No other thread references it / it is an orphaned wait → a lost-signal: the producer
+  that should signal never ran or signaled a different object → trace the producer.
+- cdb cannot hold an invasive break (x64dbg-class instability) → fall back to the
+  in-engine condvar-wait probe (option 2).
+
+### PROBE J.2 RESULT (RAN 2026-06-21 09:54–09:57, INVASIVE cdb + live heartbeat) — IT IS LATENCY, NOT A DEADLOCK; the heartbeat STALLED 17s THEN RECOVERED
+
+Attached cdb **invasively** (`-p`, not `-pv` — the prior captures' flaw) to a fresh hung
+session (PID 14512), captured all-thread verbose stacks, re-sampled, detached with `qd`
+(game left running). Then read the live `BOOT_WATCH` heartbeat. **The decisive P-H
+falsifier fired: the heartbeat RESUMED after the stall → LATENCY.** (RAN —
+`_research/probe-archive/ki0028-pj2-allstacks.txt`, `-resample.txt`, dev log
+`kcdx-dev_2026-06-21_09-54-27.log`)
+
+PROVEN:
+- **The heartbeat STALLED 17,031 ms then RECOVERED and is still advancing.** The P-H
+  watcher fired `BOOT_WATCH_STALL stalled_ms=17031 last_tick=3424` at `09:55:57` (its
+  auto-dump ran). But the heartbeat then RESUMED: tick 3726 @ `09:56:06` → tick 5270 @
+  `09:56:51`, ~35 ticks/s, mtime current. **Per the pre-committed P-H outcome map
+  (Reframe 6, F6: "Heartbeat RESUMING is the primary, decisive falsifier"): heartbeat
+  resumes after the stall ⇒ LATENCY, not deadlock.** (PROVEN — dev-log heartbeat stream
+  + the single `BOOT_WATCH_STALL`)
+- **The heartbeat tid is `21632` — NOT Main (`5480`), NOT RenderThread (`a77c`).** Reframe 6
+  assumed heartbeat-tid = Main; that was WRONG. `CGame::Update` (the hook source) fires on
+  its own thread (21632). So "Main parked in CreateInstance" and "the update loop is alive"
+  are BOTH true simultaneously — they are different threads. (PROVEN — heartbeat `tid=21632`
+  vs cdb Main `38b0.5480`)
+- **The RenderThread (`a77c`) is doing forward WORK, not wedged — it changed stacks between
+  captures.** Pass-1: `BinkNextFrame ← BinkOpenXAudio27 ← XAUDIO2!CX2Engine::CreateSourceVoice
+  ← …CLeapSystem::AddToSkinList` (decoding the menu background video + creating its XAudio2
+  voice). Resample: `C_Game::CreateInstance+0x46514 ← SleepEx`. A thread that changes stacks
+  between samples is progressing, not parked. The PROBE I "RenderThread blocked on SRW condvar"
+  was a one-instant noninvasive sample, not a wedge. (PROVEN — pass-1 vs resample stacks differ)
+- **Main (`5480`) sits in `C_Game::CreateInstance+0x2e8c63 → SleepEx` (RVA 0x36af90, the
+  bounded `Sleep(5)` window-pacing helper).** Byte-identical across both invasive resamples —
+  but this is the SAME per-frame pacing helper the static recon already read as bounded (5×
+  `Sleep(5)`), and the update loop (tid 21632) advances regardless. So Main looping in this
+  pacing sleep is the normal frame cadence, not the wedge. (PROVEN — resample A/B + static recon)
+
+**~~VERDICT — KI-0028 is BOOT LATENCY~~ — PARTIALLY WITHDRAWN (user perceptual signal +
+P-J.3, below):** the heartbeat-resume DID falsify a lost-wakeup deadlock on the tick thread,
+but the user confirmed LIVE (47 min in) that **the screen is STILL black, audio still playing,
+still not interactive** — so it is NOT "slow boot that recovers to a menu." The tick recovering
+≠ the game presenting. The true shape is below.
+
+### PROBE J.3 RESULT (RAN 2026-06-21 ~09:58, INVASIVE cdb, game 47 min into the black-screen state) — NOTHING IS WEDGED; every thread runs; the failure is NO-PRESENT + NO-INPUT on a LIVE loop
+
+With the user confirming the screen is still black/silent-of-menu/non-interactive 47 min in,
+re-attached invasively and sampled Main (`5480`) twice + read the live window globals.
+
+PROVEN — **every thread is making forward progress; none is parked:**
+- **Main (`5480`) changed stacks across captures.** P-J.2 resample: `CreateInstance+0x2e8c63 →
+  SleepEx`. P-J.3: `ffxFsr2ResourceIsNull+0x3b020` (RVA 0x536120) running `movss xmm0,[rcx+0x1460]`
+  — a different RVA chain (`0x536120←0x536018←0x534135←0x53322e←0x53212e←0x36eb39`), pure compute,
+  no sleep. A thread at a different RIP each sample is RUNNING, not wedged. (PROVEN — P-J.2 vs P-J.3
+  Main stacks differ)
+- **The tick thread (`21632`) advances ~35/s; RenderThread (`a77c`) changes stacks** (Bink decode →
+  CreateInstance). **All three key threads run.** (PROVEN — heartbeat stream + P-J.2/J.3 stacks)
+- **Live window-mgr singleton @ `WHGame+0x492b890` = `0x7ff9cc35fe60`** (non-NULL — a populated
+  vtable'd object; the static image had NULL). So the window-manager object EXISTS. (PROVEN — `dq`)
+
+**CORRECTED VERDICT — KI-0028 is a NO-PRESENT + NO-INPUT failure on a RUNNING game, NOT a hang,
+NOT a deadlock, NOT recoverable latency.** The whole update/render/compute loop executes
+continuously (heartbeat 5k+ ticks, Main + RenderThread both progressing through different code each
+sample), yet: (a) no rendered frame is ever PRESENTED to the display (black screen), and (b) the
+window never processes input (dead to clicks / Alt+F4). Audio is independent (its own thread) so it
+plays. P-F proved the FS-takeover SWAP is the single differentiator (swap-off → interactive menu).
+So the swap perturbs the **present/swapchain + window-message path**, NOT FSR2 and NOT file content
+(both already exonerated). The `NGX/FSR2` labels throughout were nearest-export noise (KI-0026 trap),
+confirmed.
+
+**The pinned question (next probe):** what does the swapped CCryPak change about **window /
+swapchain creation / frame presentation / the window message pump** such that the loop runs but
+never presents a frame or pumps input? Candidates: the present/flip call path reads a
+state/resource the takeover altered; the swapchain or window was created against a surface the
+takeover's index perturbed; the window-message pump (Main) never reaches its `PeekMessage`/`Present`
+because it is buried in a per-frame `CreateInstance` sub-loop that the swap makes non-terminating
+(distinct from a deadlock — Main RUNS, it just never escapes the loop to pump). The fix stays inside
+kcdx full-init ownership (no thunk-back).
+
+### PROBE J.4 RESULT (RAN 2026-06-21, Win32 window query, ZERO process perturbation) — the window is VISIBLE + RESPONDING; only PRESENT-to-it fails
+
+Queried the live process's top-level windows via `EnumWindows`/`IsWindowVisible`/`GetWindowRect`
++ `Process.Responding` (no debugger, no perturbation).
+
+PROVEN:
+- **The game window EXISTS, is VISIBLE, correctly sized + styled.** `hwnd=0x60c64`, `vis=True`,
+  rect `(0,0)-(2560,1440)` 2560×1440, `style=0x94000000` (WS_VISIBLE|WS_CLIPSIBLINGS|
+  WS_CLIPCHILDREN — normal fullscreen game window), title "Kingdom Come: Deliverance II". The
+  black screen is NOT a missing/hidden/zero-size window. (PROVEN — `[W]::Find(14512)`)
+- **`Process.Responding = True` — the window IS pumping OS messages.** Windows' hung-window
+  detection (a `SendMessageTimeout` ping) reports the window answers. So Main's message pump is
+  NOT dead at the OS level — the "Main never pumps" sub-theory is FALSIFIED. (PROVEN —
+  `Get-Process(14512).Responding`)
+
+**This SHARPENS the reframe to a single mechanism:** the window is live, visible, and pumping OS
+messages — yet no rendered frame appears in it. ∴ the failure is specifically in **frame
+PRESENTATION (the DXGI/D3D12 swapchain Present/flip path), not the window and not the message
+pump.** Frames are computed (Main+RenderThread run) but never presented to the visible swapchain —
+OR present is called and produces black. The user's "not interactive" is downstream of the black
+screen (nothing rendered = nothing to interact with), not a separate input-pump failure (the pump
+works). 
+
+**Decisively narrowed next probe:** instrument the engine's **swapchain Present / flip** call —
+is it called each frame? Never called → the per-frame loop never reaches present (stuck short of
+it, e.g. an unterminating sub-loop before the present). Called but black → present runs against a
+swapchain the takeover-perturbed render init left wrong. This is the in-engine probe (the earlier
+option 2) with a now-PRECISE target: the present call, not "the render path". Fix stays in kcdx
+full-init ownership (no thunk-back).
+
+### PROBE J.5 — Gate A architect-review REDIRECTED the present-hook; P-J.3 frame is ENTITY-INIT, not render (2026-06-21)
+
+Dispatched `architect-review` (Gate A, leading theory withheld) on the present-probe design. It
+flagged the "present failure" framing as **one inference too far** — built on a deduction
+(window-pumps + Main-runs-compute ∴ present-fails), not an observation — and named the owed §4
+static read I had skipped: identify the function Main was ACTUALLY in at P-J.3 (`0x536120`).
+
+PROVEN (static, `disasm_pj3_compute_frame.py`):
+- **Main's P-J.3 compute frame is ENTITY / AI / game-object INIT, not render/present.** The
+  `0x53xxxx` cluster Main ran is math leaves (no strings); the function CALLING them (`0x36eb39`)
+  carries `"dummy_no_ai"`, `"player"`, `"<INVALID>"`, and **8 entity-class GUIDs** — CryEngine
+  entity-archetype / component identifiers. This is `C_Game::CreateInstance` doing
+  instance/entity construction (consistent with `CreateInstance` on Main every sample). NOT
+  present, NOT swapchain — another nearest-export label avoided. (PROVEN — string-ref disasm)
+
+**REDIRECT (architect flag B confirmed):** the wedge is more likely UPSTREAM of present — **the
+game stuck in `CreateInstance`/entity-init, never reaching the steady-state render/present loop**
+(architect outcome-map row 1: "loop never reaches present"). The menu-video RenderThread + the
+tick run INDEPENDENTLY of a stuck instance-init. The swapped CCryPak likely perturbs something the
+entity/instance init consumes (an entity-def, a flownode/Lua entity script, a game-data pak the
+entity system reads) so `CreateInstance` loops without completing.
+
+**Architect-prescribed probe ORDER (gated, not the present hook first):**
+1. (DONE) §4 static read of the P-J.3 compute frame → entity-init, above.
+2. **DXGI present-COUNT delta read** (NOT a present hook) — read `IDXGISwapChain::GetLastPresentCount`
+   / `GetFrameStatistics` swap-on vs the swap-off P-F baseline, from the zero-perturbation watcher.
+   Outcome map: delta≈0 → FALSIFIES present-failure, wedge is upstream (entity-init) → identify
+   `0x36eb39`'s caller + what entity-init blocks on; delta>0 but PresentRefreshCount≈0 → present
+   IS the problem, THEN the system-DLL present hook is justified; both advance ≈ baseline → frames
+   present but to a non-composited surface. Counter read is theory-INDEPENDENT (can kill the
+   present framing); the present hook can only confirm it → present hook is probe #2, gated on this.
+3. Present hook only if step 2's outcome points there.
+
+The fix stays inside kcdx full-init ownership (no thunk-back) on every branch.
+
 ### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
 
 The confound check RESOLVED the contradiction and overturned the whole "init hang" premise:

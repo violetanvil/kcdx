@@ -1,0 +1,8 @@
+.symfix
+.reload /f
+.echo ====SECTION_THREADNAMES====
+~*
+.echo ====SECTION_ALLSTACKS_VERBOSE====
+~*kv 14
+.echo ====SECTION_DETACH====
+qd

@@ -1,0 +1,510 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.000 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.26100.8249 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+*** wait with pending attach
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+ModLoad: 00007ff6`87920000 00007ff6`87a99000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\KingdomCome.exe
+ModLoad: 00007ffa`cd5e0000 00007ffa`cd846000   C:\Windows\SYSTEM32\ntdll.dll
+ModLoad: 00007ffa`cb8e0000 00007ffa`cb9a9000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffa`cadf0000 00007ffa`cb1ea000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffa`cb9b0000 00007ffa`cbb77000   C:\Windows\System32\USER32.dll
+ModLoad: 00007ffa`cb1f0000 00007ffa`cb217000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffa`cb350000 00007ffa`cb37b000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffa`cb220000 00007ffa`cb34b000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffa`cad40000 00007ffa`cade3000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffa`ca9e0000 00007ffa`cab2c000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffa`cc780000 00007ffa`ccf04000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffa`cbde0000 00007ffa`cbf78000   C:\Windows\System32\ole32.dll
+ModLoad: 00007ffa`cb4e0000 00007ffa`cb863000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffa`cb3c0000 00007ffa`cb4d8000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffa`cb870000 00007ffa`cb8d7000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffa`ad760000 00007ffa`ad78c000   C:\Windows\SYSTEM32\VCRUNTIME140.dll
+ModLoad: 00007ffa`ad650000 00007ffa`ad6ec000   C:\Windows\SYSTEM32\MSVCP140.dll
+ModLoad: 00007ffa`ad7a0000 00007ffa`ad7ac000   C:\Windows\SYSTEM32\VCRUNTIME140_1.dll
+ModLoad: 00007ffa`cb380000 00007ffa`cb3b2000   C:\Windows\System32\IMM32.DLL
+ModLoad: 00007ffa`50900000 00007ffa`50d7b000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-engine\kcdx.dll
+ModLoad: 00007ffa`c29c0000 00007ffa`c29cb000   C:\Windows\SYSTEM32\VERSION.dll
+ModLoad: 00007ffa`c1dc0000 00007ffa`c2002000   C:\Windows\SYSTEM32\dbghelp.dll
+ModLoad: 00007ffa`cd000000 00007ffa`cd0a9000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffa`cc200000 00007ffa`cc2d9000   C:\Windows\System32\OLEAUT32.dll
+ModLoad: 00007ffa`aa3e0000 00007ffa`aa41b000   C:\Windows\SYSTEM32\dbgcore.DLL
+ModLoad: 00007ffa`50d80000 00007ffa`50f30000   C:\Program Files (x86)\Steam\gameoverlayrenderer64.dll
+ModLoad: 00007ffa`cd270000 00007ffa`cd326000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffa`cd0c0000 00007ffa`cd16a000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffa`cd0b0000 00007ffa`cd0b8000   C:\Windows\System32\PSAPI.DLL
+ModLoad: 00007ffa`baa90000 00007ffa`baac6000   C:\Windows\SYSTEM32\WINMM.dll
+ModLoad: 00007ffa`ca470000 00007ffa`ca4c1000   C:\Windows\SYSTEM32\CFGMGR32.dll
+ModLoad: 00007ffa`cd490000 00007ffa`cd586000   C:\Windows\System32\shcore.dll
+ModLoad: 00007ffa`c8410000 00007ffa`c8c90000   C:\Windows\SYSTEM32\Windows.Storage.dll
+ModLoad: 00007ffa`c95e0000 00007ffa`c95fb000   C:\Windows\SYSTEM32\kernel.appcore.dll
+ModLoad: 00007ffa`ca870000 00007ffa`ca918000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ffa`c7ad0000 00007ffa`c7b7a000   C:\Windows\system32\uxtheme.dll
+ModLoad: 00007ffa`cd330000 00007ffa`cd48d000   C:\Windows\System32\MSCTF.dll
+ModLoad: 00007ffa`9f610000 00007ffa`9f758000   C:\Windows\SYSTEM32\textinputframework.dll
+ModLoad: 00007ffa`aa530000 00007ffa`aa5a6000   C:\Windows\system32\Oleacc.dll
+ModLoad: 00007ffa`c5800000 00007ffa`c5820000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\amd_ags_x64.dll
+ModLoad: 00007ffa`c57f0000 00007ffa`c57f8000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\amd_fidelityfx_loader_dx12.dll
+ModLoad: 00007ffa`3ed70000 00007ffa`3f9f9000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\amd_fidelityfx_upscaler_dx12.dll
+ModLoad: 00007ffa`c7c00000 00007ffa`c7d3a000   C:\Windows\SYSTEM32\dxgi.dll
+ModLoad: 00007ffa`ca520000 00007ffa`ca57e000   C:\Windows\SYSTEM32\powrprof.dll
+ModLoad: 00007ffa`ca500000 00007ffa`ca514000   C:\Windows\SYSTEM32\UMPDC.dll
+ModLoad: 00007ffa`a8fb0000 00007ffa`a9057000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\AnselSDK64.dll
+ModLoad: 00007ffa`a8f30000 00007ffa`a8fac000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\bink2w64.dll
+ModLoad: 00007ffa`3ba70000 00007ffa`3cb05000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\dxcompiler.dll
+ModLoad: 00007ffa`5b410000 00007ffa`5b570000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\dxil.dll
+ModLoad: 00007ffa`506f0000 00007ffa`508fb000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\fmod.dll
+ModLoad: 00007ffa`cbbb0000 00007ffa`cbc30000   C:\Windows\System32\WS2_32.dll
+ModLoad: 00007ffa`50570000 00007ffa`506e9000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\fmodstudio.dll
+ModLoad: 00007ffa`4fa30000 00007ffa`4ff8f000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\GFSDK_Aftermath_Lib.x64.dll
+ModLoad: 00007ffa`a3e70000 00007ffa`a3eb9000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\Iex-3_2.dll
+ModLoad: 00007ffa`c57e0000 00007ffa`c57ef000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\IlmThread-3_2.dll
+ModLoad: 00007ffa`9a750000 00007ffa`9a7a7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\Imath-3_2.dll
+ModLoad: 00007ff9`eae70000 00007ff9`ef8a6000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\libxess.dll
+ModLoad: 00007ffa`cc2e0000 00007ffa`cc767000   C:\Windows\System32\SETUPAPI.dll
+ModLoad: 00007ff9`cc840000 00007ff9`cf717000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\nvngx_dlss.dll
+ModLoad: 00007ffa`4ef30000 00007ffa`4f1fc000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXR-3_2.dll
+ModLoad: 00007ffa`812f0000 00007ffa`81378000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXRCore-3_2.dll
+ModLoad: 00007ffa`c57a0000 00007ffa`c57ca000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXRUtil-3_2.dll
+ModLoad: 00007ffa`4db00000 00007ffa`4df6d000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\pros.sdk.x64.dll
+ModLoad: 00007ffa`cc160000 00007ffa`cc1d2000   C:\Windows\System32\WLDAP32.dll
+ModLoad: 0000027e`69990000 0000027e`69b08000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffa`9a700000 00007ffa`9a74d000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\steam_api64.dll
+ModLoad: 00007ff9`c6d10000 00007ff9`cc83b000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.DLL
+ModLoad: 00007ffa`9f8c0000 00007ffa`9f905000   C:\Windows\SYSTEM32\RstrtMgr.DLL
+ModLoad: 00007ffa`5b030000 00007ffa`5b0d5000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\BugSplat64.dll
+ModLoad: 00007ffa`a2060000 00007ffa`a2085000   C:\Windows\SYSTEM32\d3d12.dll
+ModLoad: 00007ffa`c5f10000 00007ffa`c638f000   C:\Windows\SYSTEM32\D3DCOMPILER_47.dll
+ModLoad: 00007ffa`9a9e0000 00007ffa`9aa2b000   C:\Windows\SYSTEM32\DINPUT8.dll
+ModLoad: 00007ffa`c7a70000 00007ffa`c7a7d000   C:\Windows\SYSTEM32\Secur32.dll
+ModLoad: 00007ffa`ad170000 00007ffa`ad405000   C:\Windows\SYSTEM32\WININET.dll
+ModLoad: 00007ffa`326a0000 00007ffa`326aa000   C:\Windows\SYSTEM32\WSOCK32.dll
+ModLoad: 00007ffa`933a0000 00007ffa`933c4000   C:\Windows\SYSTEM32\AVIFIL32.dll
+ModLoad: 00007ffa`c7d60000 00007ffa`c7d8f000   C:\Windows\SYSTEM32\dwmapi.dll
+ModLoad: 00007ffa`a8990000 00007ffa`a8a45000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.26100.8328_none_87eede957a2ccddd\COMCTL32.dll
+ModLoad: 00007ffa`c5690000 00007ffa`c5699000   C:\Windows\SYSTEM32\XINPUT9_1_0.dll
+ModLoad: 00007ffa`c9e50000 00007ffa`c9e6b000   C:\Windows\SYSTEM32\cryptsp.dll
+ModLoad: 00007ffa`ca0d0000 00007ffa`ca100000   C:\Windows\SYSTEM32\ncrypt.dll
+ModLoad: 00007ffa`c8ca0000 00007ffa`c8caf000   C:\Windows\SYSTEM32\HID.DLL
+ModLoad: 00007ffa`32c80000 00007ffa`32ca1000   C:\Windows\SYSTEM32\MSACM32.dll
+ModLoad: 00007ffa`93370000 00007ffa`9339c000   C:\Windows\SYSTEM32\MSVFW32.dll
+ModLoad: 00007ffa`ca760000 00007ffa`ca78a000   C:\Windows\SYSTEM32\BCRYPT.DLL
+ModLoad: 00007ffa`c98a0000 00007ffa`c98e9000   C:\Windows\SYSTEM32\SSPICLI.DLL
+ModLoad: 00007ffa`c9b70000 00007ffa`c9bdc000   C:\Windows\SYSTEM32\MSWSOCK.DLL
+ModLoad: 00007ffa`ca080000 00007ffa`ca0bf000   C:\Windows\SYSTEM32\NTASN1.dll
+ModLoad: 00007ffa`93310000 00007ffa`93337000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\cap-38-sig-mismatch-gate\cap-38.dll
+ModLoad: 00007ffa`9fa90000 00007ffa`9fc75000   C:\Windows\SYSTEM32\inputhost.dll
+ModLoad: 00007ffa`c7560000 00007ffa`c7685000   C:\Windows\SYSTEM32\CoreMessaging.dll
+ModLoad: 00007ffa`c9720000 00007ffa`c9756000   C:\Windows\SYSTEM32\ntmarta.dll
+ModLoad: 00007ffa`8a7f0000 00007ffa`8a817000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-04-midhook\cap-04.dll
+ModLoad: 00007ffa`ca110000 00007ffa`ca11c000   C:\Windows\SYSTEM32\CRYPTBASE.DLL
+ModLoad: 00007ffa`895b0000 00007ffa`895d7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-05-paklua-sidecar\cap-05.dll
+ModLoad: 00007ffa`873d0000 00007ffa`873f7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-07-trampoline-pools\cap-07.dll
+ModLoad: 00007ffa`85f50000 00007ffa`85f77000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-08-messaging\cap-08.dll
+ModLoad: 00007ffa`81cd0000 00007ffa`81cf7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-09-task-interface\cap-09.dll
+ModLoad: 00007ffa`81650000 00007ffa`81677000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-10-scripting-interface\cap-10.dll
+ModLoad: 00007ffa`81610000 00007ffa`81641000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-102-cpp-behavior\cap-102.dll
+ModLoad: 00007ffa`80cc0000 00007ffa`80cea000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-109-miniz-inflate\cap-109.dll
+ModLoad: 00007ffa`76be0000 00007ffa`76c15000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-110-pak-cdr-parse\cap-110.dll
+ModLoad: 00007ffa`76310000 00007ffa`7634a000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-111-pak-entry-read\cap-111.dll
+ModLoad: 00007ffa`762d0000 00007ffa`76310000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-112-asset-index\cap-112.dll
+ModLoad: 0000027e`f0110000 0000027e`f0158000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-113-fs-takeover-lifecycle\cap-113.dll
+ModLoad: 00007ffa`58430000 00007ffa`58471000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-115-engine-pak-index\cap-115.dll
+ModLoad: 00007ffa`7c650000 00007ffa`7c680000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-116-fgetsize-byhandle\cap-116.dll
+ModLoad: 00007ffa`58400000 00007ffa`5842b000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-117-loose-mode-sanitize\cap-117.dll
+ModLoad: 00007ffa`580e0000 00007ffa`58112000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-118-fs-takeover-finditer\cap-118.dll
+ModLoad: 00007ffa`583d0000 00007ffa`583f7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-12-serialization\cap-12.dll
+ModLoad: 00007ffa`53f30000 00007ffa`53f57000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-13-console-command\cap-13.dll
+ModLoad: 00007ffa`53b30000 00007ffa`53b57000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-16-dependencies-A\cap-16-A.dll
+ModLoad: 00007ffa`53b00000 00007ffa`53b27000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-16-dependencies-B\cap-16-B.dll
+ModLoad: 00007ffa`53ad0000 00007ffa`53af7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-17-enumerate-plugins\cap-17.dll
+ModLoad: 00007ffa`53aa0000 00007ffa`53aca000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-20-hook-modes\cap-20.dll
+ModLoad: 00007ffa`53a70000 00007ffa`53a97000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-21-mid-hook\cap-21.dll
+ModLoad: 00007ffa`535f0000 00007ffa`5367e000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-22-callsite-redirect\cap-22.dll
+ModLoad: 00007ffa`535c0000 00007ffa`535e7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-29-both-phase-dll\cap-29.dll
+ModLoad: 00007ffa`53590000 00007ffa`535ba000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-36-cpp-hook-interface\cap-36.dll
+ModLoad: 00007ffa`53530000 00007ffa`5355a000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-37-kcdx-wrapper\cap-37.dll
+ModLoad: 00007ffa`53500000 00007ffa`53528000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-39-cpp-bytes\cap-39.dll
+ModLoad: 00007ffa`534d0000 00007ffa`534f9000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-40-cpp-code\cap-40.dll
+ModLoad: 00007ffa`534a0000 00007ffa`534c8000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-41-cpp-bytes-conflict-report\cap-41.dll
+ModLoad: 00007ffa`53470000 00007ffa`53497000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-42-cpp-mid-skip\cap-42.dll
+ModLoad: 00007ffa`53440000 00007ffa`53469000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-62-cpp-declare-interface\cap-62.dll
+ModLoad: 00007ffa`52f80000 00007ffa`52fa8000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-63-cpp-bytes-wrapper\cap-63.dll
+ModLoad: 00007ffa`52c80000 00007ffa`52ca7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-64-cpp-lua-pcall-fires\cap-64.dll
+ModLoad: 00007ffa`52c50000 00007ffa`52c77000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-65-classifier-bootstrap\cap-65.dll
+ModLoad: 00007ffa`52c20000 00007ffa`52c48000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-69-cpp-console-print\cap-69.dll
+ModLoad: 00007ffa`52bf0000 00007ffa`52c18000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-72-cpp-cvar-read\cap-72.dll
+ModLoad: 00007ffa`52ac0000 00007ffa`52ae9000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-76-cpp-asset-interface\cap-76.dll
+ModLoad: 00007ffa`a4ad0000 00007ffa`a4aee000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-90-pdb-autoload\cap-90.dll
+ModLoad: 00007ffa`50540000 00007ffa`50569000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-94-cpp-functions-declare\cap-94.dll
+ModLoad: 00007ffa`50510000 00007ffa`50539000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-96-cpp-statement\cap-96.dll
+ModLoad: 00007ffa`504e0000 00007ffa`50509000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-97-cpp-hook-insert\cap-97.dll
+ModLoad: 00007ffa`504b0000 00007ffa`504dc000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-02-hook-on-patch\comp-02.dll
+ModLoad: 00007ffa`50480000 00007ffa`504ab000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-03-hook-on-hook-B\comp-03-B.dll
+ModLoad: 00007ffa`50450000 00007ffa`50478000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-14-conflict-report-hook-chain\comp-14.dll
+ModLoad: 00007ffa`50420000 00007ffa`50447000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\engine-self-test\engine-self-test.dll
+ModLoad: 00007ffa`503f0000 00007ffa`5041f000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\probe-comp-crash\probe-comp-crash.dll
+ModLoad: 00007ffa`503c0000 00007ffa`503e7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\probe-crash-trigger\probe-crash-trigger.dll
+ModLoad: 00007ffa`c7bb0000 00007ffa`c7bf4000   C:\Windows\SYSTEM32\dxcore.dll
+ModLoad: 00007ffa`c4df0000 00007ffa`c4e4f000   C:\Windows\SYSTEM32\directxdatabasehelper.dll
+ModLoad: 00007ffa`c6610000 00007ffa`c6871000   C:\Windows\SYSTEM32\d3d11.dll
+ModLoad: 00007ffa`4e910000 00007ffa`4ec68000   C:\Windows\SYSTEM32\D3D12Core.dll
+ModLoad: 00007ffa`c9eb0000 00007ffa`c9ec3000   C:\Windows\SYSTEM32\msasn1.dll
+ModLoad: 00007ffa`c2620000 00007ffa`c265b000   C:\Windows\SYSTEM32\cryptnet.dll
+ModLoad: 00007ffa`c9f20000 00007ffa`c9f8a000   C:\Windows\SYSTEM32\wldp.dll
+ModLoad: 00007ffa`c23d0000 00007ffa`c2548000   C:\Windows\SYSTEM32\drvstore.dll
+ModLoad: 00007ffa`ca440000 00007ffa`ca46d000   C:\Windows\SYSTEM32\devobj.dll
+ModLoad: 00007ffa`cab30000 00007ffa`cabb3000   C:\Windows\System32\wintrust.dll
+ModLoad: 00007ffa`cbb80000 00007ffa`cbba0000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffa`c9540000 00007ffa`c9579000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffa`ca790000 00007ffa`ca7b9000   C:\Windows\SYSTEM32\profapi.dll
+ModLoad: 00007ffa`a2b00000 00007ffa`a2c47000   C:\Windows\system32\nvspcap64.dll
+ModLoad: 00007ff9`f7fd0000 00007ff9`f9921000   C:\Program Files (x86)\Steam\steamclient64.dll
+ModLoad: 00007ffa`4b080000 00007ffa`4b141000   C:\Program Files (x86)\Steam\vstdlib_s64.dll
+ModLoad: 00007ffa`44110000 00007ffa`442b0000   C:\Program Files (x86)\Steam\tier0_s64.dll
+ModLoad: 00007ffa`c8fb0000 00007ffa`c8fe3000   C:\Windows\SYSTEM32\IPHLPAPI.DLL
+ModLoad: 00007ffa`b36f0000 00007ffa`b37af000   C:\Windows\SYSTEM32\mscms.dll
+ModLoad: 00007ffa`81b90000 00007ffa`81bd9000   C:\Windows\SYSTEM32\icm32.dll
+ModLoad: 00007ffa`b02e0000 00007ffa`b0369000   C:\Windows\SYSTEM32\nvapi64.dll
+ModLoad: 00007ffa`afd60000 00007ffa`b02d7000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvapi64_impl.dll
+ModLoad: 00007ffa`c2a10000 00007ffa`c2ada000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvldumdx.dll
+ModLoad: 00007ffa`bbb90000 00007ffa`c199d000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvgpucomp64.dll
+ModLoad: 00007ffa`aebb0000 00007ffa`aef14000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\Display.NvContainer\NvMessageBus.dll
+ModLoad: 00007ff9`ff5f0000 00007ff9`ffe73000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\NvCamera\NvCamera64.dll
+ModLoad: 00007ffa`c5ce0000 00007ffa`c5f0c000   C:\Windows\SYSTEM32\WindowsCodecs.dll
+ModLoad: 00007ffa`baad0000 00007ffa`bac0b000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\NvMemMapStoragex.dll
+ModLoad: 00007ffa`b46f0000 00007ffa`b9c95000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvwgf2umx.dll
+ModLoad: 00007ffa`a23b0000 00007ffa`a2ad7000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvppex.dll
+ModLoad: 00007ffa`c5870000 00007ffa`c5976000   C:\Windows\SYSTEM32\PROPSYS.dll
+ModLoad: 00007ffa`c9be0000 00007ffa`c9c0f000   C:\Windows\SYSTEM32\gpapi.dll
+ModLoad: 00007ffa`3b5e0000 00007ffa`3ba6d000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\NvCamera\d3dcompiler_47_64.dll
+ModLoad: 00007ffa`49140000 00007ffa`4b01f000   C:\Windows\system32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvcuda64.dll
+ModLoad: 00007ffa`581b0000 00007ffa`5825f000   C:\Windows\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvdxgdmal64.dll
+ModLoad: 00007ffa`48330000 00007ffa`49132000   C:\Windows\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\nvobjectloader64.dll
+ModLoad: 00007ffa`c63a0000 00007ffa`c6607000   C:\Windows\SYSTEM32\DWrite.dll
+ModLoad: 00007ffa`4da10000 00007ffa`4daf5000   C:\Windows\SYSTEM32\D3DSCache.dll
+ModLoad: 00007ffa`c9c20000 00007ffa`c9c53000   C:\Windows\SYSTEM32\USERENV.dll
+ModLoad: 00007ffa`50390000 00007ffa`503b5000   C:\Windows\SYSTEM32\DXGIDebug.dll
+ModLoad: 00007ffa`c6ec0000 00007ffa`c70e2000   C:\Windows\SYSTEM32\dcomp.dll
+ModLoad: 00007ffa`c7850000 00007ffa`c7869000   C:\Windows\SYSTEM32\Microsoft.Internal.WarpPal.dll
+ModLoad: 00007ffa`cbd20000 00007ffa`cbdce000   C:\Windows\System32\clbcatq.dll
+ModLoad: 00007ffa`c2080000 00007ffa`c2123000   C:\Windows\System32\MMDevApi.dll
+ModLoad: 00007ffa`a21d0000 00007ffa`a2384000   C:\Windows\SYSTEM32\AUDIOSES.DLL
+ModLoad: 00007ffa`c80e0000 00007ffa`c80f4000   C:\Windows\SYSTEM32\resourcepolicyclient.dll
+ModLoad: 00007ffa`c5680000 00007ffa`c568a000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\Quatmosphere.dll
+ModLoad: 0000027e`0e7e0000 0000027e`0e7e3000   C:\Windows\SYSTEM32\xaudio2_8.dll
+ModLoad: 00007ffa`4ee90000 00007ffa`4ef21000   C:\Windows\SYSTEM32\xaudio2_9.DLL
+ModLoad: 00007ffa`c42b0000 00007ffa`c42bb000   C:\Windows\SYSTEM32\AVRT.dll
+ModLoad: 00007ffa`582d0000 00007ffa`582e8000   C:\Windows\system32\napinsp.dll
+ModLoad: 00007ffa`912a0000 00007ffa`913fa000   C:\Windows\System32\Windows.UI.dll
+ModLoad: 00007ffa`c90a0000 00007ffa`c91ea000   C:\Windows\SYSTEM32\DNSAPI.dll
+ModLoad: 00007ffa`c9990000 00007ffa`c999d000   C:\Windows\SYSTEM32\DSPARSE.dll
+ModLoad: 00007ffa`cc770000 00007ffa`cc77a000   C:\Windows\System32\NSI.dll
+ModLoad: 00007ffa`582b0000 00007ffa`582c3000   C:\Windows\System32\winrnr.dll
+ModLoad: 00007ffa`58280000 00007ffa`582a2000   C:\Windows\system32\nlansp_c.dll
+ModLoad: 00007ffa`c2300000 00007ffa`c2316000   C:\Windows\system32\wshbth.dll
+ModLoad: 00007ffa`c19a0000 00007ffa`c1a26000   C:\Windows\System32\fwpuclnt.dll
+ModLoad: 00007ffa`c22f0000 00007ffa`c22fb000   C:\Windows\System32\rasadhlp.dll
+ModLoad: 00007ffa`adcb0000 00007ffa`adcb7000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WhGdk.DLL
+ModLoad: 00007ffa`baf10000 00007ffa`baf77000   C:\Windows\SYSTEM32\GameInput.dll
+ModLoad: 00007ffa`a8850000 00007ffa`a886c000   C:\Windows\SYSTEM32\XInput1_4.dll
+ModLoad: 00007ffa`47260000 00007ffa`473d3000   C:\Windows\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_6f3cfb7117944855\_nvngx.dll
+ModLoad: 00007ffa`89970000 00007ffa`89a23000   C:\Windows\SYSTEM32\TextShaping.dll
+ModLoad: 00007ffa`af880000 00007ffa`afb45000   C:\Windows\SYSTEM32\iertutil.dll
+ModLoad: 00007ffa`c8fa0000 00007ffa`c8fad000   C:\Windows\SYSTEM32\netutils.dll
+ModLoad: 00007ffa`afce0000 00007ffa`afd09000   C:\Windows\SYSTEM32\srvcli.dll
+ModLoad: 00007ffa`a47b0000 00007ffa`a47c8000   C:\Windows\SYSTEM32\ondemandconnroutehelper.dll
+ModLoad: 00007ffa`c2870000 00007ffa`c2999000   C:\Windows\SYSTEM32\WINHTTP.dll
+ModLoad: 00007ffa`c5c00000 00007ffa`c5c0e000   C:\Windows\SYSTEM32\WINNSI.DLL
+ModLoad: 00007ffa`c3b40000 00007ffa`c3e24000   C:\Windows\SYSTEM32\CoreUIComponents.dll
+ModLoad: 00007ffa`c4450000 00007ffa`c45ba000   C:\Windows\SYSTEM32\wintypes.dll
+ModLoad: 00007ffa`c9410000 00007ffa`c94d5000   C:\Windows\system32\schannel.DLL
+ModLoad: 00007ffa`a4cb0000 00007ffa`a4cf8000   C:\Windows\system32\ncryptsslp.dll
+ModLoad: 00007ffa`a4300000 00007ffa`a479f000   C:\Program Files\NVIDIA Corporation\NvTelemetry\NvTelemetryAPI64.dll
+ModLoad: 00007ffa`76c70000 00007ffa`76cdb000   C:\Program Files\NVIDIA Corporation\NvTelemetry\NvTelemetryBridge64.dll
+(38b0.8498): Break instruction exception - code 80000003 (first chance)
+ntdll!DbgBreakPoint:
+00007ffa`cd6fece0 cc              int     3
+0:191> .symfix
+0:191> .reload /f
+Reloading current modules
+...*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-113-fs-takeover-lifecycle\cap-113.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\KingdomCome.exe
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.DLL
+................*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\pros.sdk.x64.dll
+...*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXR-3_2.dll
+...*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\probe-crash-trigger\probe-crash-trigger.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\probe-comp-crash\probe-comp-crash.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\engine-self-test\engine-self-test.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-14-conflict-report-hook-chain\comp-14.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-03-hook-on-hook-B\comp-03-B.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\comp-02-hook-on-patch\comp-02.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-97-cpp-hook-insert\cap-97.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-96-cpp-statement\cap-96.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-94-cpp-functions-declare\cap-94.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\fmodstudio.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\fmod.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-engine\kcdx.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-76-cpp-asset-interface\cap-76.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-72-cpp-cvar-read\cap-72.dll
+
+
+Press ctrl-c (cdb, kd, ntsd) or ctrl-break (windbg) to abort symbol loads that take too long.
+Run !sym noisy before .reload to track down problems loading symbols.
+
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-69-cpp-console-print\cap-69.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-65-classifier-bootstrap\cap-65.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-64-cpp-lua-pcall-fires\cap-64.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-63-cpp-bytes-wrapper\cap-63.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-62-cpp-declare-interface\cap-62.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-42-cpp-mid-skip\cap-42.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-41-cpp-bytes-conflict-report\cap-41.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-40-cpp-code\cap-40.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-39-cpp-bytes\cap-39.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-37-kcdx-wrapper\cap-37.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-36-cpp-hook-interface\cap-36.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-29-both-phase-dll\cap-29.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-22-callsite-redirect\cap-22.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-21-mid-hook\cap-21.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-20-hook-modes\cap-20.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-17-enumerate-plugins\cap-17.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-16-dependencies-B\cap-16-B.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-16-dependencies-A\cap-16-A.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-13-console-command\cap-13.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-118-fs-takeover-finditer\cap-118.dll
+...
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-12-serialization\cap-12.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-117-loose-mode-sanitize\cap-117.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-115-engine-pak-index\cap-115.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\BugSplat64.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-112-asset-index\cap-112.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-111-pak-entry-read\cap-111.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-110-pak-cdr-parse\cap-110.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-116-fgetsize-byhandle\cap-116.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-109-miniz-inflate\cap-109.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXRCore-3_2.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-102-cpp-behavior\cap-102.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-10-scripting-interface\cap-10.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-09-task-interface\cap-09.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-08-messaging\cap-08.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-07-trampoline-pools\cap-07.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-05-paklua-sidecar\cap-05.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-04-midhook\cap-04.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\cap-38-sig-mismatch-gate\cap-38.dll
+....*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\Imath-3_2.dll
+.........*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\Iex-3_2.dll
+...*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-plugins\test-suite\cap-90-pdb-autoload\cap-90.dll
+....*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\bink2w64.dll
+........*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WhGdk.DLL
+............
+..............*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\Quatmosphere.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\OpenEXRUtil-3_2.dll
+.*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\IlmThread-3_2.dll
+..*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64Shared\amd_ags_x64.dll
+.............................................
+..........................
+
+************* Symbol Loading Error Summary **************
+Module name            Error
+cap-113                The system cannot find the file specified
+KingdomCome            The system cannot find the file specified
+WHGame                 The system cannot find the file specified
+nvngx_dlss             The system cannot find the file specified
+libxess                The system cannot find the file specified
+steamclient64          The system cannot find the file specified
+NvCamera64             The system cannot find the file specified
+dxcompiler             The system cannot find the file specified
+amd_fidelityfx_upscale The system cannot find the file specified
+tier0_s64              The system cannot find the file specified
+_nvngx                 The system cannot find the file specified
+nvobjectloader64       The system cannot find the file specified
+nvcuda64               The system cannot find the file specified
+vstdlib_s64            The system cannot find the file specified
+pros.sdk.x64           The system cannot find the file specified
+OpenEXR-3_2            The system cannot find the file specified
+GFSDK_Aftermath_Lib.x6 The system cannot find the file specified
+probe-crash-trigger    The system cannot find the file specified
+probe-comp-crash       The system cannot find the file specified
+engine-self-test       The system cannot find the file specified
+comp-14                The system cannot find the file specified
+comp-03-B              The system cannot find the file specified
+comp-02                The system cannot find the file specified
+cap-97                 The system cannot find the file specified
+cap-96                 The system cannot find the file specified
+cap-94                 The system cannot find the file specified
+fmodstudio             The system cannot find the file specified
+fmod                   The system cannot find the file specified
+gameoverlayrenderer64  The system cannot find the file specified
+cap-76                 The system cannot find the file specified
+cap-72                 The system cannot find the file specified
+cap-69                 The system cannot find the file specified
+cap-65                 The system cannot find the file specified
+cap-64                 The system cannot find the file specified
+cap-63                 The system cannot find the file specified
+cap-62                 The system cannot find the file specified
+cap-42                 The system cannot find the file specified
+cap-41                 The system cannot find the file specified
+cap-40                 The system cannot find the file specified
+cap-39                 The system cannot find the file specified
+cap-37                 The system cannot find the file specified
+cap-36                 The system cannot find the file specified
+cap-29                 The system cannot find the file specified
+cap-22                 The system cannot find the file specified
+cap-21                 The system cannot find the file specified
+cap-20                 The system cannot find the file specified
+cap-17                 The system cannot find the file specified
+cap-16-B               The system cannot find the file specified
+cap-16-A               The system cannot find the file specified
+cap-13                 The system cannot find the file specified
+cap-118                The system cannot find the file specified
+nvdxgdmal64            The system cannot find the file specified
+cap-12                 The system cannot find the file specified
+cap-117                The system cannot find the file specified
+cap-115                The system cannot find the file specified
+BugSplat64             The system cannot find the file specified
+dxil                   The system cannot find the file specified
+cap-112                The system cannot find the file specified
+cap-111                The system cannot find the file specified
+cap-110                The system cannot find the file specified
+NvTelemetryBridge64    The system cannot find the file specified
+cap-116                The system cannot find the file specified
+cap-109                The system cannot find the file specified
+OpenEXRCore-3_2        The system cannot find the file specified
+cap-102                The system cannot find the file specified
+cap-10                 The system cannot find the file specified
+cap-09                 The system cannot find the file specified
+cap-08                 The system cannot find the file specified
+cap-07                 The system cannot find the file specified
+cap-05                 The system cannot find the file specified
+cap-04                 The system cannot find the file specified
+cap-38                 The system cannot find the file specified
+steam_api64            The system cannot find the file specified
+Imath-3_2              The system cannot find the file specified
+nvppex                 The system cannot find the file specified
+nvspcap64              The system cannot find the file specified
+Iex-3_2                The system cannot find the file specified
+NvTelemetryAPI64       The system cannot find the file specified
+cap-90                 No error - symbol load deferred
+bink2w64               The system cannot find the file specified
+AnselSDK64             The system cannot find the file specified
+WhGdk                  The system cannot find the file specified
+NvMessageBus           The system cannot find the file specified
+nvapi64_impl           The system cannot find the file specified
+nvapi64                The system cannot find the file specified
+nvwgf2umx              The system cannot find the file specified
+NvMemMapStoragex       The system cannot find the file specified
+nvgpucomp64            The system cannot find the file specified
+nvldumdx               The system cannot find the file specified
+Quatmosphere           The system cannot find the file specified
+OpenEXRUtil-3_2        The system cannot find the file specified
+IlmThread-3_2          The system cannot find the file specified
+amd_fidelityfx_loader_ The system cannot find the file specified
+amd_ags_x64            The system cannot find the file specified
+
+You can troubleshoot most symbol related issues by turning on symbol loading diagnostics (!sym noisy) and repeating the command that caused symbols to be loaded.
+You should also verify that your symbol search path (.sympath) is correct.
+0:191> .echo ====MAIN_SAMPLE_A====
+====MAIN_SAMPLE_A====
+0:191> ~0s
+WHGame!ffxFsr2ResourceIsNull+0x3b020:
+00007ff9`c7246120 f30f108160140000 movss   xmm0,dword ptr [rcx+1460h] ds:0000027e`ea5539e0=00000000
+0:000> r rip,rsi,rcx,rdx,rax
+rip=00007ff9c7246120 rsi=0000027e69f40af0 rcx=0000027eea552580 rdx=00007ff9ca7c6d60 rax=0000027eea552580
+0:000> k 6
+Child-SP          RetAddr               Call Site
+00000088`bb7fdea8 00007ff9`c7246018     WHGame!ffxFsr2ResourceIsNull+0x3b020
+00000088`bb7fdeb0 00007ff9`c7244135     WHGame!ffxFsr2ResourceIsNull+0x3af18
+00000088`bb7fdef0 00007ff9`c724322e     WHGame!ffxFsr2ResourceIsNull+0x39035
+00000088`bb7fdf40 00007ff9`c724307e     WHGame!ffxFsr2ResourceIsNull+0x3812e
+00000088`bb7fdf80 00007ff9`c7579c39     WHGame!ffxFsr2ResourceIsNull+0x37f7e
+00000088`bb7fdff0 00007ff9`c757b017     WHGame!ffxFsr2ResourceIsNull+0x36eb39
+0:000> .echo ====GLOBAL_0x492b890 (window-mgr singleton, live)====
+====GLOBAL_0x492b890 (window-mgr singleton, live)====
+0:000> dq WHGame+0x492b890 L2
+00007ff9`cb63b890  00007ff9`cc35fe60 00000000`00000000
+0:000> .echo ====GETACTIVEWINDOW_LIVE====
+====GETACTIVEWINDOW_LIVE====
+0:000> .call /s int(void) USER32!GetActiveWindow
+Couldn't resolve error at 'int(void) USER32!GetActiveWindow'
+0:000> .echo (if .call unsupported, read the foreground window via teb)
+(if .call unsupported, read the foreground window via teb)
+0:000> .echo ====GETFOREGROUND====
+====GETFOREGROUND====
+0:000> r
+rax=0000027eea552580 rbx=0000027eea552580 rcx=0000027eea552580
+rdx=00007ff9ca7c6d60 rsi=0000027e69f40af0 rdi=0000027e69fdf800
+rip=00007ff9c7246120 rsp=00000088bb7fdea8 rbp=00000088bb7fdf30
+ r8=00000088bb7fdef0  r9=0000000000000000 r10=0000027e6cf5b600
+r11=00000088bb7fdf00 r12=00000088bb7fe001 r13=0000000000000000
+r14=0000027e69f1a080 r15=00007ff9cc1ce010
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000206
+WHGame!ffxFsr2ResourceIsNull+0x3b020:
+00007ff9`c7246120 f30f108160140000 movss   xmm0,dword ptr [rcx+1460h] ds:0000027e`ea5539e0=00000000
+0:000> .echo ====MAIN_SAMPLE_B (re-eval, did rip/rsp move)====
+====MAIN_SAMPLE_B (re-eval, did rip/rsp move)====
+0:000> ~0s
+WHGame!ffxFsr2ResourceIsNull+0x3b020:
+00007ff9`c7246120 f30f108160140000 movss   xmm0,dword ptr [rcx+1460h] ds:0000027e`ea5539e0=00000000
+0:000> r rip,rsp
+rip=00007ff9c7246120 rsp=00000088bb7fdea8
+0:000> k 6
+Child-SP          RetAddr               Call Site
+00000088`bb7fdea8 00007ff9`c7246018     WHGame!ffxFsr2ResourceIsNull+0x3b020
+00000088`bb7fdeb0 00007ff9`c7244135     WHGame!ffxFsr2ResourceIsNull+0x3af18
+00000088`bb7fdef0 00007ff9`c724322e     WHGame!ffxFsr2ResourceIsNull+0x39035
+00000088`bb7fdf40 00007ff9`c724307e     WHGame!ffxFsr2ResourceIsNull+0x3812e
+00000088`bb7fdf80 00007ff9`c7579c39     WHGame!ffxFsr2ResourceIsNull+0x37f7e
+00000088`bb7fdff0 00007ff9`c757b017     WHGame!ffxFsr2ResourceIsNull+0x36eb39
+0:000> .echo ====DETACH====
+====DETACH====
+0:000> qd
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
