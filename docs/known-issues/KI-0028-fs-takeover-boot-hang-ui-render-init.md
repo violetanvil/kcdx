@@ -891,6 +891,93 @@ CreateInstance loop's condition variable / counter directly. Fix stays in kcdx f
 - `swapchain_captured` never logs (only `factory_hooks_armed`) → the engine creates its
   swapchain by a path this hook misses (or before seating arms) → widen the capture point.
 
+### P-L — disarm the 2 probe threads (RAN pending 2026-06-21) — decompose the P-F confound
+
+**Why:** the converged mechanism rests on P-F ("the swap is the sole differentiator"), but reading
+`seating_hook.cpp` shows P-F's swap-ON arm changed FOUR things vs its swap-OFF arm, not one:
+(1) the FS dispatch (engine vtable → kcdx vtable), (2) `BootWatchStart()` arms a watcher thread,
+(3) `PresentProbeStart()` arms a present-poll thread, (4) `BuildAssetIndexAtSeat()` runs an
+`INFINITE WaitForSingleObject` on Main inside `CSystem::Init`. The swap-OFF arm returns early
+(line 162) and skips (2)(3)(4). So P-F never isolated the FS swap — the wedge could be a probe
+thread interacting with entity-init, not the swap. (A probe that changed N things is N findings —
+results-driven §"one variable per probe".)
+
+**PROBE L: comment out `BootWatchStart()` + `PresentProbeStart()` in the swap path (keep the FS
+swap + the index build live), rebuild, deploy, launch.** One variable: the two diagnostic threads,
+present vs absent. The FS dispatch + index-build wait stay identical to the wedging build.
+
+**Outcome→meaning map (pre-committed, flat — first row OVERTURNS the converged mechanism):**
+- Boots to interactive menu → the wedge was a PROBE THREAD interacting with entity-init, NOT the
+  FS swap → the converged mechanism (swap perturbs CreateInstance) is WRONG; the diagnostic
+  threads themselves caused the black screen. Next: bisect BootWatch vs PresentProbe.
+- Still wedges (black screen) → the two probe threads are EXONERATED → the suspect narrows to
+  FS-swap-or-index-wait (the remaining 2 of P-F's 4 differentiators). Next: P-L.2 suppress only
+  the index-build INFINITE wait, isolating swap-dispatch vs the on-Main wait.
+
+**Result (RAN 2026-06-21, PROBE L build deployed `6F86DC56…`, hash-verified, injected per launcher
+log):** **STILL WEDGES — same black screen + audio** (user-observed, process PID 18100 alive,
+`Responding=True`, 198 CPU-s, 2.1 GB WS). **The two probe threads are EXONERATED** — disarming
+`BootWatchStart` + `PresentProbeStart` did NOT clear the wedge, so the diagnostic instrumentation is
+not the cause. The converged mechanism's direction HOLDS: the wedge is the FS swap or the
+index-build INFINITE wait (the remaining 2 of P-F's 4 differentiators), not the probe threads. Next:
+P-L.2 — suppress only `BuildAssetIndexAtSeat`'s on-Main INFINITE wait (keep swap), isolating
+swap-dispatch vs the wait.
+
+**ANOMALY (must investigate before P-L.2):** this run's engine logs (`kcdx_*.log`, `kcdx-dev_*.log`)
+are **0 bytes** — no session-start banner, nothing — while EVERY prior wedging run wrote thousands of
+engine lines before wedging (the pre-PROBE-L `10-51-56` run wrote the banner instantly + ran 654
+heartbeat ticks). The launcher log + `kcdx-verify` JSON DID write (injection OK 11:13:16.648; verify
+self-test ran 11:13:46). So the engine DLL loaded but its logger produced zero output this run. Two
+readings, not yet distinguished: (A) the engine wedged before its logger's first flush and the log is
+buffered/lost on the still-running process (a flush-on-exit artifact, not a real change); (B) the
+PROBE L build's removal of the two thread-arm calls changed init timing enough to wedge BEFORE logger
+init — an earlier failure. Checkable: let the process exit (flushes buffers), re-read the engine log.
+Do NOT theorize past this — the 0-byte log is a checkable unknown.
+
+### P-L resolved by INVASIVE cdb on the live PROBE L process (RAN 2026-06-21, PID 18100, `qd`-detached)
+
+Invasive `cdb -p 18100` (whole capture one pass, `qd` to leave running), `cdb_pl_probeL_wedge.txt`.
+**Main's stack is BYTE-FOR-BYTE the converged wedge** — and it resolves the anomaly AND advances the
+mechanism:
+
+```
+ntdll!NtDelayExecution → RtlDelayExecution → KERNELBASE!SleepEx+0x91
+WHGame!…+0x36af90                          ← window/focus poll (RVA 0x865fb4, bounded 5-iter, FINDINGS)
+WHGame!C_Game::CreateInstance+0x2e8c63
+WHGame!C_Game::CreateInstance+0x2e8d7d
+WHGame!…+0x16cce2
+kcdx!HookedUpdate+0x94a                     ← our per-frame hook
+WHGame!…+0x16c7a0                           ← engine update dispatcher
+WHGame!…+0x36eb39                           ← ENTITY-INIT fn (carries "dummy_no_ai"/"player"/8 GUIDs)
+WHGame!…+0x36ff17                           ← the frame BETWEEN entity-init and the focus poll
+KingdomCome+0x36db / +0x4ad5 / +0x898a (main)
+```
+
+- **ANOMALY RESOLVED → reading (A).** The 0-byte engine log is a FLUSH artifact of the still-running
+  process, NOT an earlier failure. Main is in the SAME `CreateInstance`/entity-init wedge as P-A, so
+  the engine ran normally then wedged with its log buffer unflushed. (B) is FALSIFIED — the PROBE L
+  build did not wedge earlier; it wedges identically. (PROVEN — Main stack == P-A stack)
+- **PROBE L CONFIRMED: the two probe threads are EXONERATED.** Same wedge with `BootWatchStart` +
+  `PresentProbeStart` disarmed → the diagnostic threads are not the cause; the converged mechanism
+  (the FS swap perturbs `CreateInstance`) HOLDS. (PROVEN — wedge persists, identical stack)
+- **`0x36eb39` IS ON THE STACK, directly above `0x36ff17` above the focus poll.** The decoded call
+  chain at the wedge: `HookedUpdate → [update dispatcher 0x16c7a0] → 0x36eb39 (entity-init) → 0x36ff17
+  → 0x36af90 (focus poll, bounded) → SleepEx`. The focus poll is BOUNDED (5 iter, FINDINGS); the
+  INFINITE repetition is `0x36eb39`'s own outer loop re-running this chain — `0x36eb39` (entity-init)
+  loops on a completion condition that never flips. **The precise static target is now `0x36eb39`'s
+  loop body + `0x36ff17` (the frame it calls) — read for the exit condition the swap leaves
+  never-satisfied (AP19).** (PROVEN — resolved stack; the outer back-edge is the unread piece)
+- **The "NGX/FSR2" nearest-export frames are NVIDIA DRIVER threads** — other threads park in
+  `NvTelemetryAPI64!FreeTelemetryString+…` and `nvcuda64!cuProfilerStop+…` (real modules), confirming
+  the `ffxFsr2ResourceIsNull`/`NVSDK_NGX` labels on WHGame frames are nearest-export noise, and the
+  driver threads are idle waits, not the wedge. (PROVEN — resolved module names)
+
+**NEXT (sharpened, no launch): static-read `0x36eb39` + `0x36ff17` for the outer-loop exit
+condition** — the entity-init completion flag/counter/registry value the swap leaves never-satisfied.
+This is the recorded candidate (a), now PINNED to two exact RVAs by the live stack (was an un-located
+"caller of the compute cluster"). Fix stays in kcdx full-init ownership (no thunk-back). KI OPEN
+(AP17 — no mechanism paragraph yet).
+
 ### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
 
 The confound check RESOLVED the contradiction and overturned the whole "init hang" premise:

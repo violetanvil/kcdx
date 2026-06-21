@@ -107,24 +107,20 @@ void __fastcall HookedConstructStore(void* csystem) {
         return;  // already swapped this session
     }
 
-    // === DIAGNOSTIC (PROBE H) — KI-0028 boot-progress watcher ===
-    // Arm the watcher thread once, here at the first seating fire (the takeover
-    // is going live now). It watches the main-thread heartbeat and dumps all
-    // thread stacks if boot wedges (heartbeat stalls 10s), again at +30s, then
-    // exits. Armed on ALL paths below (live swap, PROBE-F suppress, swap-fail)
-    // because the wedge watch is wanted regardless of whether the swap took.
-    // NO-RESIDUE on retire.
-    kcdx::fs_takeover::BootWatchStart();
-    // === END PROBE H ===
-
-    // === DIAGNOSTIC (PROBE K) — KI-0028 present-count delta (NO present hook) ===
-    // Arm the one-shot DXGI swapchain-capture + present-count watcher here, beside
-    // the boot watcher. Reads the swapchain's GetLastPresentCount/GetFrameStatistics
-    // every 1s; a present delta ~0 FALSIFIES "present is the problem" (the wedge is
-    // upstream — entity/instance init, per P-J.5). NO present (slot 8) hook; reads a
-    // counter, hands nothing back (no-thunk). NO-RESIDUE on retire.
-    kcdx::fs_takeover::PresentProbeStart();
-    // === END PROBE K ===
+    // === DIAGNOSTIC (PROBE L) — KI-0028 probe-thread confound bisection ===
+    // P-F changed FOUR things between its swap-ON and swap-OFF arms (FS dispatch,
+    // BootWatch thread, PresentProbe thread, the index-build INFINITE wait), so it
+    // never isolated the FS swap as the wedge's cause. PROBE L disarms the two
+    // diagnostic threads (BootWatchStart / PresentProbeStart) for ONE launch while
+    // keeping the FS swap + index build live — one variable, the probe threads
+    // present vs absent. Boots to menu → a probe thread caused the wedge (the
+    // converged mechanism is wrong); still wedges → the threads are exonerated and
+    // the suspect narrows to swap-or-index-wait. NO-RESIDUE: restore both calls (and
+    // remove this PROBE L block) when answered.
+    //
+    //   kcdx::fs_takeover::BootWatchStart();   // PROBE H — disarmed for PROBE L
+    //   kcdx::fs_takeover::PresentProbeStart(); // PROBE K — disarmed for PROBE L
+    // === END PROBE L ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
