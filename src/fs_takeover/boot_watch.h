@@ -49,6 +49,12 @@ namespace kcdx::fs_takeover {
 // timer (logging.md / polling.md). Cessation of these lines = the wedge onset.
 void BootWatchTick();
 
+// H1 read side — the current heartbeat tick count (0 before the first update
+// tick). The FS boot-trace gate reads this to extend its window N frames PAST
+// AfterGameApply (the first tick), so the render/UI-init phase — which runs
+// after the first tick and is where KI-0028 fails — is traced instead of dark.
+uint64_t BootWatchTickCount();
+
 // H3 — start the watcher thread once, early in boot (called from the FS-takeover
 // seating, after the takeover is live). Idempotent; a second call is a no-op.
 // The watcher polls the heartbeat's last-seen wall-clock; when it has not

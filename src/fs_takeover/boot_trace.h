@@ -5,6 +5,7 @@
 
 #include "../init_phase.h"
 #include "../log.h"
+#include "boot_watch.h"  // === DIAGNOSTIC (PROBE I) === BootWatchTickCount for the extended window
 
 // kcdx::fs_takeover boot-window FS-slot trace — a PERMANENT kept diagnostic.
 //
@@ -41,11 +42,30 @@
 
 namespace kcdx::fs_takeover {
 
-// True while boot / graphics-init is in flight (before the first update tick).
-// One relaxed-atomic load + a compare; inlined at each slot call site. After
-// AfterGameApply this is a predicted-skip branch (the phase enum is monotonic).
+// === DIAGNOSTIC (PROBE I) — KI-0028 render/UI-init trace-window extension ===
+// The ORIGINAL gate stopped at AfterGameApply (the first update tick) — but
+// KI-0028's failure (main loop runs, no render, no input) lives in the render/UI
+// init that runs AFTER the first tick, which the original window left DARK. This
+// extends the window kProbeI_ExtraFrames frames PAST the first tick so every FS
+// slot op the render/UI init drives (open/read/metadata/find, with vpath+slot+
+// how+result) is traced. Frame-counted via the existing P-H heartbeat
+// (BootWatchTickCount), so the window stops at a deterministic, reproducible
+// point tied to engine progress, NOT a wall-clock timer (logging.md/polling.md).
+// NO-RESIDUE: removed when KI-0028 closes; the permanent gate reverts to the
+// boot-phase compare below.
+constexpr uint64_t kProbeI_ExtraFrames = 600;  // ~2.5s at 240fps — covers render/UI init
+
+// True while boot / graphics-init is in flight, EXTENDED through the first
+// kProbeI_ExtraFrames update ticks (render/UI init). Boot phase: always on.
+// After the first tick: on while tick <= kProbeI_ExtraFrames, then a predicted-
+// skip (the tick counter is monotonic). One relaxed-atomic load + a compare per
+// arm; inlined at each slot call site.
 inline bool BootWindowActive() {
-    return kcdx::init::Current() < kcdx::init::InitPhase::AfterGameApply;
+    if (kcdx::init::Current() < kcdx::init::InitPhase::AfterGameApply) {
+        return true;  // boot / graphics-init still in flight
+    }
+    // Past the first tick: keep tracing the render/UI-init window (PROBE I).
+    return BootWatchTickCount() <= kProbeI_ExtraFrames;
 }
 
 // Trace a metadata / existence slot call (a by-name query: IsFileExist,

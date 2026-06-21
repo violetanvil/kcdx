@@ -262,6 +262,10 @@ DWORD WINAPI WatcherMain(LPVOID) {
 
 }  // namespace
 
+uint64_t BootWatchTickCount() {
+    return g_tick.load(std::memory_order_relaxed);
+}
+
 void BootWatchTick() {
     const uint64_t now = GetTickCount64();
     g_lastMs.store(now, std::memory_order_relaxed);
