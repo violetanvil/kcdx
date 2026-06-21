@@ -113,6 +113,36 @@ void __fastcall HookedConstructStore(void* csystem) {
             "Performing the vtable swap now, before the engine's first file "
             "call through the object."));
 
+    // === DIAGNOSTIC (PROBE F) — KI-0028 swap-suppression bisection ============
+    // A `<kcdx-engine>/kcdx-noswap` marker file suppresses ONLY the vtable swap +
+    // index build; EVERYTHING else kcdx did this boot (the ctor bracket, every
+    // worker thread, g_kcdxReadyEvent, the overlay map) ran identically. The
+    // engine keeps its own CCryPak vtable, so kcdx is OFF the file path while its
+    // threads/timing stay ON. One variable: the FS-takeover dispatch, live vs not.
+    // Outcome map (KI-0028 P-F):
+    //   boots to interactive menu → the wedge needs the FS dispatch LIVE → the
+    //     perturbation is in what the swapped object serves NGX (H3); H4 killed.
+    //   hangs identically → the FS dispatch is innocent; kcdx's OTHER init
+    //     side-effects (threads/bracket/ready-event/timing) cause it (H4); H3 killed.
+    // Routes into the existing seating_swap_skipped path (engine keeps its vtable,
+    // no index built) — no new skip logic. Scratch — removed when answered.
+    {
+        std::wstring noswap =
+            (kcdx::paths::EngineDataDirPath() / L"kcdx-noswap").wstring();
+        if (GetFileAttributesW(noswap.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            LOG_INFO_KV(kCat, "probe_f_swap_suppressed",
+                kcdx::log::KV::BareStr("detail",
+                    "PROBE F: kcdx-noswap marker present — the vtable swap + index "
+                    "build are SKIPPED; the engine keeps its own CCryPak vtable. "
+                    "All other kcdx init (ctor bracket, worker threads, ready-event, "
+                    "overlay map) ran identically. If boot now reaches an "
+                    "interactive menu, the wedge needs the FS dispatch live (H3); "
+                    "if it still hangs, the FS dispatch is innocent (H4)."));
+            return;  // engine keeps its vtable this boot; no index built
+        }
+    }
+    // === END PROBE F ===
+
     if (!SwapVtableOnObject(pCryPak)) {
         // SwapVtableOnObject already logged the specific reason. Leave g_swapped
         // set: a null/failed object will not become valid on a re-fire of this
