@@ -87,6 +87,30 @@ rendered, and the cursor serve the original facts blamed actually **succeeded**.
   tagged `tid=46452`)
 - The boot reached deep init: trampoline pool, LUA_SHIM passes, FOREIGN_HOOK selftest,
   320 suite tests passing — engine, hooks, Lua VM, FS all up. (FACT — `kcd.log` + dev tail)
+- **The P-E live-swap run does NOT wedge silently — it reaches the first update tick and emits
+  the suite SUMMARY.** The dev log runs to `20:29:43.475` with `[TEST] SUMMARY ... passing=320
+  reported=322 pending=21` (the `HookedUpdate` steady-state ran the catalog) AND PAK_READER
+  continues to `20:29:43.455` (`%engine%/engine...`). So at the cdb-captured "hang" moment the
+  game was 20+s into a PROGRESSING boot, not in a permanent wedge. The symptom is a
+  pathologically SLOW boot (audio, no menu yet), not a hard freeze. (FACT — P-E
+  `kcdx-dev_2026-06-20_20-28-59.log` last lines + `[TEST] SUMMARY`)
+- **The FS_BOOT_TRACE (kept diagnostic) recorded 46,762 render-window ops this run** — the
+  render thread `tid=12612` is a heavy kcdx-FS caller (19,060 ops: FReadRaw_byPakIndex 8034,
+  FSeek 6216, FOpen 1710, FClose 1668, FTell 953); the table/script thread `tid=46280` is the
+  other (27,183 ops). how-distribution: index-pak 7434, index-pak-serve 2094, miss-original 1397,
+  original 354. (FACT — P-E dev-log `FS_BOOT_TRACE` lines, tid + slot + how tallies)
+- **During the render thread's 14.5s stall (`20:29:08.451` → `20:29:22.933`) the table thread
+  `tid=46280` is ACTIVELY churning** — thousands of `PAK_READER read_entry` (Scripts.pak /
+  IPL_GameData.pak flownodes + entity Lua) plus 47 `[LEGACY] hook_chain: re-entrant dispatch
+  depth=2` events. The system is NOT idle-wedged during the slow window; script/table load + the
+  legacy hook chain are running concurrently while the render thread waits. (FACT — P-E dev log
+  `20:29:20`–`20:29:21` PAK_READER + hook_chain lines, tid=46280)
+- **ZERO `double_close` / `bad_handle` errors logged the entire P-E run.** `Close()` logs
+  `double_close` on an already-closed slot and `bad_handle` on a bad-tag/out-of-range id; neither
+  appears. So the render thread's 884-`FClose handle=3` vs 883-`FOpen→3` count imbalance is NOT a
+  stale/double close hitting the kcdx pool (it would have logged) — the recycled-handle-id
+  corruption theory is FALSIFIED. (FACT — `grep -c double_close|bad_handle` P-E dev log = 0;
+  `src/fs_takeover/file_handle.cpp` `Close` lines 552–588)
 
 ## P-A — live thread-stack capture (RAN 2026-06-20, cdb on the hung process)
 
@@ -349,7 +373,47 @@ handle type, return contract, or an existence/enumeration answer), and NGX's ini
   differs from the engine's on the render path is the cause. Fix stays inside kcdx ownership (kcdx
   returns the correct handle-type/contract the render path needs, still owning the open) — no thunk-back.
 
+## Reframe 5 (2026-06-20 — P-G mined the 46,762-line FS_BOOT_TRACE already on disk; no relaunch)
+
+P-G's data was ALREADY captured — the FS_BOOT_TRACE kept diagnostic logged every render-window op
+this run. Mining it (read-only, no launch) overturned TWO earlier conclusions and falsified a fresh
+theory:
+
+1. **"Permanent NGX livelock, kcdx idle" is wrong.** The P-E log runs to `20:29:43` and emits the
+   suite SUMMARY (`passing=320`) — the first update tick FIRED, the engine got past
+   `C_Game::CreateInstance`. The cdb capture caught one slow moment of a PROGRESSING boot, not a
+   permanent wedge. The symptom is a **pathologically slow boot** (audio plays, menu not up yet
+   when observed), not a hard freeze. This reframes the whole "never-completing init" premise.
+2. **The system is not idle during the slow window.** While the render thread `tid=12612` stalls
+   14.5s, the table thread `tid=46280` actively churns Scripts.pak/IPL_GameData.pak script loads +
+   47 re-entrant legacy-hook-chain dispatches. Heavy concurrent FS+Lua+hook work runs during the
+   "hang."
+3. **The recycled-handle-id corruption theory is FALSIFIED** — zero `double_close`/`bad_handle`
+   logged, though `Close()` logs both. The 884-close/883-open imbalance on the render thread is a
+   trace-window artifact (opens before the boot-window gate, and id-3 minted on other threads too),
+   NOT a stale-id close hitting the pool.
+
+So: the cause is no longer "an NGX condvar that never signals." It is "boot is ~20s+ slower than
+vanilla, dominated by concurrent script-load + re-entrant legacy-hook-chain dispatch under the FS
+takeover." The P-G per-op A/B-trace plan (above) is now the WRONG next probe — it hunts a single
+differing return value for a wedge that does not exist. The new axis is THROUGHPUT/ORDERING: what is
+the takeover doing that makes boot take 20s+ where vanilla is fast, and is the slow boot eventually
+completing (reaching an interactive menu) or genuinely stuck. UN-PINNED; the next probe must
+measure boot WALL-TIME to menu under swap-on vs swap-off (P-F reached the menu — did it reach it
+FAST?), not diff a single op.
+
 ## Open questions (for /debug — after P-C)
+
+- **NEW (Reframe 5): is the "hang" a permanent wedge or a pathologically slow boot that eventually
+  reaches the menu?** P-E reached the suite SUMMARY at `20:29:43` (first tick fired) yet the user
+  saw "audio, no menu." Decisive cheap probe: launch swap-ON and WAIT (60–120s) — does the menu
+  eventually render? If yes → the bug is boot SLOWNESS (throughput/ordering: the concurrent
+  script-load + 47 re-entrant legacy-hook-chain dispatches under the takeover), not a deadlock, and
+  the next probe times boot-to-menu swap-on vs swap-off to quantify the regression. If it NEVER
+  reaches the menu after the SUMMARY fired → a true post-first-tick wedge, distinct from the
+  render-init theory. This single observation re-roots the whole investigation; run it before any
+  per-op instrumentation.
+
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
 should signal it spins forever), with kcdx on no stack and no thread blocked on a file read. P-B
