@@ -222,6 +222,50 @@ signal → delegate to real `kcdx_FOpen`). Build green; engine redeployed (hash-
   thunks — a CLEARLY-GATED kcdx resolver lock, never a timing fix) vs a state-perturbation
   upstream of the resolver.
 
+## P-E — falsifying re-launch with PROBE N gone (RAN 2026-06-20, clean build, live cdb)
+
+Boot with PROBE N removed (commit `678fd4f`). **Result: STILL HANGS — audio, no menu.**
+Live cdb on the clean-build hung process (PID 45516), all-thread dump:
+
+- **FACT — M1 (PROBE N re-entry) FALSIFIED.** Same wedge with PROBE N gone → the per-open
+  engine-CRT re-entry was a real rule violation but NOT the hang cause. (PROBE E)
+- **FACT — M2-as-live-contention FALSIFIED.** The ONLY kcdx frame on any of ~199 threads is
+  `HookedUpdate` (the expected per-frame update pass-through). **NO CCryPak / FOpen /
+  AdjustFileName / engine-original-thunk frame on ANY thread.** No NGX/FSR2 worker is sitting
+  inside a kcdx file slot or a resolver thunk at hang time — the architect's "FSR2 JobWorker
+  blocked inside a kcdx thunk" hypothesis is disproven. (PROBE E, `~*k` grep)
+- **FACT — the takeover COMPLETED cleanly before the wedge.** `seat_index_stored entries=307006`,
+  cap-108 seating PASS, every serve `diffs=0`. kcdx's file work is DONE; the wedge is downstream
+  of a finished takeover. (PROBE E, dev log `kcdx-dev_2026-06-20_20-28-59.log`)
+- **FACT — the wedge runs INSIDE the update loop.** Main-thread stack:
+  `KingdomCome` → FSR2 frames → `kcdx!HookedUpdate+0x945` → engine update dispatcher →
+  `C_Game::CreateInstance` → `NVSDK_NGX_UpdateFeature` → `SleepConditionVariableSRW`. So FSR2/NGX
+  `UpdateFeature` is called EACH FRAME from the original update, and each frame blocks on the NGX
+  condvar. The one worker in `UpdateFeature` SleepEx is named `SteamRequestThread(NoCfgFound)`
+  (a Steam/NGX-library thread name — NOT verified to be a live this-boot signal; do not over-read
+  it). (PROBE E, live cdb)
+
+## Reframe 3 — the mechanism is a state-perturbation UPSTREAM of the resolver, still UN-PINNED
+
+Every concrete theory is now falsified: not wrong file content (`diffs=0`), not the per-frame
+body (P-C), not PROBE N (P-E), not a live kcdx-thunk contention (no thunk frame on any thread),
+not a kcdx-internal lock inversion (`g_poolLock` is a leaf, unheld). What remains is the
+architect's third branch: **kcdx's (now-completed) FS takeover changed some boot STATE that NGX's
+async `UpdateFeature` depends on, and NGX never signals its condvar.** kcdx is not on the stack
+because its file work already finished; the perturbation persists after it. The MECHANISM is not
+yet observed — per AP17 this does NOT close, and per results-driven (theories hopped 2+ times,
+same wedge re-confirmed 4×) the next step is a fresh-frame, ground-truth probe of what the NGX
+condvar waits on, NOT another theory or another stack dump.
+
+- **P-F (next — fresh-frame designed): observe what NGX `UpdateFeature`'s condvar is waiting to be
+  signalled BY, and which takeover side-effect breaks that signal.** Candidate instrumentation
+  (the fresh-frame subagent designs the exact probe): trace every file/registry/D3D12-resource
+  request NGX/FSR2 makes during init and diff vs. what kcdx served (a MISS kcdx returns where the
+  original engine would have HIT — the KI-0027 class one layer over: an alias, a search-path
+  order, or a `FindFirst` pattern the FSR2 init uses that kcdx enumeration doesn't satisfy). The
+  fix, whatever it is, stays INSIDE kcdx's full-init ownership — no thunk-back (user-confirmed
+  hard invariant).
+
 ## Open questions (for /debug — after P-C)
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
