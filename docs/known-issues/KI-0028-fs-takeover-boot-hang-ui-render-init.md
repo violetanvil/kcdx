@@ -186,6 +186,42 @@ all ~199 thread stacks.
   `nvngx`) — not a missing-DLL load failure. NO thread is blocked on `NtReadFile`/`NtCreateFile`
   at hang time — so the deadlock is NOT a kcdx FS read blocking in the act. (PROBE C, `lm` + IO grep)
 
+## Gate A (architect-review, 2026-06-20) + P-D — remove the live PROBE N confound
+
+Dispatched `architect-review` cold (leading theory withheld) on the H3/H4 root-cause +
+fix-direction, with the **no-thunk full-init-ownership invariant** as a binding constraint
+(every thunk-back option cut before surfacing). Key results:
+
+- **FALSIFIED the lock-inversion theory by code read:** `g_poolLock` (`src/fs_takeover/file_handle.cpp:40`)
+  is a documented LEAF lock — never calls outward under hold, cannot self-deadlock; P-A
+  confirms no thread holds it at hang time. A kcdx-internal lock-order inversion is NOT it.
+- **Found PROBE N LIVE in HEAD** (`vtable_swap.cpp` `KcdxFOpenMarker`): on EVERY boot-window
+  FOpen, on EVERY thread the takeover dispatches on (~45k+28k hits across tids incl. worker
+  threads), it ran the engine's ORIGINAL FOpen+FClose (`g_probeN_orig*`) + four 0x400-byte
+  whole-object snapshots, THEN the real kcdx open. A `working-artifacts.md` no-residue
+  violation AND the strongest M1 suspect — it double-opens every boot file through the engine
+  CRT cross-thread, exactly the perturbation P-C points at. **Every prior KI-0028 probe ran
+  with this confound in the tree** (its `objdiff` output was never even examined).
+- Architect verdict `re-task`: remove PROBE N first (mandatory cleanup + cheapest falsifying
+  test), re-launch; if it persists, run the engine-original-thunk tid/lock-ordering probe.
+
+**P-D (done, commit `678fd4f`):** removed PROBE N (marker image-diff block + captured
+`g_probeN_orig*` + swap-time capture) and the dead PROBE G/J scaffolding (both compile-time
+`false`, zero runtime effect — so the behavioral delta is exactly "PROBE N gone", re-test
+stays one-variable). `KcdxFOpenMarker` keeps its production logic (first-fire cap-108 seating
+signal → delegate to real `kcdx_FOpen`). Build green; engine redeployed (hash-verified).
+
+**P-E (next — the falsifying re-launch):** boot with PROBE N gone.
+- Boots past the menu (interactive) → **M1 confirmed**: PROBE N's per-open engine-CRT
+  re-entry across worker threads was the root cause (write the AP17 mechanism paragraph: the
+  engine-original FOpen+FClose, run re-entrantly from FSR2 JobWorker threads at an NGX-init
+  point the engine never called it from, deadlocked NGX's `UpdateFeature` job).
+- Still hangs → M1 ruled out; run architect Option B (instrument the engine-original thunks —
+  index-miss + 8 metadata-miss arms — for tid + lock-acquire ordering during boot, stack-capture
+  an NGX JobWorker entering a kcdx slot). Outcome map there decides M2 (serialize/confine the
+  thunks — a CLEARLY-GATED kcdx resolver lock, never a timing fix) vs a state-perturbation
+  upstream of the resolver.
+
 ## Open questions (for /debug — after P-C)
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
