@@ -318,6 +318,7 @@ add_library(kcdx SHARED
     src/fs_takeover/vtable_swap.cpp
     src/fs_takeover/seating_hook.cpp
     src/fs_takeover/boot_watch.cpp
+    src/fs_takeover/present_probe.cpp
     src/fs_takeover/pak_reader.cpp
     src/fs_takeover/asset_index.cpp
     src/fs_takeover/file_handle.cpp
@@ -367,7 +368,7 @@ target_include_directories(kcdx PRIVATE
 # asmjit is linked even when no hook uses lua_callback yet — the
 # typed-marshaling code references it; the linker dead-strips unused
 # asmjit code per-symbol.
-target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 safetyhook miniz version)
+target_link_libraries(kcdx PRIVATE lua minhook asmjit sqlite3 blake3 safetyhook miniz version dxgi)
 
 if(MSVC)
     target_compile_definitions(kcdx PRIVATE

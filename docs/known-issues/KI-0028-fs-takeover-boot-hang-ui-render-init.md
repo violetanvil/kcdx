@@ -714,6 +714,146 @@ entity system reads) so `CreateInstance` loops without completing.
 
 The fix stays inside kcdx full-init ownership (no thunk-back) on every branch.
 
+### PROBE K — present-count delta (BUILT + DEPLOYED 2026-06-21, awaiting launch)
+
+Built the architect-approved step-2 probe (`src/fs_takeover/present_probe.{h,cpp}`, armed
+from `seating_hook.cpp` beside the boot watcher; `dxgi` added to the kcdx link line). Build
+green, `kcdx.dll` deployed + hash-verified, dev mode on.
+
+**What it does (NO present hook — reads a counter):** one-shot MinHook on
+`dxgi!IDXGIFactory::CreateSwapChain` (slot 10) + `IDXGIFactory2::CreateSwapChainForHwnd`
+(slot 15) on the shared class vtable captures the engine's `IDXGISwapChain*` the moment it
+is created; a watcher thread then reads `GetLastPresentCount` (slot 13) + `GetFrameStatistics`
+(slot 18) off it every 1s and logs the per-interval delta under tag `PRESENT_PROBE`. It NEVER
+patches Present (slot 8) — reads counters, hands nothing back (no-thunk).
+
+| # | Probe | Status | Outcome |
+|---|-------|--------|---------|
+| K.1 | one-shot swapchain capture (factory vtable, slots 10/15) | BUILT | — |
+| K.2 | present-count + refresh-count delta read (1s, ×120) | DONE | d_present=0 / d_refresh=0 across all 65 reads; counts FROZEN at present=3840/refresh=2160; GetLastPresentCount returns ERROR_BUSY (0x800700AA) |
+
+### PROBE K RESULT (RAN 2026-06-21 10:21–10:23) — PRESENT IS FROZEN (count stuck, swapchain BUSY); "present failure" FALSIFIED, wedge is UPSTREAM
+
+PROVEN (`kcdx-dev_2026-06-21_10-21-52.log`, tag `PRESENT_PROBE`):
+- **The swapchain WAS captured** — `swapchain_captured via=CreateSwapChain swapchain=0x1F5C4C1B060`
+  at 10:21:57 (the engine uses the older `IDXGIFactory::CreateSwapChain` slot-10 path, not
+  CreateSwapChainForHwnd). The probe is reading the engine's real swapchain. (PROVEN)
+- **Present is FROZEN, not absent.** `present_count=3840`, `refresh_count=2160` — both NON-ZERO
+  but STUCK at the identical value across ALL 65 one-second reads (10:21:59→10:23:03, 64 s).
+  So the engine presented ~3840 frames during boot/early init, then present STOPPED and never
+  advances again. `d_present=0` / `d_refresh=0` every interval. (PROVEN — 65 identical reads)
+- **The swapchain reports BUSY.** `GetLastPresentCount` returns `hr_present=0x800700AA` =
+  `HRESULT_FROM_WIN32(ERROR_BUSY)` ("resource in use") every read — that is why `last_present=0`
+  (the call failed, out-param untouched). `GetFrameStatistics` succeeds (S_OK) and returns the
+  frozen 3840/2160. The swapchain is in a busy/blocked state, present no longer pumping. (PROVEN)
+
+**VERDICT — outcome-map ROW 1: "present is the problem" is FALSIFIED.** Present is not failing;
+it is simply NOT BEING CALLED anymore (count frozen) — the per-frame loop stopped reaching the
+present call. Combined with P-J.5 (Main running entity/instance init) this confirms **the wedge is
+UPSTREAM of present**: the engine got through enough boot to present 3840 frames (the early
+loading/menu-bring-up frames — consistent with PROBE I's menu video decoding), then **the
+instance/entity-init path (`C_Game::CreateInstance`) stopped completing frames** and present went
+idle + the swapchain went BUSY. The ~3840 presented frames are the boot frames BEFORE the freeze,
+not live menu frames.
+
+**The ERROR_BUSY is a secondary lead:** a swapchain goes BUSY when a Present is in-flight/blocked
+or the device/queue is occupied — consistent with the render path waiting on a resource the stuck
+init holds. But present is the SYMPTOM (idle because the loop upstream stopped), not the cause.
+
+**OWED next (no present hook — that branch is closed):** identify what the entity/instance-init
+loop blocks on. Re-mine the captured FS_BOOT_TRACE for the LAST entity/flownode/game-data reads
+before present froze (≈ when present_count hit 3840), and/or instrument `C_Game::CreateInstance`'s
+entity-init step. The swapped CCryPak perturbs something that init consumes (KI-0026/KI-0027 class,
+now on the entity path). Fix stays in kcdx full-init ownership (no thunk-back).
+
+### PROBE K — cross-reference with heartbeat + FS in the SAME run (10:23, game still live)
+
+Read the rest of the same log while present sat frozen. Two facts REFINE (and partly temper) the
+"stuck in entity-init" reading:
+- **The tick heartbeat KEEPS advancing while present is frozen** — tick 3050 @ 10:23:50, ~35/s,
+  ZERO stalls. The update loop runs; only PRESENT is frozen. Loop and present are decoupled.
+  (PROVEN — `BOOT_WATCH heartbeat` advancing + present_count stuck at 3840 concurrently)
+- **The MENU FULLY LOADED — its assets are all served and the video LOOPS.** The freeze-window FS
+  is 121 `FReadRaw_byPakIndex` on handle=3 = the menu background video
+  (`main_menu_kutnohorsko3.bk2`) re-reading ~30 ms (a live looping decode), plus the menu's
+  shaders/particle-textures/cursor all served `result=13`/OK earlier. So the engine reached
+  "menu loaded, video playing", NOT "stuck before the menu". (PROVEN — FS vpaths + handle=3 loop)
+- A repeated `AdjustFileName "kcd.log" how=miss-original result=0` recurs — the engine's own log
+  file open missing; likely benign (a write-path retry), NOT yet shown on the wedge path. (NOTED,
+  not a conclusion)
+
+**TENSION to resolve (two readings, do NOT pick by guesswork — `results-driven.md`):**
+- (A) the loop never reaches present (stuck in `CreateInstance`/entity-init, P-J.5) — but the menu
+  assets fully loaded + video loops, which sits awkwardly with "never reached the menu".
+- (B) present WAS running (the 3840 frames = the menu rendering), then present FROZE in place while
+  the tick + video-decode kept running. The non-zero-but-stuck count (3840, not ~0) + `ERROR_BUSY`
+  fits (B): if present had never started, the count would be ~0. **3840 presented frames ⇒ present
+  was live, then stopped.**
+
+Reading (B) now looks MORE consistent with the counter (frozen-nonzero, not zero) than (A). The
+probe's falsifiable result stands regardless: **present is not advancing now** (d_present=0).
+
+### PROBE K.3 — invasive cdb settles (A) vs (B): NO thread is in Present; both Main + RenderThread are in CreateInstance → reading (A) CONFIRMED
+
+Re-attached invasively (`-p` + `qd`) to the still-live black-screen game (PID 18616), dumped all
+threads, searched for any thread inside DXGI/D3D12/Present.
+
+PROVEN:
+- **NO thread is inside Present / DXGI / the swapchain.** The nvwgf2umx (NVIDIA driver) threads are
+  the driver's idle worker pool (`NVDEV_Thunk` waiters), not the engine presenting. No `dxgi!`,
+  `d3d12!Present`, `D3DKMTPresent`, or swapchain frame on ANY engine thread. (PROVEN — grep of the
+  all-thread dump)
+- **Main is in `C_Game::CreateInstance`** — `HookedUpdate ← CreateInstance+0x2e8c63 ← the SleepEx
+  window-pacing helper (0x36af90) ← 0x36eb39` (the entity-init fn with the "dummy_no_ai"/"player"/
+  GUID strings). Main runs the per-frame tick THROUGH a CreateInstance call; it is NOT in present.
+  (PROVEN — Main stack, PID 18616)
+- **RenderThread is in `C_Game::CreateInstance+0x5a9ce5` running a big `memcpy`**
+  (`VCRUNTIME140!memcpy_avx512`) — copying resource/instance data deep in a CreateInstance
+  sub-call. NOT in present, NOT in DXGI. It is doing CreateInstance WORK. (PROVEN — RenderThread
+  stack)
+
+**∴ reading (A) CONFIRMED, (B) FALSIFIED.** Present is not blocked in-flight (no thread is in a
+Present call) — present is simply **not being called** because BOTH Main and the RenderThread are
+busy inside `C_Game::CreateInstance` and the loop never reaches the present step. The 3840 presented
+frames were the **startup/splash video** (`startup_01.bk2`, seen in the FS trace) presented BEFORE
+`CreateInstance` was entered; once `CreateInstance` began and stopped completing, present went idle
+and the swapchain went `ERROR_BUSY`.
+
+## CONVERGED MECHANISM (proven, KI-0028) — the wedge is `C_Game::CreateInstance` not completing
+
+The chain of evidence now closes to one mechanism, every link proven this session:
+1. P-F: the FS-takeover SWAP is the sole differentiator (swap-off → interactive menu; swap-on →
+   black). The cause is something the swapped CCryPak serves/answers differently.
+2. FS content is exonerated (PROBE I, diffs=0) — not wrong bytes.
+3. The game is NOT hung (tick advances ~35/s) — it RUNS but never presents.
+4. Present is not the problem (PROBE K: present idle because never called, not blocked) — falsified.
+5. **Both Main and RenderThread are stuck working inside `C_Game::CreateInstance` (entity/instance
+   init), which never completes** (PROBE K.3 + P-J.5). The menu's own assets load + its video loops
+   on a side path, but instance construction never finishes → no live frame is ever produced to
+   present → black screen; and Main never returns from CreateInstance to a normal input-pumping
+   steady state.
+
+**ROOT-CAUSE QUESTION (the one remaining, now precise):** what does the swapped CCryPak serve or
+answer differently that makes `C_Game::CreateInstance`'s entity/instance init never complete? Same
+class as KI-0026/KI-0027 (a takeover serve a consumer loops/blocks on), now on the ENTITY/INSTANCE
+path. Candidates: an entity-def / flownode / game-data enumeration the entity system walks that
+kcdx answers wrong (a FindFirst/FindNext mask or count, like KI-0027), a `%`-alias path the entity
+loader uses, or an entity-script/Lua read. Next probe: instrument the entity-init reads/enumerations
+inside the CreateInstance window and diff swap-on vs swap-off, OR identify `0x36eb39`'s caller +
+what it loops on. Fix stays in kcdx full-init ownership (no thunk-back). KI stays OPEN until the
+mechanism paragraph names the wrong-served value (AP17).
+
+**Outcome→meaning map (pre-committed, flat — first row FALSIFIES the present framing):**
+- `d_present ≈ 0` each interval → present essentially never called → loop never reaches
+  present → **wedge is UPSTREAM (entity/instance init, P-J.5)** → next: identify `0x36eb39`'s
+  caller + what `CreateInstance`/entity-init blocks on. (FALSIFIES "present is the problem".)
+- `d_present > 0` but `d_refresh ≈ 0` → present called, no GPU scanout → **present path IS the
+  problem** → next: the system-DLL present hook (capture return value + flags + swapchain ptr).
+- both advance at a live rate → frames ARE presented → **black screen is a surface/compositor
+  association**, not present → next: compare swapchain→HWND association swap-on vs swap-off.
+- `swapchain_captured` never logs (only `factory_hooks_armed`) → the engine creates its
+  swapchain by a path this hook misses (or before seating arms) → widen the capture point.
+
 ### Reframe 6 (2026-06-21) — THE GAME IS NOT HUNG; Main runs the full frame loop at ~240fps
 
 The confound check RESOLVED the contradiction and overturned the whole "init hang" premise:

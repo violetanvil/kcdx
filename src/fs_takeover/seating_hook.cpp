@@ -10,6 +10,7 @@
 #include "asset_index.h"
 #include "vtable_swap.h"
 #include "boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 boot-progress watcher
+#include "present_probe.h"  // === DIAGNOSTIC (PROBE K) === KI-0028 present-count delta
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -115,6 +116,15 @@ void __fastcall HookedConstructStore(void* csystem) {
     // NO-RESIDUE on retire.
     kcdx::fs_takeover::BootWatchStart();
     // === END PROBE H ===
+
+    // === DIAGNOSTIC (PROBE K) — KI-0028 present-count delta (NO present hook) ===
+    // Arm the one-shot DXGI swapchain-capture + present-count watcher here, beside
+    // the boot watcher. Reads the swapchain's GetLastPresentCount/GetFrameStatistics
+    // every 1s; a present delta ~0 FALSIFIES "present is the problem" (the wedge is
+    // upstream — entity/instance init, per P-J.5). NO present (slot 8) hook; reads a
+    // counter, hands nothing back (no-thunk). NO-RESIDUE on retire.
+    kcdx::fs_takeover::PresentProbeStart();
+    // === END PROBE K ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
