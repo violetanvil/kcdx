@@ -56,7 +56,13 @@ namespace kcdx::fs_takeover {
 // point tied to engine progress, NOT a wall-clock timer (logging.md/polling.md).
 // NO-RESIDUE: removed when KI-0028 closes; the permanent gate reverts to the
 // boot-phase compare below.
-constexpr uint64_t kProbeI_ExtraFrames = 600;  // ~2.5s at 240fps — covers render/UI init
+// KI-0028 freeze window: the wedge (C_Game::CreateInstance never completing) holds
+// for 90+ s AFTER the first tick — far past the original 600-frame window, so the
+// freeze period was DARK in the trace. Extend to cover it. At ~35 ticks/s the
+// black-screen run reaches ~3000 ticks/min, so 200000 frames ≈ the freeze + margin.
+// This is a DIAGNOSTIC widening for the active investigation (NOT the permanent
+// near-zero-cost gate — reverted to the boot-phase compare on KI-0028 close).
+constexpr uint64_t kProbeI_ExtraFrames = 200000;  // cover the post-init freeze window
 
 // True while boot / graphics-init is in flight, EXTENDED through the first
 // kProbeI_ExtraFrames update ticks (render/UI init). Boot phase: always on.
@@ -170,6 +176,12 @@ inline void TraceRead(const char* slot, long long handle, long long want,
     if (!BootWindowActive()) return;  // predicted-skip after boot
     const std::string vpath =
         kcdx::fs_takeover::VpathForHandle(static_cast<KcdxHandle>(handle));
+    // KI-0028: the menu background video (.bk2) re-reads in a tight loop
+    // (131072-byte chunks, many per second) and is PROVEN innocent + correctly
+    // served — it drowns the freeze-period signal. Skip it so the non-video FS
+    // the wedge cares about is readable. (Diagnostic filter for the active
+    // investigation; removed with the probe on KI-0028 close.)
+    if (vpath.find(".bk2") != std::string::npos) return;
     LOG_DEBUG_KV("FS_BOOT_TRACE", "read",
         kcdx::log::KV::BareStr("slot", slot),
         kcdx::log::KV("vpath", vpath.empty() ? "<unresolved>" : vpath.c_str()),
