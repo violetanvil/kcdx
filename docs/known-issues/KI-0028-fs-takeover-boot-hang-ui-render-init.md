@@ -386,6 +386,55 @@ handle type, return contract, or an existence/enumeration answer), and NGX's ini
   differs from the engine's on the render path is the cause. Fix stays inside kcdx ownership (kcdx
   returns the correct handle-type/contract the render path needs, still owning the open) — no thunk-back.
 
+## P-H — boot-progress telemetry + auto-stackdump (DESIGNED, Gate A cleared 2026-06-20; build pending)
+
+The logging-defect audit (per the user: "any unknown is a log defect at this point — prove
+everything with logs, no eyeball") found the gap: at the wedge window kcdx logs its own update-tick
+artifacts but ZERO engine-boot-phase markers, so "log goes silent at 20:29:43" is ambiguous and the
+latency-vs-deadlock fork currently rests on the user's eyeball ("audio, no menu"). P-H closes that.
+
+**The fork P-H resolves:** is the ~20:29:43 NGX wait PERMANENT (deadlock) or LATENT (takeover makes
+NGX/FSR2 init take minutes)? The captured logs cannot tell (one 37s-late snapshot ≠ "never wakes").
+
+**Three additions, all reusing machinery kcdx already has. Build status: ledger below.**
+
+| # | Step | Status | Commit |
+|---|------|--------|--------|
+| H1 | Per-tick heartbeat in `HookedUpdate` — integer-second transition edge (NOT a timer): emit `tick=N wall=T` only when `floor(wall_now) != floor(wall_last)`. Cessation = the wedge signature. | NOT STARTED | |
+| H2 | One-shot marker in the `CGame_per_frame_ui_pump` (id 4) hook — "UI-pump path reached" (NOT "menu interactive"; the pump may fire during loading — architect F4). Never-fires = wedge upstream of UI. | NOT STARTED | |
+| H3 | Watcher-thread auto-stackdump on heartbeat stall (N=10s no tick), second dump at +30s. Dedicated watcher thread (NEVER self-suspends); sequence **suspend → capture raw CONTEXT+frames → resume → THEN log**. Reuses crash_guard's per-frame native-unwinder walker; new = the multi-thread driver (Thread32 + SuspendThread + GetThreadContext per thread). | NOT STARTED | |
+
+**Gate A corrections (architect-review, BINDING — the build MUST honor these):**
+- **F1 (CRITICAL, source-confirmed):** every `LOG_*_KV` takes the stream mutex (`src/log.cpp:520/529/538`).
+  Suspending threads from the tick callback and then logging their frames DEADLOCKS the game (a
+  suspended thread mid-log holds the mutex the dumper needs → the probe becomes a second wedge,
+  destroying the evidence). Fix: dump from a dedicated watcher thread; NO `LOG_*_KV` while ANY thread
+  is suspended — snapshot raw CONTEXT+frame data inside the suspended window, resume all, THEN format
+  and emit through the logger. Suspend → capture-raw → resume → log.
+- **F2:** the native-unwinder `ReadProcessMemory(GetCurrentProcess(), Rsp, …)` of another thread's
+  stack is valid ONLY while that thread is suspended — the walk runs strictly inside the per-thread
+  suspended window.
+- **F4:** H2's marker means "UI-pump path executed," not "menu interactive." Do not assert a menu-ready
+  semantic (a real menu-ready edge — e.g. the `this->byte_at_0x2A2F` the pump writes — would need its
+  own probe; not built now, results-driven).
+- **F5:** N=10s (user-set) — trigger on HEARTBEAT STALL (main thread stopped ticking), not on a
+  missing menu fire.
+- **F6:** a single onset dump only re-shows the parked NGX waits we already saw (the 37s-snapshot
+  flaw). Dump at onset AND +30s so "zero progress on any thread across the interval" is OBSERVED, not
+  inferred. **Heartbeat RESUMING is the primary, decisive falsifier.**
+
+**Outcome→meaning map (pre-committed, one primary variable = main-thread liveness):**
+- Heartbeat RESUMES after the stall → **LATENCY** (NGX init is slow, not deadlocked). Decisive, single signal.
+- Heartbeat NEVER resumes + the two dumps (onset, +30s) show IDENTICAL parked NGX/SRW waits, zero
+  progress on every thread → **DEADLOCK** (high confidence).
+- H2 marker NEVER fires → wedge is upstream of UI pumping (deadlock-before-UI), narrows the site.
+- H2 marker fires, heartbeat then stalls → UI path reached, wedge is later (in/after NGX), consistent
+  with the cdb capture.
+
+P-H is a probe (no thunk-back, no coexistence-fix — architect F7 clean). On retirement it captures to
+`_research/probe-archive/` then removes from live source (the heartbeat may graduate to a kept
+boot-progress diagnostic like FS_BOOT_TRACE if the user wants it permanent — decide at retirement).
+
 ## Reframe 5 (2026-06-20 — P-G mined the captured logs; CORRECTED after a premature "just slow" claim)
 
 P-G's data was ALREADY captured — the FS_BOOT_TRACE kept diagnostic logged every render-window op,
