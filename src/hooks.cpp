@@ -14,6 +14,7 @@
 #include "behavior_registry.h"  // RunApplyBoundary — the behavior apply boundary
 #include "console.h"
 #include "cvar.h"
+#include "fs_takeover/boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 heartbeat
 #include "console_commands_scan.h"
 #include "console_commands_find.h"
 #include "console_commands_dev_inspect.h"
@@ -1022,6 +1023,15 @@ void __cdecl HookedUpdate(long long* p1, uint32_t p2, DWORD p3) {
             // the ApplyZone(AfterGame) passes around boot).
         }
     }
+
+    // === DIAGNOSTIC (PROBE H) — KI-0028 boot-progress heartbeat ===
+    // Advance the heartbeat every tick (fires before g_orig_update so the last
+    // recorded advance is the last tick that RAN). The watcher thread reads it
+    // to detect the wedge; its cessation marks the wedge onset, its resumption
+    // is the decisive LATENCY falsifier. One BOOT_WATCH line per wall-second
+    // (integer-second transition edge, not a timer). NO-RESIDUE on retire.
+    kcdx::fs_takeover::BootWatchTick();
+    // === END PROBE H heartbeat ===
 
     g_orig_update(p1, p2, p3);
 }

@@ -9,6 +9,7 @@
 
 #include "asset_index.h"
 #include "vtable_swap.h"
+#include "boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 boot-progress watcher
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -104,6 +105,16 @@ void __fastcall HookedConstructStore(void* csystem) {
                                            std::memory_order_acq_rel)) {
         return;  // already swapped this session
     }
+
+    // === DIAGNOSTIC (PROBE H) — KI-0028 boot-progress watcher ===
+    // Arm the watcher thread once, here at the first seating fire (the takeover
+    // is going live now). It watches the main-thread heartbeat and dumps all
+    // thread stacks if boot wedges (heartbeat stalls 10s), again at +30s, then
+    // exits. Armed on ALL paths below (live swap, PROBE-F suppress, swap-fail)
+    // because the wedge watch is wanted regardless of whether the swap took.
+    // NO-RESIDUE on retire.
+    kcdx::fs_takeover::BootWatchStart();
+    // === END PROBE H ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
