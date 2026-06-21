@@ -1,0 +1,121 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.26100.8249 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+*** wait with pending attach
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+WARNING: Process 37060 is not attached as a debuggee
+         The process can be examined but debug events will not be received
+................................................................
+................................................................
+................................................................
+..........................
+Loading unloaded module list
+........................................
+(90c4.adc0): Wake debugger - code 80000007 (first chance)
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+ntdll!NtDelayExecution+0x14:
+00007fff`692406f4 c3              ret
+0:000> ~0 s
+ntdll!NtDelayExecution+0x14:
+00007fff`692406f4 c3              ret
+0:000> k 40
+Child-SP          RetAddr               Call Site
+000000c9`8010d0e8 00007fff`691b2004     ntdll!NtDelayExecution+0x14
+000000c9`8010d0f0 00007fff`666e2aa1     ntdll!RtlDelayExecution+0x34
+*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.DLL
+000000c9`8010d120 00007ffe`47b36090     KERNELBASE!SleepEx+0x91
+000000c9`8010d1b0 00007ffe`472c0e6d     WHGame!ffxFsr2ResourceIsNull+0x36af90
+000000c9`8010d1e0 00007ffe`4835f247     0x00007ffe`472c0e6d
+000000c9`8010d1e8 0000029a`7f2488f0     WHGame!wh::game::C_Game::CreateInstance+0x2e8c63
+000000c9`8010d1f0 00000299`ff065000     0x0000029a`7f2488f0
+000000c9`8010d1f8 00007ffe`4835f361     0x00000299`ff065000
+000000c9`8010d200 00007ffe`47937de2     WHGame!wh::game::C_Game::CreateInstance+0x2e8d7d
+*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-engine\kcdx.dll
+000000c9`8010d250 00007ffe`6f562a1a     WHGame!ffxFsr2ResourceIsNull+0x16cce2
+000000c9`8010d6e0 00007ffe`479378a0     kcdx!kcdx::hooks::`anonymous namespace'::HookedUpdate+0x94a
+000000c9`8010dd60 00007ffe`47802fb5     WHGame!ffxFsr2ResourceIsNull+0x16c7a0
+000000c9`8010dde0 00007ffe`47b39c39     WHGame!ffxFsr2ResourceIsNull+0x37eb5
+000000c9`8010de50 00007ffe`47b3b017     WHGame!ffxFsr2ResourceIsNull+0x36eb39
+*** WARNING: Unable to verify checksum for E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\KingdomCome.exe
+000000c9`8010dea0 00007ff7`e04536db     WHGame!ffxFsr2ResourceIsNull+0x36ff17
+000000c9`8010e080 00007ff7`e0454ad5     KingdomCome+0x36db
+000000c9`8010f7a0 00007ff7`e045898a     KingdomCome+0x4ad5
+000000c9`8010f890 00007fff`6732e957     KingdomCome+0x898a
+000000c9`8010f8d0 00007fff`69167c1c     KERNEL32!BaseThreadInitThunk+0x17
+000000c9`8010f900 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+0:000> .echo === RENDERTHREAD ===
+=== RENDERTHREAD ===
+0:000> ~~[3144] s
+              ^ Illegal thread error in '~~[3144] s'
+0:000> k 40
+Child-SP          RetAddr               Call Site
+000000c9`8010d0e8 00007fff`691b2004     ntdll!NtDelayExecution+0x14
+000000c9`8010d0f0 00007fff`666e2aa1     ntdll!RtlDelayExecution+0x34
+000000c9`8010d120 00007ffe`47b36090     KERNELBASE!SleepEx+0x91
+000000c9`8010d1b0 00007ffe`472c0e6d     WHGame!ffxFsr2ResourceIsNull+0x36af90
+000000c9`8010d1e0 00007ffe`4835f247     0x00007ffe`472c0e6d
+000000c9`8010d1e8 0000029a`7f2488f0     WHGame!wh::game::C_Game::CreateInstance+0x2e8c63
+000000c9`8010d1f0 00000299`ff065000     0x0000029a`7f2488f0
+000000c9`8010d1f8 00007ffe`4835f361     0x00000299`ff065000
+000000c9`8010d200 00007ffe`47937de2     WHGame!wh::game::C_Game::CreateInstance+0x2e8d7d
+000000c9`8010d250 00007ffe`6f562a1a     WHGame!ffxFsr2ResourceIsNull+0x16cce2
+000000c9`8010d6e0 00007ffe`479378a0     kcdx!kcdx::hooks::`anonymous namespace'::HookedUpdate+0x94a
+000000c9`8010dd60 00007ffe`47802fb5     WHGame!ffxFsr2ResourceIsNull+0x16c7a0
+000000c9`8010dde0 00007ffe`47b39c39     WHGame!ffxFsr2ResourceIsNull+0x37eb5
+000000c9`8010de50 00007ffe`47b3b017     WHGame!ffxFsr2ResourceIsNull+0x36eb39
+000000c9`8010dea0 00007ff7`e04536db     WHGame!ffxFsr2ResourceIsNull+0x36ff17
+000000c9`8010e080 00007ff7`e0454ad5     KingdomCome+0x36db
+000000c9`8010f7a0 00007ff7`e045898a     KingdomCome+0x4ad5
+000000c9`8010f890 00007fff`6732e957     KingdomCome+0x898a
+000000c9`8010f8d0 00007fff`69167c1c     KERNEL32!BaseThreadInitThunk+0x17
+000000c9`8010f900 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+0:000> q
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

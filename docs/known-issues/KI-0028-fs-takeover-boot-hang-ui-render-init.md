@@ -400,9 +400,23 @@ NGX/FSR2 init take minutes)? The captured logs cannot tell (one 37s-late snapsho
 
 | # | Step | Status | Commit |
 |---|------|--------|--------|
-| H1 | Per-tick heartbeat in `HookedUpdate` — integer-second transition edge (NOT a timer): emit `tick=N wall=T` only when `floor(wall_now) != floor(wall_last)`. Cessation = the wedge signature. | NOT STARTED | |
-| H2 | One-shot marker in the `CGame_per_frame_ui_pump` (id 4) hook — "UI-pump path reached" (NOT "menu interactive"; the pump may fire during loading — architect F4). Never-fires = wedge upstream of UI. | NOT STARTED | |
-| H3 | Watcher-thread auto-stackdump on heartbeat stall (N=10s no tick), second dump at +30s. Dedicated watcher thread (NEVER self-suspends); sequence **suspend → capture raw CONTEXT+frames → resume → THEN log**. Reuses crash_guard's per-frame native-unwinder walker; new = the multi-thread driver (Thread32 + SuspendThread + GetThreadContext per thread). | NOT STARTED | |
+| H1 | Per-tick heartbeat in `HookedUpdate` — integer-second transition edge (NOT a timer). Cessation = the wedge signature. | DONE | 90d2ef0 |
+| ~~H2~~ | ~~menu-pump marker on id 4~~ — **DROPPED** (user, 2026-06-20): requires a new engine-direct hook for a signal the architect rated a weak floor; H1's heartbeat already resolves the fork. | DROPPED | — |
+| H3 | Watcher-thread auto-stackdump on heartbeat stall (N=10s), +30s second dump. Dedicated watcher, suspend→capture-raw→resume→log. | DONE | 90d2ef0 |
+
+### P-H RESULT (RAN 2026-06-20 22:34–22:38, live cdb on the still-running process)
+
+**The heartbeat NEVER stalled — the Main update tick is healthy. The wedge is NOT a deadlock and NOT a wedged Main thread. It is a non-progressing `SleepEx` POLL-LOOP inside `C_Game::CreateInstance` → FSR2 code.** (RAN — log + live dump)
+
+PROVEN facts:
+- **197 `BOOT_WATCH heartbeat` lines, tick 1→47539, advancing continuously for 3m16s** (`22:35:03`→`22:38:19`, the last log line = file mtime). **No gap >2s** the entire run; zero `BOOT_WATCH_STALL`, zero `BOOT_DUMP` — the watcher never fired because the tick never stalled. (PROVEN — `_research/probe-archive/ki0028-ph-boot_watch-heartbeat.txt`)
+- **The Main thread (`90c4.adc0`, "Main") is in a SLEEP-RETRY LOOP, not an event wait.** Stack: `NtDelayExecution ← RtlDelayExecution ← KERNELBASE!SleepEx ← WHGame!ffxFsr2ResourceIsNull+0x36af90 ← C_Game::CreateInstance+0x2e8c63 ← +0x2e8d7d ← ffxFsr2ResourceIsNull+0x16cce2 ← …`. The top is `NtDelayExecution`/`SleepEx` (a TIMED sleep), NOT `SleepConditionVariableSRW` (the P-E capture's event wait). **Two samples 2s apart are BYTE-IDENTICAL** (same RVAs) → a non-progressing loop, not forward progress. (PROVEN — `ki0028-ph-main-renderthread-deep-22-38.txt` + the two A/B samples)
+- **`CreateInstance` NEVER returns** → game instance construction never completes → menu never loads; Main owns the window message pump but is buried in the FSR2 sleep-loop → it never pumps messages → **Alt+F4 is ignored** (user-observed, mechanism-explained). (PROVEN — Main stack + user report)
+- The heartbeat runs because the engine pumps `CGame::Update` (the hook source) on a DIFFERENT thread while Main is still in `CreateInstance`. So "heartbeat alive" ≠ "Main alive at the menu" — it proved Main is not HUNG (the tick advances), which correctly distinguished this sleep-LOOP from a lost-wakeup deadlock. (PROVEN — Main in CreateInstance ≠ CGame::Update)
+
+**Verdict on the latency-vs-deadlock fork: NEITHER.** It is a busy SLEEP-poll loop on a condition FSR2 init checks that, under the FS takeover, never becomes true. FSR2 (`ffxFsr2ResourceIsNull` neighborhood) reads resources/files; the takeover serves what it reads. The loop polls for some resource/state to become ready that never does. This is a kcdx-served-content / resource-readiness problem on the FSR2 init path — back to an H3-class root cause (the swapped object serves FSR2 something it then waits on), now with the wait mechanism PINNED (a SleepEx retry-poll, not an SRW condvar).
+
+**The earlier P-E "SleepConditionVariableSRW in NGX UpdateFeature" capture was a DIFFERENT wait** than this `SleepEx`/FSR2 loop — either a different point in the same stuck init, or the P-E capture caught a transient. The decisive, reproducible state is THIS one: the byte-identical SleepEx/FSR2 loop in CreateInstance.
 
 **Gate A corrections (architect-review, BINDING — the build MUST honor these):**
 - **F1 (CRITICAL, source-confirmed):** every `LOG_*_KV` takes the stream mutex (`src/log.cpp:520/529/538`).
