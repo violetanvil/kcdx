@@ -87,13 +87,26 @@ rendered, and the cursor serve the original facts blamed actually **succeeded**.
   tagged `tid=46452`)
 - The boot reached deep init: trampoline pool, LUA_SHIM passes, FOREIGN_HOOK selftest,
   320 suite tests passing — engine, hooks, Lua VM, FS all up. (FACT — `kcd.log` + dev tail)
-- **The P-E live-swap run does NOT wedge silently — it reaches the first update tick and emits
-  the suite SUMMARY.** The dev log runs to `20:29:43.475` with `[TEST] SUMMARY ... passing=320
-  reported=322 pending=21` (the `HookedUpdate` steady-state ran the catalog) AND PAK_READER
-  continues to `20:29:43.455` (`%engine%/engine...`). So at the cdb-captured "hang" moment the
-  game was 20+s into a PROGRESSING boot, not in a permanent wedge. The symptom is a
-  pathologically SLOW boot (audio, no menu yet), not a hard freeze. (FACT — P-E
-  `kcdx-dev_2026-06-20_20-28-59.log` last lines + `[TEST] SUMMARY`)
+- **The P-E run PROGRESSES for ~41s, then the log goes SILENT, then the dump (37s later) shows the
+  wedge.** The dev log emits 30 `[TEST] SUMMARY` lines (`HookedUpdate` steady-state ran), first
+  `20:29:02.380`, last `20:29:43.475` (`passing=320`); PAK_READER continues to `20:29:43.455`. The
+  log then STOPS at `20:29:43.475`. The cdb capture was taken at `20:30:20.935` — 37s AFTER the last
+  log line. So the wedge ONSET is `~20:29:43` (where the log goes silent), after a window of real
+  progress — NOT at boot start, NOT absent. (FACT — P-E dev log SUMMARY timestamps + capture-file
+  mtime `20:30:20.935`)
+  - **WITHDRAWN (was an over-read):** "the tick firing proves the engine got past
+    `C_Game::CreateInstance`." The update tick runs on a different path; ShaderCompile is still INSIDE
+    `CreateInstance` at capture. The tick firing does NOT prove `CreateInstance` returned.
+- **At capture (`20:30:20`), three threads are parked in NGX/FSR2/CreateInstance.** RenderThread
+  (`b1cc.3144`=tid 12612, cdb-named "RenderThread"): `NtWaitForAlertByThreadId ←
+  RtlSleepConditionVariableSRW ← _Cnd_wait ← NVSDK_NGX_UpdateFeature+0x20139e ← ffxFsr2ResourceIsNull`.
+  ShaderCompile (`b1cc.b2b0`): `SleepEx ← C_Game::CreateInstance+0x46514`. Main:
+  `SleepConditionVariableSRW ← NVSDK_NGX_UpdateFeature`. (FACT — `ki28_pe_allthreads.txt` resolved
+  stacks)
+- **No `kcd.log` evidence exists for the P-E run's menu state** — the `kcd.log` on disk has mtime
+  `20:40` (the P-F swap-OFF run that reached the menu), which OVERWROTE the P-E (`20:28`) engine log.
+  Any "the menu rendered" claim for a swap-ON run is from a DIFFERENT run, not P-E. (FACT — `kcd.log`
+  mtime `20:40:42` ≠ P-E `20:28`)
 - **The FS_BOOT_TRACE (kept diagnostic) recorded 46,762 render-window ops this run** — the
   render thread `tid=12612` is a heavy kcdx-FS caller (19,060 ops: FReadRaw_byPakIndex 8034,
   FSeek 6216, FOpen 1710, FClose 1668, FTell 953); the table/script thread `tid=46280` is the
@@ -373,46 +386,64 @@ handle type, return contract, or an existence/enumeration answer), and NGX's ini
   differs from the engine's on the render path is the cause. Fix stays inside kcdx ownership (kcdx
   returns the correct handle-type/contract the render path needs, still owning the open) — no thunk-back.
 
-## Reframe 5 (2026-06-20 — P-G mined the 46,762-line FS_BOOT_TRACE already on disk; no relaunch)
+## Reframe 5 (2026-06-20 — P-G mined the captured logs; CORRECTED after a premature "just slow" claim)
 
-P-G's data was ALREADY captured — the FS_BOOT_TRACE kept diagnostic logged every render-window op
-this run. Mining it (read-only, no launch) overturned TWO earlier conclusions and falsified a fresh
-theory:
+P-G's data was ALREADY captured — the FS_BOOT_TRACE kept diagnostic logged every render-window op,
+the dev log holds the full tick stream, and the P-E cdb capture holds the resolved thread stacks.
+A first pass over-read this as "boot is progressing, just slow"; that was a JUMP. Re-mined strictly
+against the logs, separating PROVEN from INFERRED:
 
-1. **"Permanent NGX livelock, kcdx idle" is wrong.** The P-E log runs to `20:29:43` and emits the
-   suite SUMMARY (`passing=320`) — the first update tick FIRED, the engine got past
-   `C_Game::CreateInstance`. The cdb capture caught one slow moment of a PROGRESSING boot, not a
-   permanent wedge. The symptom is a **pathologically slow boot** (audio plays, menu not up yet
-   when observed), not a hard freeze. This reframes the whole "never-completing init" premise.
-2. **The system is not idle during the slow window.** While the render thread `tid=12612` stalls
-   14.5s, the table thread `tid=46280` actively churns Scripts.pak/IPL_GameData.pak script loads +
-   47 re-entrant legacy-hook-chain dispatches. Heavy concurrent FS+Lua+hook work runs during the
-   "hang."
-3. **The recycled-handle-id corruption theory is FALSIFIED** — zero `double_close`/`bad_handle`
-   logged, though `Close()` logs both. The 884-close/883-open imbalance on the render thread is a
-   trace-window artifact (opens before the boot-window gate, and id-3 minted on other threads too),
-   NOT a stale-id close hitting the pool.
+**PROVEN (log/dump-cited):**
+- **The P-E cdb capture was taken at `20:30:20.935`** (capture-file mtime), **37s AFTER the dev
+  log's last line at `20:29:43.475`** (the log goes silent there). (PROVEN — file mtime + dev tail)
+- **At capture time (`20:30:20`), RenderThread (`b1cc.3144` = tid 12612, cdb-named "RenderThread"),
+  ShaderCompile (`b1cc.b2b0`), and the main thread are ALL parked in NGX/FSR2/CreateInstance
+  waits.** RenderThread: `NtWaitForAlertByThreadId ← RtlSleepConditionVariableSRW ← _Cnd_wait ←
+  WHGame!NVSDK_NGX_UpdateFeature+0x20139e ← ffxFsr2ResourceIsNull...`. ShaderCompile: `SleepEx ←
+  C_Game::CreateInstance+0x46514`. Main: `SleepConditionVariableSRW ← NVSDK_NGX_UpdateFeature`.
+  (PROVEN — `ki28_pe_allthreads.txt` stacks)
+- **The update tick ran 30 SUMMARY emissions, first `20:29:02.380`, last `20:29:43.475`** — the
+  `HookedUpdate` steady-state body executed many times, suite reached `passing=320`. (PROVEN — 30
+  `[TEST] SUMMARY` lines in the P-E dev log)
+- **The dev log STOPS at `20:29:43.475`** and is silent for the 37s up to the capture. (PROVEN)
+- The recycled-handle-id corruption theory is FALSIFIED — zero `double_close`/`bad_handle` logged,
+  though `Close()` logs both. (PROVEN — `grep -c` = 0)
 
-So: the cause is no longer "an NGX condvar that never signals." It is "boot is ~20s+ slower than
-vanilla, dominated by concurrent script-load + re-entrant legacy-hook-chain dispatch under the FS
-takeover." The P-G per-op A/B-trace plan (above) is now the WRONG next probe — it hunts a single
-differing return value for a wedge that does not exist. The new axis is THROUGHPUT/ORDERING: what is
-the takeover doing that makes boot take 20s+ where vanilla is fast, and is the slow boot eventually
-completing (reaching an interactive menu) or genuinely stuck. UN-PINNED; the next probe must
-measure boot WALL-TIME to menu under swap-on vs swap-off (P-F reached the menu — did it reach it
-FAST?), not diff a single op.
+**The reconciliation (what the timeline actually means):** boot is NOT "permanently wedged from the
+start" (the tick loop ran 41s, suite hit 320) AND it is NOT "just slow / progressing fine" (the dump
+shows three threads hard-parked in NGX). The precise, log-proven shape: **kcdx-on boot PROGRESSES for
+~41s (ticks firing, suite climbing to 320), then the log goes SILENT at `20:29:43`, and the dump 37s
+later shows RenderThread + main + ShaderCompile parked in `NVSDK_NGX_UpdateFeature` / `CreateInstance`
+waits.** The wedge ONSET is `~20:29:43`, after a window of real progress — not at boot start, not
+absent.
+
+**INFERRED, NOT yet proven (must not be stated as fact):**
+- That the wedge is PERMANENT (the dump is a single 37s-later snapshot; it proves "still parked at
+  20:30:20", NOT "never wakes"). A longer wait or a second capture is owed to prove permanence.
+- That "the engine got past `C_Game::CreateInstance`" — the tick loop firing does NOT prove
+  `CreateInstance` returned; the update tick runs on a different path, and ShaderCompile is still
+  INSIDE `CreateInstance` at capture. This earlier claim is WITHDRAWN as unproven.
+- Whether the menu ever renders in the P-E (swap-on) run — the current `kcd.log` on disk is from the
+  P-F (`20:39`, swap-OFF) run, which OVERWROTE the P-E engine log. There is NO `kcd.log` evidence
+  for P-E's menu state. (PROVEN that the evidence is absent — `kcd.log` mtime `20:40` ≠ P-E `20:28`.)
+
+So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differing return for a wedge,
+but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
+reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
 ## Open questions (for /debug — after P-C)
 
-- **NEW (Reframe 5): is the "hang" a permanent wedge or a pathologically slow boot that eventually
-  reaches the menu?** P-E reached the suite SUMMARY at `20:29:43` (first tick fired) yet the user
-  saw "audio, no menu." Decisive cheap probe: launch swap-ON and WAIT (60–120s) — does the menu
-  eventually render? If yes → the bug is boot SLOWNESS (throughput/ordering: the concurrent
-  script-load + 47 re-entrant legacy-hook-chain dispatches under the takeover), not a deadlock, and
-  the next probe times boot-to-menu swap-on vs swap-off to quantify the regression. If it NEVER
-  reaches the menu after the SUMMARY fired → a true post-first-tick wedge, distinct from the
-  render-init theory. This single observation re-roots the whole investigation; run it before any
-  per-op instrumentation.
+- **NEW (Reframe 5, log-proven): is the `~20:29:43` NGX wedge PERMANENT, or does it eventually wake?**
+  The dump proves three threads parked in `NVSDK_NGX_UpdateFeature` at `20:30:20` (37s after the log
+  went silent) — but a single snapshot cannot prove "never wakes." Decisive cheap observation: launch
+  swap-ON and WAIT 2–3 min at the audio/no-menu state. Menu eventually renders → the NGX wait
+  resolves and the bug is boot LATENCY (something the takeover does makes the NGX/FSR2 init take
+  minutes); the next probe times the NGX-init window swap-on vs swap-off. Menu NEVER renders →
+  confirmed permanent NGX-condvar wedge at `~20:29:43`, and the next probe instruments WHAT the
+  RenderThread's NGX worker is waiting on (the condvar's signaller) — kcdx perturbed a state NGX's
+  `UpdateFeature` depends on. Either branch keeps the fix inside kcdx ownership (no thunk-back). Run
+  this single observation before any instrumentation — it splits latency-vs-deadlock, the one fork
+  the captured logs cannot resolve.
 
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
