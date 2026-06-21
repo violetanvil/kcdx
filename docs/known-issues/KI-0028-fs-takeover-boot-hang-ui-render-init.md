@@ -311,6 +311,44 @@ directly opening an NGX-named file via kcdx. Candidate sub-mechanisms (the next 
   it then uses as a real OS handle. The fix stays inside kcdx's full ownership (no thunk-back) —
   e.g. kcdx mints a REAL OS handle for ops whose consumer needs one, still owning the open.
 
+## P-G.0 — read-only narrowing on the P-E live-swap log (no launch)
+
+Before instrumenting, exhausted the captured P-E ground truth:
+
+- **FACT — slot 40 `FGetCachedFileData` (the mmap/cached-data H3c suspect) was NEVER called**
+  this boot (`FGetCachedFileData` count = 0). The cached-data/mmap-lifetime mechanism is
+  FALSIFIED — NGX does not use it. (read-only, P-E dev log)
+- **FACT — the `(NoCfg)`/`(NoCfgFound)` thread-name suffix is a RED HERRING.** `AudioThread(NoCfg)`
+  carries the same suffix and audio works — it is an engine thread-naming convention, NOT a live
+  this-boot config-miss signal. Do not read `SteamRequestThread(NoCfgFound)` as a config failure.
+  (cdb thread-name dump)
+- **FACT — the second-heaviest caller of kcdx's FS slots is the `RenderThread`.** Two threads
+  dominate the kcdx FS ops: tid 46280 (27k ops, main/boot) and tid 12612 = `0x3144` = **`RenderThread`**
+  (19k ops). The FSR2/NGX upscaler init runs on the render path — so NGX's dependency on kcdx is the
+  RenderThread requesting files through the swapped CCryPak. Other graphics threads present:
+  `ShaderCompile`, `PSOCompilationWorker_0/1`, `D3D Background Thread 0-3`, `Streaming File IO HDD/Optical/InMemory`.
+  (P-E dev log tid census + cdb thread names)
+
+So the H3 mechanism is: a file the RenderThread (FSR2/NGX init) opens/reads/stats through a kcdx
+slot gets an answer whose SEMANTICS differ from the engine original (not content — `diffs=0` — but
+handle type, return contract, or an existence/enumeration answer), and NGX's init wedges on it.
+
+- **The render/shader path through kcdx (P-E live-swap log):** the RenderThread (tid 12612) +
+  a shader worker (tid 40364) read shader `.cfxb` / PSO-cache files. Engine paks serve fine via
+  kcdx (`%engine%/shaders/cache/d3d12/helper.cfxb` → `how=index-pak result=3`); the `%user%/shaders/
+  cache/d3d12/*` loose reads MISS (`errno=2`, first-run cache not built — vanilla misses these too,
+  NOT anomalous on their own). Only 5 FWrite ops total, none to shaders/cache → the shader cache is
+  NOT being written this boot (consistent with a render init that wedges BEFORE the cache-write phase).
+  The single differing op is not yet isolated from the log alone.
+
+- **P-G (next — instrument the graphics-thread kcdx FS ops): log every kcdx slot call from the
+  RenderThread / ShaderCompile / PSO / D3D / Streaming tids with vpath + slot + exact return
+  (handle id, size, exists-bool, attr), AND capture the engine-original answer for the same op
+  inline** (call the original alongside kcdx's and log both — a same-run A/B, since the P-F
+  swap-suppressed run served nothing and can't be diffed op-by-op). The op whose kcdx return
+  differs from the engine's on the render path is the cause. Fix stays inside kcdx ownership (kcdx
+  returns the correct handle-type/contract the render path needs, still owning the open) — no thunk-back.
+
 ## Open questions (for /debug — after P-C)
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
