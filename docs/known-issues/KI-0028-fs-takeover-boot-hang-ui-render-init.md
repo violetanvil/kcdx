@@ -266,6 +266,51 @@ condvar waits on, NOT another theory or another stack dump.
   fix, whatever it is, stays INSIDE kcdx's full-init ownership — no thunk-back (user-confirmed
   hard invariant).
 
+## P-F — swap-suppression bisection (RAN 2026-06-20, kcdx-noswap marker, clean build)
+
+Dropped a `<kcdx-engine>/kcdx-noswap` marker → the seating hook skipped ONLY
+`SwapVtableOnObject` + the index build; every other kcdx init (ctor bracket, worker
+threads, `g_kcdxReadyEvent`, overlay map) ran identically; the engine kept its own CCryPak
+vtable. **Result: REACHED THE MENU (interactive).**
+
+- **FACT — H4 (init timing/threading side-effects) FALSIFIED; H3 (FS-takeover dispatch) CONFIRMED.**
+  With kcdx fully initialized (all threads/bracket/ready-event ran — `probe_f_swap_suppressed`
+  logged) but the swap suppressed, boot reaches an interactive menu. The hang REQUIRES the
+  FS-takeover dispatch to be live. The cause is what the swapped CCryPak serves/returns to the
+  NGX/FSR2 init — NOT kcdx's added threads or reordered timing. (PROBE F)
+- **FACT — kcdx served ZERO file ops this run** (`FS_BOOT_TRACE count=0`) yet booted fine →
+  confirms the engine owned the filesystem and the menu came up without kcdx's dispatch. The
+  swap being live is the single differentiator between hang and menu. (PROBE F)
+
+## Reframe 4 — H3 sub-mechanism: the swap perturbs NGX WITHOUT NGX opening a file through kcdx
+
+Tension to resolve: the live-swap runs showed NO NGX/DLSS/FSR-named file op routed through kcdx
+(`FS_BOOT_TRACE` NGX-class count = 0), and at hang time no NGX thread is inside a kcdx FS frame —
+yet P-F proves the swap is the cause. So the swap perturbs NGX through something OTHER than NGX
+directly opening an NGX-named file via kcdx. Candidate sub-mechanisms (the next probe splits them):
+
+- **H3a (opaque-handle straddle):** NGX/FSR2/Streamline/Steam does memory-mapped, OVERLAPPED-async,
+  or `DuplicateHandle` I/O on a file the engine opened THROUGH the swapped CCryPak — getting back a
+  kcdx OPAQUE handle-id (`src/fs_takeover/file_handle.cpp:45` `Encode=(id<<1)|1`), NOT a real OS
+  HANDLE. Any Win32 API that treats that id as a real handle (CreateFileMapping, an async wait,
+  DuplicateHandle) operates garbage → an async completion that never signals → the condvar wedge.
+- **H3b (a non-NGX-named file NGX init depends on):** an engine file the FSR2/upscaler init reads
+  via kcdx under a generic name (a shader/pipeline/D3D12 cache, a config) where kcdx's serve is
+  subtly wrong on THIS path (a method/size/handle-semantics difference the `diffs=0` object-compare
+  doesn't catch — `diffs=0` compares the CCryPak OBJECT bytes, not the returned handle's I/O semantics).
+- **H3c (handle-type/return-value contract):** a slot kcdx owns returns a value with different
+  semantics than the engine original (e.g. `FGetCachedFileData` returns a pointer into a kcdx
+  `std::vector` valid only until Close — `read_slots.cpp:91`; or a handle the engine passes to an
+  API expecting an OS fd) that an NGX-init code path consumes.
+
+- **P-G (next): instrument the swapped slots to log EVERY file op whose RETURNED handle/pointer
+  could be consumed as a real OS handle** — tag each open/read by the calling tid, and flag any op
+  on a tid that is (or spawns) an NGX/FSR2/Steam worker, plus any `FGetCachedFileData`/mapping/
+  duplicate path. Diff what kcdx returns vs the engine-original handle semantics for those ops.
+  The decisive question: which file, opened through which kcdx slot, hands NGX a kcdx-opaque value
+  it then uses as a real OS handle. The fix stays inside kcdx's full ownership (no thunk-back) —
+  e.g. kcdx mints a REAL OS handle for ops whose consumer needs one, still owning the open.
+
 ## Open questions (for /debug — after P-C)
 
 The wedge is a deadlock INSIDE NGX's `UpdateFeature` (main waits a condvar; the NGX worker that
