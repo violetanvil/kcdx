@@ -9,6 +9,12 @@ commit_at_filing: 4befc07
 
 **Status:** open
 
+> **AUTHORITATIVE SUMMARY:** `_research/ki0028-fsr2-poll-loop-recon/HANDOFF.md` is the single
+> verified/inferred/open split (no unproven confidence). This trail below is the chronological
+> investigation log; where an earlier entry states something with more confidence than the handoff,
+> the **handoff governs**. Several earlier "PROVEN"/"converged"/"exonerated" claims have been
+> downgraded in place — read the handoff first.
+
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
 at UI/render bring-up: **sound loads, no video ever appears, and the game accepts no
@@ -819,29 +825,36 @@ frames were the **startup/splash video** (`startup_01.bk2`, seen in the FS trace
 `CreateInstance` was entered; once `CreateInstance` began and stopped completing, present went idle
 and the swapchain went `ERROR_BUSY`.
 
-## CONVERGED MECHANISM (proven, KI-0028) — the wedge is `C_Game::CreateInstance` not completing
+## WORKING MECHANISM (NOT fully proven — see the verified/inferred split) — wedge is in `C_Game::CreateInstance`
 
-The chain of evidence now closes to one mechanism, every link proven this session:
-1. P-F: the FS-takeover SWAP is the sole differentiator (swap-off → interactive menu; swap-on →
-   black). The cause is something the swapped CCryPak serves/answers differently.
-2. FS content is exonerated (PROBE I, diffs=0) — not wrong bytes.
-3. The game is NOT hung (tick advances ~35/s) — it RUNS but never presents.
-4. Present is not the problem (PROBE K: present idle because never called, not blocked) — falsified.
-5. **Both Main and RenderThread are stuck working inside `C_Game::CreateInstance` (entity/instance
-   init), which never completes** (PROBE K.3 + P-J.5). The menu's own assets load + its video loops
-   on a side path, but instance construction never finishes → no live frame is ever produced to
-   present → black screen; and Main never returns from CreateInstance to a normal input-pumping
-   steady state.
+> CORRECTION (2026-06-21): this section was previously titled "CONVERGED MECHANISM (proven)". That
+> overstated it. The authoritative verified/inferred/open split is in the handoff doc
+> (`_research/ki0028-fsr2-poll-loop-recon/HANDOFF.md`); this section is the working summary, with the
+> over-confident links downgraded below. Read the handoff for what is actually proven.
 
-**ROOT-CAUSE QUESTION (the one remaining, now precise):** what does the swapped CCryPak serve or
-answer differently that makes `C_Game::CreateInstance`'s entity/instance init never complete? Same
-class as KI-0026/KI-0027 (a takeover serve a consumer loops/blocks on), now on the ENTITY/INSTANCE
-path. Candidates: an entity-def / flownode / game-data enumeration the entity system walks that
-kcdx answers wrong (a FindFirst/FindNext mask or count, like KI-0027), a `%`-alias path the entity
-loader uses, or an entity-script/Lua read. Next probe: instrument the entity-init reads/enumerations
-inside the CreateInstance window and diff swap-on vs swap-off, OR identify `0x36eb39`'s caller +
-what it loops on. Fix stays in kcdx full-init ownership (no thunk-back). KI stays OPEN until the
-mechanism paragraph names the wrong-served value (AP17).
+The evidence points at one area; NOT every link is proven:
+1. **NOT "the sole differentiator".** P-F's swap-ON arm changed FOUR things vs swap-OFF (FS dispatch,
+   the BootWatch watcher thread, the PresentProbe thread, and `BuildAssetIndexAtSeat`'s on-Main
+   `WaitForSingleObject(INFINITE)`). PROBE L removed 2 (present-probe, watcher) and the wedge
+   persisted → the cause is in {FS dispatch, the index-build INFINITE wait}, NOT proven to be the FS
+   dispatch alone. (VERIFIED: swap-off→menu, swap-on→wedge; INFERRED: which differentiator.)
+2. FS content diffs=0 for the files PROBE I covered — not "all files exonerated". (VERIFIED for the
+   covered files only.)
+3. The game is NOT hung — the main-thread heartbeat advances continuously (VERIFIED, 2.2 of handoff).
+4. Present is idle because never called, not blocked (PROBE K, on a pre-PROBE-L build). (VERIFIED on
+   that build.)
+5. **Main is in `C_Game::CreateInstance` at the wedge** (VERIFIED — stack, §2.3 of handoff). The
+   claim that RenderThread is ALSO "stuck in CreateInstance" rests on frames labeled by nearest
+   export (NGX/FSR2), which are NOISE (§2.6) — so the RenderThread half of this item is NOT reliably
+   established; treat "Main is in CreateInstance" as the proven part.
+
+**ROOT-CAUSE QUESTION (still open):** of {FS dispatch, the index-build INFINITE wait}, which causes
+the wedge, and via what value/state the entity-init loop consumes? FS content was byte-correct where
+checked and the freeze window is FS-silent (so not an in-progress wrong serve AT wedge time), but a
+value served wrong EARLIER in boot is not ruled out. Next: read `0x36eb39`/`0x36ff17` for the outer
+loop's exit condition (AP19); separate the two P-F differentiators (P-L.2); read the unread
+`game/kcd.log` in the PROBE L crash bundle. Fix stays in kcdx full-init ownership (no thunk-back). KI
+stays OPEN until the Resolution names the mechanism (AP17).
 
 ### FS-op logging contract upgrade + freeze-window capture (2026-06-21) — the wedge is FS-SILENT compute, NOT a filesystem serve
 
@@ -862,14 +875,20 @@ Two launches with the upgraded logging:
   periodic cursor-texture reload. NO entity reads, NO enumerations, NO game-data loads, NO failures
   during the wedge. (PROVEN — `grep FS_BOOT_TRACE` in 10:53–10:57 window = 0)
 
-**DECISIVE REFRAME — the wedge is COMPUTE/SYNC inside `CreateInstance`, not a filesystem serve.**
-`CreateInstance` (where Main + RenderThread both sit, PROBE K.3) does NO file I/O while wedged — the
-tick keeps running, but instance construction spins in compute/sync without finishing and without
-touching the FS. So the FS-takeover swap perturbs `CreateInstance` through something that is NOT a
-file op: a STATE value the swap changed, an object/pointer/handle the swap altered, or an
-init-ordering/threading effect — NOT a wrong-served file (FS content exonerated by PROBE I diffs=0;
-FS serving exonerated by this FS-silent freeze). The KI-0026/KI-0027 "wrong-served-file" class is
-RULED OUT for this wedge.
+**REFRAME (partially verified — read with care):** the freeze window is FS-SILENT (VERIFIED, above).
+Main is in `C_Game::CreateInstance` at the wedge (VERIFIED — stack). The "RenderThread is also in
+CreateInstance (PROBE K.3)" claim rests on nearest-export-NOISE frames (§2.6) and is NOT reliably
+established — treat only the Main half as proven.
+- **VERIFIED:** no file op is in progress DURING the freeze (FS-silent), and FS content was
+  byte-correct for the files PROBE I covered.
+- **INFERRED, NOT proven:** "the wedge is compute/sync, not a filesystem serve." The FS-silent freeze
+  rules out an in-progress wrong serve AT wedge time; it does NOT rule out a value served wrong
+  EARLIER in boot whose effect surfaces in the entity-init loop, and PROBE I covered SOME files, not
+  all the entity system reads. So "the KI-0026/KI-0027 wrong-served-file class is RULED OUT" OVERSTATES
+  it — downgraded to "not the proximate cause AT wedge time; an earlier wrong serve is not excluded."
+- The blocking primitive at the wedge is a `SleepEx` inside the BOUNDED focus poll, re-entered by an
+  unread outer loop (§2.5, AP19). What that outer loop spins on (a compute value, a sync object, a
+  state flag, an entity-registry value) is NOT determined.
 
 **OWED next (off the FS axis entirely):** instrument `C_Game::CreateInstance` INTERNALS, not the
 filesystem. Identify what the entity-init loop (`0x36eb39` + its caller) spins/waits on in compute —
@@ -915,24 +934,35 @@ present vs absent. The FS dispatch + index-build wait stay identical to the wedg
   the index-build INFINITE wait, isolating swap-dispatch vs the on-Main wait.
 
 **Result (RAN 2026-06-21, PROBE L build deployed `6F86DC56…`, hash-verified, injected per launcher
-log):** **STILL WEDGES — same black screen + audio** (user-observed, process PID 18100 alive,
-`Responding=True`, 198 CPU-s, 2.1 GB WS). **The two probe threads are EXONERATED** — disarming
-`BootWatchStart` + `PresentProbeStart` did NOT clear the wedge, so the diagnostic instrumentation is
-not the cause. The converged mechanism's direction HOLDS: the wedge is the FS swap or the
-index-build INFINITE wait (the remaining 2 of P-F's 4 differentiators), not the probe threads. Next:
-P-L.2 — suppress only `BuildAssetIndexAtSeat`'s on-Main INFINITE wait (keep swap), isolating
-swap-dispatch vs the wait.
+log; session `11-13-16`):** **STILL WEDGES — same black screen + audio** (user-observed; process
+PID 18100 ran ~9 min, `Responding=True`, 325+ CPU-s). VERIFIED from the PROBE L dev log (read AFTER
+the process exited — see the 0-byte CORRECTION below):
+- **PROBE L disarmed TWO of the three diagnostic mechanisms, NOT both "probe threads".** The log
+  proves: `PresentProbeStart` OFF (0 `PRESENT_PROBE` lines), `BootWatchStart`'s stall-dump watcher
+  thread OFF (0 `BOOT_WATCH_STALL`/`RESUMED` lines). BUT the per-frame heartbeat tick
+  (`BootWatchTick()`, a SEPARATE call site at `hooks.cpp:1033`, never commented out) STAYED LIVE —
+  537 `BOOT_WATCH heartbeat` lines, tick=1→41686. (VERIFIED — `kcdx-dev_2026-06-21_11-13-16.log`.)
+- **So PROBE L did NOT test a fully-instrumentation-free boot.** It removed the present-probe + the
+  watcher thread; the per-frame heartbeat logging was still firing every frame.
+- **What this DOES establish (VERIFIED):** removing the present-probe + the stall-dump watcher did
+  NOT change the wedge → those two threads are not the cause.
+- **What it does NOT establish:** "both probe threads exonerated" / "the FS swap is the cause".
+  Commit `f0b1a3f`'s message OVERSTATES this — corrected here. The per-frame heartbeat tick was not
+  disarmed (LOW likelihood as a cause — single atomic + once-per-second log, and it ALSO ran in the
+  pre-PROBE-L wedging build — but not ruled out by a probe). And the FS swap vs the index-build
+  INFINITE wait are still two unseparated differentiators (P-L.2 owed: suppress only
+  `BuildAssetIndexAtSeat`'s on-Main `WaitForSingleObject(INFINITE)`, keep swap).
 
-**ANOMALY (must investigate before P-L.2):** this run's engine logs (`kcdx_*.log`, `kcdx-dev_*.log`)
-are **0 bytes** — no session-start banner, nothing — while EVERY prior wedging run wrote thousands of
-engine lines before wedging (the pre-PROBE-L `10-51-56` run wrote the banner instantly + ran 654
-heartbeat ticks). The launcher log + `kcdx-verify` JSON DID write (injection OK 11:13:16.648; verify
-self-test ran 11:13:46). So the engine DLL loaded but its logger produced zero output this run. Two
-readings, not yet distinguished: (A) the engine wedged before its logger's first flush and the log is
-buffered/lost on the still-running process (a flush-on-exit artifact, not a real change); (B) the
-PROBE L build's removal of the two thread-arm calls changed init timing enough to wedge BEFORE logger
-init — an earlier failure. Checkable: let the process exit (flushes buffers), re-read the engine log.
-Do NOT theorize past this — the 0-byte log is a checkable unknown.
+**CORRECTION — the "0-byte log" was a FILESYSTEM-METADATA ARTIFACT, not a logging failure (do not
+repeat this misread).** While PID 18100 RAN, PowerShell reported its engine logs (`kcdx_*.log`,
+`kcdx-dev_*.log`) as 0 bytes for ~10 min. This drove an (incorrect) line of reasoning that the engine
+wedged before logging. It was WRONG. After the process EXITED, the same files were 461 KB / 11.9 MB —
+fully written, with the banner, 30 suite summaries, and 537 heartbeat lines. kcdx `fflush`es every
+line (`log.cpp:238`), so the log was being written all along; the OS just did not update the on-disk
+file SIZE/mtime until a flush/close boundary while the process held the handle. The earlier "two
+readings (A)/(B)" framing rested on a false premise (the log was never empty). LESSON: never infer
+"logging failed / wedged early" from a 0-byte log size on a STILL-RUNNING process — read it after
+exit, or read kcdx's in-memory log state via cdb.
 
 ### P-L resolved by INVASIVE cdb on the live PROBE L process (RAN 2026-06-21, PID 18100, `qd`-detached)
 
@@ -953,13 +983,20 @@ WHGame!…+0x36ff17                           ← the frame BETWEEN entity-init 
 KingdomCome+0x36db / +0x4ad5 / +0x898a (main)
 ```
 
-- **ANOMALY RESOLVED → reading (A).** The 0-byte engine log is a FLUSH artifact of the still-running
-  process, NOT an earlier failure. Main is in the SAME `CreateInstance`/entity-init wedge as P-A, so
-  the engine ran normally then wedged with its log buffer unflushed. (B) is FALSIFIED — the PROBE L
-  build did not wedge earlier; it wedges identically. (PROVEN — Main stack == P-A stack)
-- **PROBE L CONFIRMED: the two probe threads are EXONERATED.** Same wedge with `BootWatchStart` +
-  `PresentProbeStart` disarmed → the diagnostic threads are not the cause; the converged mechanism
-  (the FS swap perturbs `CreateInstance`) HOLDS. (PROVEN — wedge persists, identical stack)
+- **PROVEN: PROBE L wedges with Main's stack BYTE-FOR-BYTE == P-A.** Main is in the SAME
+  `CreateInstance`/entity-init wedge; the symptom + stack are unchanged from the pre-PROBE-L runs.
+  (PROVEN — resolved stack, kcdx PDB loaded.)
+- **RESOLVED (post-exit log read): the 0-byte log was a metadata artifact; the disarm is CONFIRMED.**
+  The earlier "reading (A) vs (B)" question is moot — the log was never empty (see the CORRECTION in
+  the Result block above). Reading the populated post-exit log VERIFIES: present-probe disarmed (0
+  `PRESENT_PROBE` lines), watcher thread disarmed (0 stall/resume lines), per-frame heartbeat tick NOT
+  disarmed (537 lines). So the disarm took for the two intended threads, and the wedge persisted with
+  them gone. (VERIFIED — `kcdx-dev_2026-06-21_11-13-16.log`.)
+- **ROBUST CONCLUSION (what the run DOES establish):** PROBE L did not change the wedge — same stack,
+  same symptom — so the present-probe + watcher threads are NOT the cause and the FS-swap mechanism
+  remains the live suspect. NOT established: that the FS dispatch ALONE causes it (the index-build
+  INFINITE wait is an unseparated second differentiator, P-L.2 owed), nor that the un-disarmed
+  per-frame heartbeat tick is innocent (low likelihood, not probed).
 - **`0x36eb39` IS ON THE STACK, directly above `0x36ff17` above the focus poll.** The decoded call
   chain at the wedge: `HookedUpdate → [update dispatcher 0x16c7a0] → 0x36eb39 (entity-init) → 0x36ff17
   → 0x36af90 (focus poll, bounded) → SleepEx`. The focus poll is BOUNDED (5 iter, FINDINGS); the
