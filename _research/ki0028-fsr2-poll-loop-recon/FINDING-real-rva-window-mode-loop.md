@@ -801,6 +801,56 @@ edge (cache-enum-0 → no-compile-dispatch) is the next thing to verify, not ass
 cache-dir enum (collapse `//` + resolve the alias-keying asymmetry so the enum prefix matches the stored
 key), re-run, and check whether `gfx_calls` jumps + the workers get compile work.
 
+## ENUM FIXES COMPLETE + VERIFIED (2026-06-22) — all shader enums now succeed, but BLACK PERSISTS; blocker is PAST the FS layer
+
+Two enum fixes landed + live-verified this session:
+- PROBE Q (synthetic dir entries, `find_slots.cpp`, commit d265732): `Shaders/HWScripts/*.*` → matched=1
+  (cryfx) → engine recurses → `Shaders/HWScripts/cryfx/*.*` → **matched=180**.
+- `//` collapse in NormalizeVPath (commit 0249b2e): `%ENGINE%/Shaders/Cache/D3D12//*.*` → **matched=193**
+  (was 0). NO remaining `matched=0` shader/cache enumeration.
+
+**Ground truth on the cache opens (kcdx EXONERATED):** the 287 `loose_open_failed` cache lines are ALL
+`%user%/shaders/cache/...` `how=miss-original errno=2` — the user's "saved games" shader cache, which is
+genuinely EMPTY on this machine (a fresh user cache, not yet compiled). The `%engine%/` cache opens ALL
+succeed (`how=index-pak result=3/5/7`). Vanilla does the same `%user%` probe-then-miss on a cold cache. So
+the cache serving is healthy; the `%user%` misses are normal first-run behavior, NOT a kcdx defect.
+
+**THE DECISIVE NEGATIVE: `gfx_calls` STILL = 1 with ALL shader enums fixed.** Full shader enumeration
+(source tree 180 + compiled cache 193) + correct cache serving did NOT make the engine build the pipeline
+set. Live invasive cdb (game still running, all enums fixed): Main is in the WINDOW MESSAGE PUMP
+(`NtUserPeekMessage` → `PeekMessageW` → `gameoverlayrenderer64` → WHGame per-frame `CreateInstance` loop →
+`HookedUpdate`) — ticking + pumping NORMALLY, not stalled. ALL JobWorkers idle (`NtWaitForAlertByThreadId` →
+`RtlSleepConditionVariableSRW` → the job-wait) — NO compile/build work dispatched. Steady-state idle with
+every shader input available.
+
+**WHAT THIS ESTABLISHES (verified, a clean phase boundary):** the KI-0028 FILESYSTEM-ENUMERATION defects
+are FOUND + FIXED + VERIFIED (the enums returned wrong sets; now they return the right sets — the engine
+discovers its full shader tree + cache). This was real, necessary work (the FS takeover's enumeration did
+not match `_findfirst64` dir-walk semantics). BUT it is NOT sufficient: the black screen persists, and the
+blocker is now PAST the FS layer. The engine has all shader inputs but never transitions from "shaders
+enumerated/served" to "build the render pipelines + draw the menu." `gfx_calls=1` (the present blit only),
+workers idle, Main pumping frames.
+
+**THE REMAINING BLOCKER IS A DIFFERENT AXIS (not FS enumeration):** what triggers the engine to build its
+render pipeline set + draw the first menu frame, and why does that trigger fire swap-OFF (reaches the menu)
+but not swap-ON now that the FS is fully served? This is a render-subsystem / engine-state question. The FS
+takeover is the differentiator (P-F holds), but the perturbation is no longer in WHAT the FS serves/
+enumerates (all verified correct) — it is in some engine STATE or INIT-ORDER side effect of the swap that
+gates the render-build dispatch. Candidate axes (NONE probed — do NOT fix on theory):
+  - an init-ORDER difference: the swap changes WHEN the FS becomes ready, so a render-init step that depends
+    on FS-ready ran too early/late and a one-time "build pipelines" trigger was missed.
+  - a global/flag the swap perturbs that gates the render-build dispatch (the O4 axis PROBE P's design
+    named — a side effect elsewhere, not a consumed FS value).
+  - the engine waiting on a shader-COMPILE completion that never starts because the compile dispatch itself
+    is gated on a condition the swap leaves unmet (workers idle = compile never dispatched).
+
+**Honest status:** a real, multi-defect FS-enumeration bug is FIXED (commits e88a9eb, d265732, 0249b2e) and
+verified at the enum/serve level. KI-0028's symptom (black) persists because a SECOND, distinct blocker sits
+past the FS layer in render-build dispatch. The investigation moves from "is the FS serving the shaders"
+(answered YES) to "what gates the render-pipeline build under the swap" (open, a fresh axis). KI-0028 OPEN;
+the FS-enumeration root cause is documented (AP17-grade for that layer), the render-build-trigger mechanism
+is the next root cause owed.
+
 ## Reuse pointers
 
 - PROBE Q: `find_slots.cpp` BuildUnifiedFindEntries index-walk arm — emits a synthetic dir entry per distinct
