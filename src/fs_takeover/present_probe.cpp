@@ -18,15 +18,24 @@ namespace {
 using KV = ::kcdx::log::KV;
 constexpr const char* kCat = "PRESENT_PROBE";
 
-// IDXGISwapChain vtable slot indices (stable COM contract — IUnknown 0-2,
-// IDXGIObject 3-6, IDXGIDeviceSubObject 7, then IDXGISwapChain):
-//   8  = Present
-//   13 = GetLastPresentCount(UINT*)
-//   18 = GetFrameStatistics(DXGI_FRAME_STATISTICS*)
+// IDXGISwapChain vtable slot indices (stable COM contract). FULL layout:
+//   IUnknown 0-2 (QueryInterface/AddRef/Release)
+//   IDXGIObject 3-6 (SetPrivateData/SetPrivateDataInterface/GetPrivateData/GetParent)
+//   IDXGIDeviceSubObject 7 (GetDevice)
+//   IDXGISwapChain: 8=Present, 9=GetBuffer, 10=SetFullscreenState,
+//     11=GetFullscreenState, 12=GetDesc, 13=ResizeBuffers, 14=ResizeTarget,
+//     15=GetContainingOutput, 16=GetFrameStatistics, 17=GetLastPresentCount
 // We CALL these by index off the captured pointer — never patch slot 8 (no
-// present hook). Indices verified against the documented IDXGISwapChain layout.
-constexpr int kSlot_GetFrameStatistics = 18;
-constexpr int kSlot_GetLastPresentCount = 13;
+// present hook).
+//
+// BUG FIX (KI-0028, PROBE K run 1): the prior constants were 18/13 — WRONG.
+// Slot 13 is ResizeBuffers (calling it as GetLastPresentCount returned
+// E_INVALIDARG=0x80070057 every read), slot 18 is past IDXGISwapChain (it
+// happened to land on a IDXGISwapChain1 method, returning a stale value read as
+// "frame stats"). The frozen 3840/2160 + the E_INVALIDARG were the slot bug, not
+// ground truth. Corrected to 16/17 per the documented layout above.
+constexpr int kSlot_GetFrameStatistics = 16;
+constexpr int kSlot_GetLastPresentCount = 17;
 
 // IDXGIFactory vtable: CreateSwapChain is slot 10. IDXGIFactory2 extends it;
 // CreateSwapChainForHwnd is slot 15. We patch BOTH so either creation path is
