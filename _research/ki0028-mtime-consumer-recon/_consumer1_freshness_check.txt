@@ -1,0 +1,2 @@
+consumer1 mtime-stash global VA = 0x185497880 (rva 0x5497880)
+riprel refs to consumer1 mtime-stash global: 0

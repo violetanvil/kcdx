@@ -243,24 +243,50 @@ were decompiler variable-reuse false positives, each body-read and cleared; 9 mo
 different-object collisions. **No consumer derefs the handle — kcdx's integer is safe against all of
 them.** (Recon: `_research/ki0028-findfirst-straddle-recon/` — `_dump.txt`, `_triplet.txt`, 2 java workers.)
 
-**Where static has now CONCLUSIVELY localized:** the FS-takeover slot OUTPUTS are not a DIRECT cause of
-the no-present wedge — no window/present/swapchain consumer reads any divergent slot value. This is a
-strong negative (two theories killed by reading real consumer bodies). Two residual paths, precisely
-defined:
-1. **Indirect / multi-hop (A's residual):** a metadata premature-TRUE makes a downstream asset/level
-   load take a wrong arm (e.g. `0x244dd9c` uses a level-cache pak the engine would call absent) whose
-   effect surfaces LATER as the un-presentable swapchain. Multi-hop — NOT statically traceable; needs a
-   live swap-on/off probe of `0x244dd9c` / `0x89682d` specifically.
-2. **Divergences C (un-normalized pak path, slot 1) and D (pak mtime=0, slot 66)** — rank-2/3, their
-   consumers NOT yet read. Slot 1 (AdjustFileName) has the broadest consumer set; D's mtime-0 maps to a
-   cache-freshness never-settle (the PROBE M completion-handshake shape) but its consumer is unread.
+**C (un-normalized pak path, slot 1 AdjustFileName) — FALSIFIED as a DIRECT wedge driver.** Adapted the
+same provenance-verified pCryPak xref to vtable +0x8: **37 call sites in 31 enclosing funcs**, every one
+a FILE-OP consumer (result fed straight to FOpen/IsFileExist3/an fopen wrapper/a CryString copy-then-open/
+FWrite/a config-XML open). **Zero funcs branch on the string's FORM** — no `%engine%`-vs-`Data/` prefix
+test, no compare against a root literal; the only `cmp byte` is a generic trailing-separator append on a
+copied local. The boot-relevant ones, body-read: `0x1e03c30` (DriverD3D.cpp — copies to a MAX_PATH local,
+normalizes separators, uses as filename; never inspects root form), `0x245b5cc` (r_WindowType) +
+`0x245df70` (r_Fullscreen — each builds a path → FOpens/streams; branches on a cvar global / the FOpen
+handle, never the path form), `0x241b340` (level-cache → slot-67 existence bool, the same gate already
+read from the 67 side). **No window/present/display consumer branches on the path form** — kcdx's
+"consumer always re-resolves via a file op" assumption holds across all 31.
+(Recon: `_research/ki0028-adjustfilename-consumer-recon/`.)
 
-**Honest status of "find it with static":** static FOUND the divergences (4, verified) AND read the
-consumers for the top 2, killing both as direct drivers — that is the static method working to its
-conclusion, not failing. What static canNOT settle is the INDIRECT multi-hop path (a wrong value
-consumed at load that surfaces at present N stages later, across threads) — that residual is a
-runtime-only fact (results-driven §4). The remaining static work is C/D's consumers; the remaining
-runtime work is the multi-hop probe.
+**D (pak mtime=0, slot 66 FGetModificationTime) — FALSIFIED.** Adapted the xref to vtable +0x210:
+**3 vtable consumers**, and a whole-`.text` scan for direct rel32/address-taken callers of the engine
+body (`RVA 0x241a3bc`) found **0** — so the 3 are the complete set, mtime is NOT reached via a wrapped
+helper. Engine original's return CONFIRMED (was inferred): body `0x241a3bc` returns the pak entry's DOS
+time on the in-pak arm (`[entry+0x28]`), OS file-time on the miss arm; kcdx returns 0 on the in-pak arm —
+premise verified. **None of the 3 compares or gates on the mtime:** `0x9a2074` (boot subsystem-pointer
+cache-assembly — stores the return to a global that a whole-`.text` scan shows is **never read back**, no
+freshness use), `0x14d5580` (return used immediately as an object `this`), `0x235d7e4` (return passed
+forward as a call argument). **The feared "mtime=0 → cache always-stale → never-settling rebuild" shape
+does not exist in the consumer set; no boot/render/present consumer.** (Recon:
+`_research/ki0028-mtime-consumer-recon/`.)
+
+**Where static has now CONCLUSIVELY localized:** ALL FOUR return-contract divergences (A existence-timing,
+B find-handle straddle, C un-normalized path, D pak mtime=0) are read on the consumer side and killed as
+DIRECT wedge drivers — **no window/present/swapchain/display-mode consumer branches on any divergent slot
+value.** This is a strong negative reached by reading real consumer bodies, not by inference. Residual
+paths, precisely defined:
+1. **Indirect / multi-hop:** a divergent value consumed at boot (a metadata premature-TRUE, the
+   `%engine%/...` form re-resolved inside kcdx_FOpen, a stored/forwarded mtime later diffed against a
+   fresh stat) makes a downstream load take a wrong arm whose effect surfaces LATER as the un-presentable
+   swapchain — N stages and threads removed from the slot call. NOT statically traceable (would require
+   whole-engine symbolic data-flow across threads on a stripped binary); a live swap-on/off probe is the
+   only path. Concrete probe targets surfaced by the consumer reads: `0x244dd9c`/`0x89682d` (A's level-
+   cache + Menu.gfx gates), the kcdx_FOpen alias re-resolution (C's residual — the KI-0026 alias-namespace
+   class), the `0x9a2074` cache-assembly globals (D's residual).
+
+**Honest status of "find it with static":** static FOUND the divergences (4, verified) AND read ALL of
+their consumers, killing every one as a direct driver — the static method run to its conclusion, not
+failing. What static canNOT settle is the INDIRECT multi-hop path (a wrong value consumed at load that
+surfaces at present N stages later, across threads) — a runtime-only fact (results-driven §4). Static work
+on the slot outputs is now COMPLETE; the remaining work is the live multi-hop probe.
 
 ## Reuse pointers
 

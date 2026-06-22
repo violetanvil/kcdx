@@ -1,0 +1,133 @@
+func RVA 0x463a24
+      "%USER%"
+      "XML reader: "
+      "%sReported file size is -1 '%s'"
+      "XML reader: "
+      "%sCan't allocate %u bytes of memory '%s'"
+func RVA 0x4881d0
+      (no resolved strings in first 0x800)
+func RVA 0x4d3190  <<< gfx-vocab
+      "All texture objects: %u (Size: %.3fMb), NonStreamed: %d (Size: %.3fMb)"
+      "All Loaded Texture Maps: %d (All MIPS: %.3fMb, Loaded MIPS: %.3fMb)"
+      "All Dynamic textures: %d (%.3fMb), %d Atlases (%.3fMb), %d Separared (%.3fMb)"
+      "MissingTextures.txt"
+func RVA 0x4d4198
+      "Loading and executing script file '%s'..."
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\CryScriptSystem\ScriptSystem.cpp"
+      "terrain\merged_meshes_sectors\mmrm_used_meshes.lst"
+      "[Lua Error] Failed to execute file %s: %s"
+      "wh_sys_ipl_mode"
+func RVA 0x7aebcc
+      "Open - No Resource name"
+      "r+b"
+      "w+b"
+      "Open - Can't open resource file <%s>"
+      "Open - no file handle (lookupdata not found, while streaming data?)"
+func RVA 0x8968e8
+      (no resolved strings in first 0x800)
+func RVA 0x9b6d24
+      "===== Preloading CDFs ===="
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\CryAnimation\CharacterManager.cpp"
+      ".cdf"
+      "===== Finished Preloading %d CDFs in %.2f seconds ===="
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\CryAnimation\CharacterManager.cpp"
+func RVA 0xb0479c  <<< gfx-vocab
+      "shader cache"
+      "The static macro with CRC %u which is expected for compilation of shaders in %s is not expected on the current platform."
+func RVA 0xb05604  <<< gfx-vocab
+      "<ThreadConfigInfo>: (%s: %u core) Unable to find platform config "%s". Next valid config found was %s_%u."
+      "<ThreadConfigInfo>: Active platform identifier string "%s" not found in config "%s"."
+func RVA 0xbb1fe4  <<< WINDOW/PRESENT/DISPLAY
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\PipelineStateCacheManager.cpp"
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\PipelineStateCacheManager.cpp"
+func RVA 0x11a43b0
+      "permanent.log"
+      "LogBackups"
+      "LogBackups"
+      "BackupNameAttachment="
+      "Log::CreateBackupFile ERROR '"
+func RVA 0x11a4896
+      "Players inventory capacity"
+      "i_inventory_capacity"
+      "Gives specified item to the player!"
+      "i_giveitem"
+      "Drops the current selected item!"
+func RVA 0x19d4a48  <<< gfx-vocab
+      "%USER%/shaders/shaderlist.txt"
+      "Failed to open shader combinations cache '%s'"
+      "Loaded shader list: %d out of %d"
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\Common\Shaders\ShaderCache.cpp"
+func RVA 0x19dfb54  <<< gfx-vocab
+      "%USER%\Shaders\ShaderCacheMisses.txt"
+func RVA 0x1e03c30  <<< WINDOW/PRESENT/DISPLAY
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DriverD3D.cpp"
+      "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DriverD3D.cpp"
+func RVA 0x224f0aa
+      "Frame"
+      "\%s%06d.%s"
+      "Warning: Frame capture failed!
+"
+func RVA 0x241b340
+      "Level cache pak file %s does not exist"
+      "Number of draw calls: %d (current budget is %d). You're over budget!!!"
+      "Number of draw calls: %d (current budget is %d)."
+      "Frame time: %3.1f ms = %3.1f fps (current budget is %3.1f ms = %3.1f fps). You're over budget!!!"
+      "Frame time: %3.1f ms = %3.1f fps (current budget is %3.1f ms = %3.1f fps)."
+func RVA 0x241dad0
+      "BugSplatAttachments"
+      "%Y-%m-%d_%H_%M_%S"
+      "%s_%03d%s"
+      "false"
+      "true"
+func RVA 0x24265d8  <<< WINDOW/PRESENT/DISPLAY
+      "Unable to load cursor from windows resource id: %i"
+func RVA 0x2428354
+      "test_session_id"
+      "Cannot create full dump because the test_session_id is not set"
+      "FullDumpManual.dmp"
+      "FullDumpSession%d.dmp"
+      "%%USER%%/%s"
+func RVA 0x244f8e8
+      "auto_resources_sequence.txt"
+      "auto_resources_total_sequence.txt"
+      "%s
+"
+      "auto_resourcelist.txt"
+      "auto_resourcelist_total.txt"
+func RVA 0x244fb14
+      "auto_resources_sequence.txt"
+      "auto_resources_total_sequence.txt"
+      "%s
+"
+      "auto_resourcelist.txt"
+      "auto_resourcelist_total.txt"
+func RVA 0x245b080  <<< gfx-vocab
+      "Shaders.pak"
+func RVA 0x245b5cc  <<< WINDOW/PRESENT/DISPLAY
+      "r_WindowType"
+func RVA 0x245dd38  <<< WINDOW/PRESENT/DISPLAY
+      "RegisterPak '%s' failed - file not present?"
+func RVA 0x245df70  <<< WINDOW/PRESENT/DISPLAY
+      "r_Fullscreen"
+func RVA 0x2460c34  <<< gfx-vocab
+      "Shaders"
+func RVA 0x24f7399
+      "Proxy"
+      "Reference"
+      "Streaks"
+      "Enablegradienttex"
+      "GradientTex"
+func RVA 0x2547ec4
+      "%USER%/ScreenShots"
+      "%s%s.jpg"
+      "%y%m%d_%H%M%S"
+      "%sScreenShot_%s.jpg"
+      "Cannot save screen shot! Failed to create directory "%s"."
+func RVA 0x3498130  <<< gfx-vocab
+      "Failed to write '%s' (not supported on this platform?)"
+func RVA 0x370f3a0
+      ".meta"
+      ".meta"
+      ".bmp"
+      ".bmp"
+      ".xml"

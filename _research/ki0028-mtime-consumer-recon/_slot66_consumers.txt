@@ -1,0 +1,8 @@
+pCryPak loads scanned: 680
+provenance-verified slot-66 consumers: 3
+
+--- slot66_FGetModificationTime: 3
+    call VA 0x1809a20ec RVA 0x9a20ec  direct-pcrypak  in func 0x1809a2074 (RVA 0x9a2074)
+    call VA 0x1814d5619 RVA 0x14d5619  vt<-pcrypak  in func 0x1814d5580 (RVA 0x14d5580)
+    call VA 0x18235d8df RVA 0x235d8df  vt<-pcrypak  in func 0x18235d7e4 (RVA 0x235d7e4)
+

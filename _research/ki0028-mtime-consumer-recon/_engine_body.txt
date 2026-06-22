@@ -1,0 +1,56 @@
+0x18241a3bc (rva 0x241a3bc)  mov     qword ptr [rsp + 0x20], rbx
+0x18241a3c1 (rva 0x241a3c1)  push    rbp
+0x18241a3c2 (rva 0x241a3c2)  push    rsi
+0x18241a3c3 (rva 0x241a3c3)  push    rdi
+0x18241a3c4 (rva 0x241a3c4)  sub     rsp, 0x20
+0x18241a3c8 (rva 0x241a3c8)  lea     rbx, [rcx + 0x10]
+0x18241a3cc (rva 0x241a3cc)  mov     rsi, rcx
+0x18241a3cf (rva 0x241a3cf)  mov     rcx, rbx
+0x18241a3d2 (rva 0x241a3d2)  lea     rdi, [rdx - 1]
+0x18241a3d6 (rva 0x241a3d6)  mov     rbp, rdx
+0x18241a3d9 (rva 0x241a3d9)  call    0x180462014
+0x18241a3de (rva 0x241a3de)  test    al, al
+0x18241a3e0 (rva 0x241a3e0)  je      0x18241a3ee
+0x18241a3e2 (rva 0x241a3e2)  lock inc dword ptr [rbx]
+0x18241a3e5 (rva 0x241a3e5)  lea     rcx, [rbx + 0x10]
+0x18241a3e9 (rva 0x241a3e9)  call    0x18042deb4
+0x18241a3ee (rva 0x241a3ee)  mov     rcx, qword ptr [rsi + 0x40]
+0x18241a3f2 (rva 0x241a3f2)  movabs  rdx, 0xaaaaaaaaaaaaaaab
+0x18241a3fc (rva 0x241a3fc)  mov     rax, qword ptr [rsi + 0x48]
+0x18241a400 (rva 0x241a400)  sub     rax, rcx
+0x18241a403 (rva 0x241a403)  sar     rax, 3
+0x18241a407 (rva 0x241a407)  imul    rax, rdx
+0x18241a40b (rva 0x241a40b)  cmp     rdi, rax
+0x18241a40e (rva 0x241a40e)  jae     0x18241a432
+0x18241a410 (rva 0x241a410)  lea     rax, [rdi + rdi*2]
+0x18241a414 (rva 0x241a414)  mov     rcx, qword ptr [rcx + rax*8 + 8]
+0x18241a419 (rva 0x241a419)  mov     rcx, qword ptr [rcx + 0x28]
+0x18241a41d (rva 0x241a41d)  call    0x180eb72b0
+0x18241a422 (rva 0x241a422)  mov     rcx, rbx
+0x18241a425 (rva 0x241a425)  mov     rdi, rax
+0x18241a428 (rva 0x241a428)  call    0x180506f94
+0x18241a42d (rva 0x241a42d)  mov     rax, rdi
+0x18241a430 (rva 0x241a430)  jmp     0x18241a478
+0x18241a432 (rva 0x241a432)  mov     rcx, rbx
+0x18241a435 (rva 0x241a435)  call    0x180506f94
+0x18241a43a (rva 0x241a43a)  mov     rcx, rbp
+0x18241a43d (rva 0x241a43d)  call    qword ptr [rip + 0x15e984d]
+0x18241a443 (rva 0x241a443)  mov     ecx, eax
+0x18241a445 (rva 0x241a445)  call    qword ptr [rip + 0x15e9855]
+0x18241a44b (rva 0x241a44b)  mov     rcx, rax
+0x18241a44e (rva 0x241a44e)  lea     r9, [rsp + 0x40]
+0x18241a453 (rva 0x241a453)  lea     r8, [rsp + 0x48]
+0x18241a458 (rva 0x241a458)  lea     rdx, [rsp + 0x50]
+0x18241a45d (rva 0x241a45d)  call    qword ptr [rip + 0x15e83c5]
+0x18241a463 (rva 0x241a463)  mov     eax, dword ptr [rsp + 0x44]
+0x18241a467 (rva 0x241a467)  mov     dword ptr [rsp + 0x4c], eax
+0x18241a46b (rva 0x241a46b)  mov     eax, dword ptr [rsp + 0x40]
+0x18241a46f (rva 0x241a46f)  mov     dword ptr [rsp + 0x48], eax
+0x18241a473 (rva 0x241a473)  mov     rax, qword ptr [rsp + 0x48]
+0x18241a478 (rva 0x241a478)  mov     rbx, qword ptr [rsp + 0x58]
+0x18241a47d (rva 0x241a47d)  add     rsp, 0x20
+0x18241a481 (rva 0x241a481)  pop     rdi
+0x18241a482 (rva 0x241a482)  pop     rsi
+0x18241a483 (rva 0x241a483)  pop     rbp
+0x18241a484 (rva 0x241a484)  ret     
+  --- ret + int3 pad (func end) ---
