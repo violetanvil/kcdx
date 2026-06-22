@@ -15,16 +15,22 @@ commit_at_filing: 4befc07
 > the **handoff governs**. Several earlier "PROVEN"/"converged"/"exonerated" claims have been
 > downgraded in place — read the handoff first.
 >
-> **CORRECTION (2026-06-21) — the wedge is a WINDOW/DISPLAY-MODE loop, NOT entity-init.** Every
+> **CORRECTION (2026-06-21) — the "entity-init" frames are an offset-vs-RVA artifact.** Every
 > "entity-init" / "`0x36eb39`" / "`CreateInstance` entity construction" claim in this trail is an
-> **offset-vs-RVA conflation artifact**: the cdb frames are `ffxFsr2ResourceIsNull` (nearest-export
-> NOISE) **+ offset**, and the bare offset `0x36eb39` was disassembled as a raw RVA (an unrelated
-> entity-name stub). The REAL wedge fn is RVA **`0x869c39`** (= export `0x4fb100` + `0x36eb39`): a
-> window/display-mode/fullscreen function (`r_Fullscreen`, the `0x492b890` window-mgr singleton) whose
-> outer loop is a **critical-section-guarded completion-token spin** (re-runs while counter
-> `0x56628d8`/`0x56628dc` `!= -1`) the FS swap leaves never-satisfied. Proof + the pinned mechanism +
-> the owed live probe: `_research/ki0028-fsr2-poll-loop-recon/FINDING-real-rva-window-mode-loop.md`.
-> Read "entity-init" anywhere below as "window/display-mode loop (RVA 0x869c39)".
+> **offset-vs-RVA conflation**: the cdb frames are `ffxFsr2ResourceIsNull` (nearest-export NOISE)
+> **+ offset**; the bare offset `0x36eb39` was disassembled as a raw RVA (an unrelated entity-name
+> stub). The real frame is RVA `0x869c39` (= export `0x4fb100` + `0x36eb39`), a
+> window/display-mode/fullscreen function. Do not read "entity-init" as the subsystem.
+>
+> **CORRECTION 2 (2026-06-22) — PROBE M falsified "the `0x869c39` loop is the wedge gate."** A live
+> swap-ON vs swap-OFF read of that loop's exit-condition globals (counters `0x56628d8/dc`, flags
+> `0x556d080/084`, singletons `0x492b890`-family) showed them evolving **IDENTICALLY** in the wedged
+> run and the menu-reaching run — counters freeze at `0x80002B7x` in BOTH, never reaching the `-1` the
+> static read predicted as the exit sentinel. So `0x869c39` is **normal per-frame code that runs the
+> same with or without the swap**, on the wedged stack only because the whole update loop runs every
+> frame (Reframe 6) — NOT the differentiator. The swap IS the differentiator (P-F holds), but the
+> divergence is **not** in this loop's state. STOP chasing frames on the wedged stack. Full A/B + the
+> reframe: `_research/ki0028-fsr2-poll-loop-recon/FINDING-real-rva-window-mode-loop.md` §"PROBE M RESULT".
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**

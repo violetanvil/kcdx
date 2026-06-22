@@ -24,6 +24,21 @@ document supersedes it and says so. Do not act on an INFERRED claim as if VERIFI
 > applies to EVERY `ffxFsr2ResourceIsNull+0x…` / `NVSDK_NGX_…+0x…` frame in the trail — add the export
 > RVA before disassembling.
 
+> **CORRECTION 2 — 2026-06-22 (PROBE M): `0x869c39` is NOT the wedge gate — the loop mechanism is
+> FALSIFIED.** A live swap-ON vs swap-OFF read of that loop's exit-condition globals (counters
+> `0x56628d8/dc`, flags `0x556d080/084`, the `0x492b890`-family singletons) found them evolving
+> **IDENTICALLY** in the wedged run (run 1, black screen) and the menu-reaching run (run 2,
+> `suite: 319/343`): the counters freeze at `0x80002B7x` in BOTH and NEVER reach the `-1` the static
+> read predicted as the exit sentinel. So the "critical-section-guarded completion-token spin the swap
+> leaves unsatisfied" mechanism (§4.2 below) is **FALSIFIED** — `0x869c39` is normal per-frame code
+> that runs the SAME with or without the swap, on the wedged stack only because the whole update loop
+> runs every frame (Reframe 6). **The swap IS still the differentiator (P-F holds), but it is NOT
+> observable in this loop's state.** STOP chasing frames on the wedged stack; the next probe must
+> observe what the swapped CCryPak SERVES/CHANGES that diverges the boot, not another WHGame global
+> guessed from a static read of a per-frame function. Full A/B + reframe:
+> `FINDING-real-rva-window-mode-loop.md` §"PROBE M RESULT". (PROBE M was a no-residue probe, now
+> retired to `_research/probe-archive/ki0028-probeM-loop_state_probe.{h,cpp}`.)
+
 ---
 
 ## 1. The symptom (what the user observes)

@@ -138,6 +138,53 @@ of THAT task => identify the producer; counter already `-1` at wedge => this loo
 wedge, the per-frame re-entry from above is, widen up the stack. Fix stays in kcdx full-init
 ownership (no thunk-back) on every branch.
 
+## PROBE M RESULT (RAN 2026-06-22, swap-ON vs swap-OFF) — the loop's exit-condition globals are NOT the differentiator; the static loop theory is FALSIFIED
+
+Live read of the six exit-condition globals (`loop_state_probe.{h,cpp}`, watcher thread,
+WHGame_base + RVA), two launches: run 1 swap-ON (wedged, black screen, ~3 min),
+run 2 swap-OFF (`kcdx-noswap` marker → reached `suite: 319/343`, the menu).
+
+**A/B — the behavior is essentially IDENTICAL in both runs:**
+
+| field | run 1 swap-ON (WEDGED) | run 2 swap-OFF (MENU) |
+|-------|------------------------|-----------------------|
+| counterA (`0x56628d8`) | `0` → `0x80002B37`, then frozen | `0` → `0x80002B7A`, then frozen |
+| counterB (`0x56628dc`) | `0` → `0x80002B38`, then frozen | `0` → `0x80002B7B`, then frozen |
+| flagByte (`0x556d080`) | oscillates 1/0 early, settles 0 | oscillates 1/0 early, settles 1 |
+| flagDword (`0x556d084`) | `0` → `1` | `0` → `1` |
+| singleton0 (`0x492b890`) | null → populated (~+10s) | null → populated (~+7s) |
+| singleton1 (`0x492b8c0`) | populated throughout | populated throughout |
+
+Both runs: singleton0 builds, the counters jump from `0` to a high-bit-set nonzero value
+(`0x80002B3x` vs `0x80002B7x` — same shape, a per-boot-allocated id differing only in the
+low bits, exactly what `0x1c1e91c`'s "inc a global id, store into the counter" produces),
+flagDword→1, flagByte toggles. Then everything freezes (run 1 froze ~+71s; run 2 at the menu).
+
+**FALSIFIED (the static loop theory):**
+- "The loop exits when the counter `== -1`, and the swap leaves it stuck `!= -1`." The counter
+  NEVER reaches `-1` — not even in the swap-OFF run that reaches the menu. It freezes at
+  `0x80002B7x` there too. A value that is `!= -1` in the SUCCESS case cannot be the wedge gate.
+- "`0x869c39` (the window/display-mode loop) is where the swap stalls boot." Its exit-condition
+  globals evolve IDENTICALLY swap-on vs swap-off. The function runs the same way whether or not
+  kcdx owns the filesystem → it is normal per-frame code, NOT the differentiator. Its presence on
+  the wedged stack is the "a frame on the per-frame loop's stack ≠ the divergence point" trap, one
+  level under the nearest-export trap: Reframe 6 already established the whole update loop runs
+  every frame, so ANY per-frame frame appears on a sample of the wedged process.
+
+**What this leaves standing (unchanged, still solid):**
+- P-F: swap-ON wedges, swap-OFF reaches the menu. The swap IS the differentiator — that holds.
+- The wedge is real and downstream of a completed FS takeover, FS-silent at wedge time.
+- But the divergence is NOT observable in `0x869c39`'s loop state. The swap perturbs something
+  ELSE; this loop is a red herring promoted by being on the stack.
+
+**REFRAME (honest, no theory-hop):** static located a real function but the theory that it is the
+wedge gate is dead. The probe target must go back to "what does the swap-ON path do that the
+swap-OFF path does NOT" — observed directly, not inferred from a stack frame. P-F's swap-ON arm
+still carries the unseparated differentiators (FS dispatch live + the index-build wait); the next
+probe should isolate WHAT the swapped CCryPak serves/changes that diverges the boot, NOT another
+WHGame global guessed from a static read of a per-frame function. The wedged-stack frames
+(`0x869c39` etc.) are confirmed per-frame noise — stop chasing frames on that stack.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
