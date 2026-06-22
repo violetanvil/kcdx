@@ -901,6 +901,84 @@ the shader path") DOWN: the engine DOES reach the cache path (it writes the vers
 the cache-load→dispatch decision (Layer B), not earlier. That is the strongest lead going into the next
 phase.
 
+## NEXT-PHASE PROBE SPEC (self-contained — a fresh session builds this from here, no prior chat needed)
+
+The DISPATCH tracer in full. Build it the way PROBE P/Q/W were built (a `// === DIAGNOSTIC (PROBE R)`
+file under `src/fs_takeover/` + `LOG_DEBUG_KV("DISPATCH", ...)`; armed in `seating_hook.cpp` BEFORE the
+PROBE F noswap early-return so it fires swap-ON and swap-OFF identically — that is what makes the A/B diff
+possible, the same trick PROBE W/K/P use). agent-builds-and-deploys applies (agent builds/deploys/hash-
+verifies/reads log; user only launches).
+
+**Three hook layers (innermost first; the LOWEST one ABSENT swap-on is the gate):**
+- **Layer A — job-queue enqueue.** Hook the engine's job/task push (the producer that wakes the JobWorker
+  pool the workers `RtlSleepConditionVariableSRW`-wait on). Log per enqueue: kind + tid + a running tally
+  flushed ~1/s. Answers: how many compile/PSO-build jobs are EVER pushed swap-on vs swap-off.
+- **Layer B — CShaderMan "compile this list" entry (THE LEAD).** Hook the shader-cache-load → shader-list-
+  submit (CryEngine `CShaderMan::mfInitShaders` / `mfLoadShaderStartupCache` / `mfPreloadShaders`-class — the
+  point that ingests the discovered shader set into the engine's in-memory registry and submits for compile).
+  Log entry + the list count it is about to process. Answers: does swap-on REACH this, and with what count?
+- **Layer C — the one-time "render-system ready, build pipelines now" trigger.** The system-init→first-frame
+  transition that gates pipeline creation (`CD3D9Renderer` first-frame / the render-thread "init complete,
+  begin building" handshake — the RenderThread sits on an SRW condvar; its producer is the candidate). Log a
+  one-shot marker + a snapshot of the readiness flags/globals it checks.
+
+**The complete pre-committed outcome→meaning map (theory-independent; O2 + O5 FALSIFY the leading "swap
+perturbs render-build dispatch" theory entirely):**
+- **O1** — Layer A enqueue HIGH swap-off, ~ZERO swap-on; B/C also absent swap-on → the build dispatch is
+  never REACHED swap-on; a render-init step earlier on the path early-exited. Walk one frame up from the
+  lowest absent layer; that caller's early-exit is the gate. (Cheap narrowing already softens the BROAD form
+  of this — the engine reaches the cache path — but a within-cache-load early-exit is still O1-local.)
+- **O2** — Layer A enqueue ~EQUAL both modes, workers still idle swap-on → jobs ARE pushed; the workers gate
+  on a DIFFERENT readiness signal (a fence/flag checked post-wake). FALSIFIES the dispatch theory — the
+  divergence is the worker-side gate or the device, not dispatch. Trace the worker's post-wake condition.
+- **O3 (the subagent's lean)** — Layer B REACHED swap-on but `count=0` (empty shader list), HIGH swap-off →
+  the engine's in-memory shader REGISTRY is empty despite the FS serving every file. FS-serve and registry-
+  populate are different steps; one worked, the other didn't (KI-0027-class, one layer up). The gap is
+  FS-serve-vs-registry-ingest.
+- **O4** — Layer C one-shot NEVER fires swap-on, fires swap-off → a one-time "render ready, build" trigger
+  is gated by a condition the swap makes false (an init-ORDER divergence: the swap changes WHEN the FS is
+  ready, so a render-init step latched against not-yet-ready state). Capture the flag snapshot at the
+  swap-off firing; read the same address swap-on to see which flag differs.
+- **O5** — all three layers fire IDENTICALLY both modes, identical counts → dispatch is byte-identical;
+  black is DOWNSTREAM of dispatch (PSO-creation's input desc, the device, the swapchain bind) or upstream in
+  something neither FS nor dispatch touches. FALSIFIES the dispatch theory entirely; re-frame to the
+  device/PSO-input level (PROBE P's desc fields).
+
+**Why a re-launch, not the live process:** the divergence is a DYNAMIC boot-window event (which dispatch
+step ran swap-off and not swap-on), not the resting idle state — it is not on any live stack now. Only an
+instrumented run that LOGS the path as it executes, A/B'd, captures it. Live cdb already gave the resting
+state (Main in the per-frame pump, workers SRW-idle); it cannot give the historical fork.
+
+**The strongest single lead (from the cheap narrowing):** the engine writes ONLY `lookupdata.binversion.txt`
+(a cache-version check) and ZERO compiled `.cfxb` — it reaches the cache-VERSION check and stops before
+compile-dispatch. Heavy `lookupdata.bin` re-reads (2293×) + `globals.txt got=-1` (114×) suggest a cache-
+validation/lookup state the swapped FS leaves unsatisfiable (correct bytes, but a timing/handle/EOF behavior
+unlike native CCryPak) — so the engine neither USES the cache NOR falls through to COMPILE. Layer B + the
+cache-load consumer is where to instrument that. INFERRED, not proven — the tracer proves it.
+
+**FS-takeover read-behavior to scrutinize as the swap's non-byte side effect (since bytes are proven
+correct):** how kcdx's FOpen/FRead/FSeek/FTell/FEof handle for a pak-served file differs from the engine's
+native CCryPak handle — return value conventions (the `result=N` handle ids), EOF signaling, the `got=-1`
+on `globals.txt` (is that kcdx returning -1 where native returns 0-bytes-read?), FTell/FSeek semantics on a
+compressed pak entry. A cache-validation loop that checks "did I read exactly N bytes / am I at EOF" could
+loop or bail on a handle that reports these differently. This is the bridge from "FS serves correct bytes"
+to "cache-load gate fails" — check the open/read slot ABIs against what the engine's cache-validator expects.
+
+## ARMED PROBES IN SOURCE — no-residue debt the next session inherits (working-artifacts.md)
+
+These diagnostic probes are CURRENTLY LIVE in the deployed engine (built into `kcdx.dll`). On KI-0028
+closure (or when each is done), capture finding+wiring here and REMOVE from live source — no `#if 0`, no
+dormant flag (the repo's no-residue rule). Some carry a CORRECT FIX entangled with diagnostic logging;
+PROMOTE the fix, drop only the logging:
+- `src/fs_takeover/pso_probe.{h,cpp}` (PROBE P) + its arm in `seating_hook.cpp` — pure diagnostic; remove
+  whole on retire.
+- `src/fs_takeover/present_probe.{h,cpp}` (PROBE K) + arm in `seating_hook.cpp` — pure diagnostic; remove.
+- `src/fs_takeover/boot_watch.cpp` (PROBE W/H) + arm in `seating_hook.cpp` — pure diagnostic; remove.
+- `src/fs_takeover/find_slots.cpp` (PROBE Q) — CONTAINS THE REAL FIX (synthetic dir entries). PROMOTE: keep
+  the dir-entry emission, drop the `probe_q_synth_dirs` LOG_DEBUG_KV + the `synthDirs`/diagnostic comment.
+- `src/asset_overlay.cpp` NormalizeVPath `//` collapse (commit 0249b2e) is ALREADY a clean fix (no probe
+  residue) — keep as-is.
+
 ## Reuse pointers
 
 - PROBE Q: `find_slots.cpp` BuildUnifiedFindEntries index-walk arm — emits a synthetic dir entry per distinct
