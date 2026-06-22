@@ -964,6 +964,72 @@ compressed pak entry. A cache-validation loop that checks "did I read exactly N 
 loop or bail on a handle that reports these differently. This is the bridge from "FS serves correct bytes"
 to "cache-load gate fails" — check the open/read slot ABIs against what the engine's cache-validator expects.
 
+## FS-HANDLE-BEHAVIOR BRIDGE FALSIFIED (2026-06-22, code-I-own read — no launch) — the read family is CRT-faithful
+
+Before the expensive CShaderMan RE, the cheap "the swapped FS's read-handle behavior breaks the cache
+validator" bridge was checked by reading kcdx's own read-family impls (reuse-first: `fs-takeover-readslot-
+abi-recon/FINDINGS.md` has the full slot ABI table — fgets/feof/ferror/fseek/ftelli64 leaves, BODY-VERIFIED/
+LEAF-IDENTIFIED). kcdx OWNS the entire read family (slots 38-66, §4.4: every handle-operating read slot is
+KCDX never THUNK), so its impls are exactly what the engine's cache validator sees. Read
+`src/fs_takeover/file_handle.cpp` + `read_slots.cpp`:
+- **`Gets`** (FGets) returns `nullptr` at EOF (CRT fgets contract) ✓. The log's `FGets got=-1` was a
+  TraceRead format placeholder (`-1` hardcoded — FGets has no byte count, returns a `char*`), NOT an error —
+  a red herring, ruled out.
+- **`Eof`** = `cursor >= size`; **`Read`** clamps to `pakBytes.size()`; **`Seek` SEEK_END** = `size`;
+  **`FileSize`** = `pakBytes.size()` — and `MintPak` sets `s.size = s.pakBytes.size()` (line 155), so for a
+  pak handle ALL of size/EOF/seek/read/tell are mutually CONSISTENT. No off-by-one, no never-EOF, no
+  premature-EOF.
+- **`Getc`** returns -1 at EOF (CRT) ✓; **`FileSize`** returns the inflated size, never -1 (the KI-0026 fix).
+- `globals.txt` is absent in the paks (read from `%user%` only → NULL → normal first-run); the
+  `lookupdata.binversion.txt` = `1.0.0.1` (matches itself); `lookupdata.bin`'s 2293 reads are a 6ms
+  record-walk of the lookup table (normal index traversal, already shown not-a-loop).
+
+**Conclusion: the read-family handle behavior is correct (CRT-faithful, internally consistent).** The
+cache-load gate is NOT failing because of a read-handle quirk. This FALSIFIES the cheap FS-handle bridge and
+JUSTIFIES the expensive path: the gate is genuinely in the engine's render-build DISPATCH (CShaderMan / O3
+registry-populate / O4 render-ready one-shot), reachable only by the dispatch tracer with real CShaderMan
+RVAs. The cheap, code-I-own + on-disk checks are now EXHAUSTED; fresh CShaderMan RE is the warranted next step
+(NOT a cheaper dodge left untried).
+
+## CACHE IS READ, BLOBS SERVED, STILL NO PSO BUILD (2026-06-22, log analysis) — gate is POST-cache-read
+
+Pushed the cheap log analysis further (no launch). The engine DOES read the compiled shader cache; the gate
+is AFTER the cache read, in the build step:
+- **0 `.cfx` SOURCE opens** after the 180-shader source-tree enum — the engine does NOT compile from source
+  (expected; it uses the precompiled cache).
+- **574 `.cfxb` + 588 `.cfib` cache files OPEN + served** from `%engine%` (`how=index-pak`), 861 FReadRaw.
+  The `.cfib` VALIDATION companion files (98 in ShadersBin/ShaderCache, 4 in Startup) serve fine from
+  `%engine%`. So kcdx serves the ENTIRE compiled-cache set (blobs + validation files) correctly.
+- **Read pattern per blob:** open → `FReadRaw want=28 got=28` (28-byte header peek) → close, then re-open →
+  read 28 → full → close. Each shader's `%user%` cache path is opened **8×** (all fail, absent — normal
+  first-run), then falls to `%engine%` (served once). The 8× `%user%` retries per shader = the engine trying
+  multiple user-cache variants before the engine-cache fallback.
+- **NO version-mismatch / reject / recompile / stale message** in the log for the shader cache (the VERCACHE
+  lines are kcdx's OWN plugin-version cache, unrelated). The engine does not LOG a cache rejection.
+
+**So: the engine reads the full compiled cache (blobs + validation), header-peeks each, and still builds
+`gfx_calls=1`.** The gate is BETWEEN "cache blob read into the engine" and "CreateGraphicsPipelineState" —
+the blobs reach the engine but never become PSOs. Two live possibilities (need the tracer to discriminate):
+  (a) the engine reads the cache headers, finds them unacceptable by some IN-BLOB check (a version/hash/flag
+      inside the 28-byte header it compares against an expected value the swap perturbs), and silently
+      declines to build — without logging (CryEngine may not log a per-blob cache reject).
+  (b) the cache read SUCCEEDS and populates a structure, but the TRIGGER to instantiate PSOs from it (the
+      render-ready one-shot, O4) never fires under the swap.
+
+**Hard limit reached (the blind spot, again):** whether the 8×-`%user%`-retry + header-peek pattern is
+NORMAL (swap-off does it too) or swap-INDUCED is UNKNOWABLE from the swap-on log alone — swap-off emits no
+kcdx FS trace. Discriminating (a) vs (b), and normal-vs-induced, REQUIRES a render-side hook that fires in
+BOTH modes (the dispatch tracer / a `.cfxb`-consumer hook bracketing the read→PSO path). The cheap,
+log-only + code-read analysis is now FULLY EXHAUSTED across two sessions of narrowing.
+
+**The localization is now tight:** read-handle behavior correct (falsified the bridge), FS serves the entire
+cache correctly, the engine reads it all — yet 1 PSO. The defect is in the engine's cache-blob→PSO build
+step, gated by something the swap changes that is NOT a filesystem byte/handle behavior (all verified
+correct). The next instrument is the dispatch tracer (spec above) — specifically Layer B at the `.cfxb`-cache
+CONSUMER (the function that takes a read cache blob and calls CreateGraphicsPipelineState), bracketed with
+PROBE P, A/B swap-on/off. That consumer RVA is the one CShaderMan-family address to resolve first (it is more
+specific than "shader-list-submit" — it is the cache-blob→PSO site, the narrowest hook for this gate).
+
 ## ARMED PROBES IN SOURCE — no-residue debt the next session inherits (working-artifacts.md)
 
 These diagnostic probes are CURRENTLY LIVE in the deployed engine (built into `kcdx.dll`). On KI-0028
