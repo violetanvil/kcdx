@@ -1,0 +1,116 @@
+
+===== DECOMP CALLER of mfUploadHW @ 0x18252d4c4 =====
+  name: FUN_18252d4c4  conv: unknown  params: 0
+  entry: 0x18252d4c4  size(bytes): 271
+  signature: undefined FUN_18252d4c4(void)
+
+byte FUN_18252d4c4(undefined8 param_1,undefined8 param_2,undefined8 param_3,longlong param_4,
+                  longlong *param_5,undefined8 param_6)
+
+{
+  char cVar1;
+  byte bVar2;
+  byte bVar3;
+  undefined8 local_28;
+  undefined8 uStack_20;
+  undefined8 local_18;
+  
+  if (*param_5 == 0) {
+    bVar2 = 0;
+  }
+  else {
+    bVar2 = 1;
+    cVar1 = FUN_18039b480(param_6);
+    if (cVar1 != '\0') {
+      bVar2 = FUN_18252d85c(param_2,param_4,param_5);
+    }
+    bVar3 = FUN_18252f3ac(param_1,*param_5,param_4,param_3);
+    bVar2 = bVar2 & bVar3;
+    if (bVar2 != 0) {
+      local_28 = 0;
+      uStack_20 = 0;
+      local_18 = 0;
+      (**(code **)(*(longlong *)*param_5 + 0x20))();
+      (**(code **)(*(longlong *)*param_5 + 0x18))();
+      FUN_18252d5d4(param_1,param_4);
+      thunk_FUN_181241f94(&local_28);
+    }
+  }
+  FUN_18252e4e8(param_1,param_4);
+  *(byte *)(param_4 + 0x94) = *(byte *)(param_4 + 0x94) & 0xfd;
+  return bVar2;
+}
+
+
+
+===== DISASM CALLER of mfUploadHW @ 0x18252d4c4 =====
+  0x18252d4c4: MOV RAX,RSP
+  0x18252d4c7: MOV qword ptr [RAX + 0x8],RBX
+  0x18252d4cb: MOV qword ptr [RAX + 0x10],RBP
+  0x18252d4cf: MOV qword ptr [RAX + 0x18],RSI
+  0x18252d4d3: MOV qword ptr [RAX + 0x20],RDI
+  0x18252d4d7: PUSH R14
+  0x18252d4d9: SUB RSP,0x60
+  0x18252d4dd: MOV R14,qword ptr [RSP + 0x90]
+  0x18252d4e5: MOV RSI,R9
+  0x18252d4e8: MOV RBX,R8
+  0x18252d4eb: MOV R10,RDX
+  0x18252d4ee: MOV RBP,RCX
+  0x18252d4f1: CMP qword ptr [R14],0x0
+  0x18252d4f5: JZ 0x18252d5a0  -> 0x18252d5a0 (FUN_18252d4c4)
+  0x18252d4fb: MOV R9,qword ptr [RSP + 0x98]
+  0x18252d503: MOV DIL,0x1
+  0x18252d506: MOV RCX,R9
+  0x18252d509: CALL 0x18039b480  -> 0x18039b480 (FUN_18039b480)
+  0x18252d50e: TEST AL,AL
+  0x18252d510: JZ 0x18252d53e  -> 0x18252d53e (FUN_18252d4c4)
+  0x18252d512: MOV RAX,qword ptr [0x18547bb50]
+  0x18252d519: MOV R8,R14
+  0x18252d51c: MOV RDX,RSI
+  0x18252d51f: MOV ECX,dword ptr [RAX + 0x11e0]
+  0x18252d525: MOV dword ptr [RSP + 0x30],ECX
+  0x18252d529: MOV RCX,R10
+  0x18252d52c: MOV qword ptr [RSP + 0x28],RBX
+  0x18252d531: MOV qword ptr [RSP + 0x20],RBP
+  0x18252d536: CALL 0x18252d85c  -> 0x18252d85c (FUN_18252d85c)
+  0x18252d53b: MOV DIL,AL
+  0x18252d53e: MOV RDX,qword ptr [R14]
+  0x18252d541: MOV R9,RBX
+  0x18252d544: MOV R8,RSI
+  0x18252d547: MOV RCX,RBP
+  0x18252d54a: CALL 0x18252f3ac  -> 0x18252f3ac (FUN_18252f3ac)
+  0x18252d54f: AND DIL,AL
+  0x18252d552: JZ 0x18252d5a3  -> 0x18252d5a3 (FUN_18252d4c4)
+  0x18252d554: MOV RCX,qword ptr [R14]
+  0x18252d557: XORPS XMM0,XMM0
+  0x18252d55a: MOVDQU xmmword ptr [RSP + 0x40],XMM0
+  0x18252d560: MOV qword ptr [RSP + 0x50],0x0
+  0x18252d569: MOV RAX,qword ptr [RCX]
+  0x18252d56c: CALL qword ptr [RAX + 0x20]  <<< INDIRECT-CALL (vtable?)
+  0x18252d56f: MOV RCX,qword ptr [R14]
+  0x18252d572: MOV RBX,RAX
+  0x18252d575: MOV RDX,qword ptr [RCX]
+  0x18252d578: CALL qword ptr [RDX + 0x18]  <<< INDIRECT-CALL (vtable?)
+  0x18252d57b: LEA R9,[RSP + 0x40]
+  0x18252d580: MOV dword ptr [RSP + 0x28],EBX
+  0x18252d584: MOV RDX,RSI
+  0x18252d587: MOV qword ptr [RSP + 0x20],RAX
+  0x18252d58c: MOV RCX,RBP
+  0x18252d58f: CALL 0x18252d5d4  -> 0x18252d5d4 (FUN_18252d5d4)
+  0x18252d594: LEA RCX,[RSP + 0x40]
+  0x18252d599: CALL 0x1824d8580  -> 0x1824d8580 (thunk_FUN_181241f94)
+  0x18252d59e: JMP 0x18252d5a3  -> 0x18252d5a3 (FUN_18252d4c4)
+  0x18252d5a0: XOR DIL,DIL
+  0x18252d5a3: MOV RDX,RSI
+  0x18252d5a6: MOV RCX,RBP
+  0x18252d5a9: CALL 0x18252e4e8  -> 0x18252e4e8 (FUN_18252e4e8)
+  0x18252d5ae: AND byte ptr [RSI + 0x94],0xfd
+  0x18252d5b5: LEA R11,[RSP + 0x60]
+  0x18252d5ba: MOV RBX,qword ptr [R11 + 0x10]
+  0x18252d5be: MOV AL,DIL
+  0x18252d5c1: MOV RBP,qword ptr [R11 + 0x18]
+  0x18252d5c5: MOV RSI,qword ptr [R11 + 0x20]
+  0x18252d5c9: MOV RDI,qword ptr [R11 + 0x28]
+  0x18252d5cd: MOV RSP,R11
+  0x18252d5d0: POP R14
+  0x18252d5d2: RET

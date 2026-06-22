@@ -1,0 +1,81 @@
+
+===== DECOMP FUN_18252f3ac CHWShader_D3D::mfUploadHW (PRIME — blob->GPU shader obj) @ 0x18252f3ac =====
+  name: FUN_18252f3ac  conv: unknown  params: 0
+  entry: 0x18252f3ac  size(bytes): 168
+  signature: undefined FUN_18252f3ac(void)
+
+undefined8 FUN_18252f3ac(longlong param_1,longlong *param_2,longlong param_3,undefined8 param_4)
+
+{
+  char cVar1;
+  undefined8 uVar2;
+  undefined8 uVar3;
+  
+  if (*(char *)(param_1 + 0x78) == '\0') {
+    FUN_1807ce410(param_1,param_2,param_4);
+  }
+  if ((param_2 != (longlong *)0x0) &&
+     (uVar2 = (**(code **)(*param_2 + 0x18))(param_2), DAT_1852b9a60 < 0)) {
+    uVar3 = (**(code **)(*param_2 + 0x20))(param_2);
+    cVar1 = FUN_1807b18b4(param_1,param_3,uVar2,uVar3,param_4);
+    if (cVar1 == '\0') {
+      FUN_181841fb8("CHWShader_D3D::mfUploadHW: Could not create shader \'%s\'(0x%llx)\n",
+                    *(undefined8 *)(param_1 + 0x68),*(undefined8 *)(param_3 + 0x48));
+      return 0;
+    }
+  }
+  return 1;
+}
+
+
+
+===== DISASM FUN_18252f3ac CHWShader_D3D::mfUploadHW (PRIME — blob->GPU shader obj) @ 0x18252f3ac =====
+  0x18252f3ac: MOV RAX,RSP
+  0x18252f3af: MOV qword ptr [RAX + 0x8],RBX
+  0x18252f3b3: MOV qword ptr [RAX + 0x10],RBP
+  0x18252f3b7: MOV qword ptr [RAX + 0x18],RSI
+  0x18252f3bb: MOV qword ptr [RAX + 0x20],RDI
+  0x18252f3bf: PUSH R14
+  0x18252f3c1: SUB RSP,0x30
+  0x18252f3c5: CMP byte ptr [RCX + 0x78],0x0
+  0x18252f3c9: MOV RBP,R9
+  0x18252f3cc: MOV RSI,R8
+  0x18252f3cf: MOV RBX,RDX
+  0x18252f3d2: MOV RDI,RCX
+  0x18252f3d5: JNZ 0x18252f3df  -> 0x18252f3df (FUN_18252f3ac)
+  0x18252f3d7: MOV R8,R9
+  0x18252f3da: CALL 0x1807ce410  -> 0x1807ce410 (FUN_1807ce410)
+  0x18252f3df: TEST RBX,RBX
+  0x18252f3e2: JZ 0x18252f437  -> 0x18252f437 (FUN_18252f3ac)
+  0x18252f3e4: MOV RAX,qword ptr [RBX]
+  0x18252f3e7: MOV RCX,RBX
+  0x18252f3ea: CALL qword ptr [RAX + 0x18]  <<< INDIRECT-CALL (vtable?)
+  0x18252f3ed: CMP dword ptr [0x1852b9a60],0x0
+  0x18252f3f4: MOV R14,RAX
+  0x18252f3f7: JGE 0x18252f437  -> 0x18252f437 (FUN_18252f3ac)
+  0x18252f3f9: MOV RCX,qword ptr [RBX]
+  0x18252f3fc: MOV RDX,qword ptr [RCX + 0x20]
+  0x18252f400: MOV RCX,RBX
+  0x18252f403: CALL RDX
+  0x18252f405: MOV R9,RAX
+  0x18252f408: MOV qword ptr [RSP + 0x20],RBP
+  0x18252f40d: MOV R8,R14
+  0x18252f410: MOV RDX,RSI
+  0x18252f413: MOV RCX,RDI
+  0x18252f416: CALL 0x1807b18b4  -> 0x1807b18b4 (FUN_1807b18b4)
+  0x18252f41b: TEST AL,AL
+  0x18252f41d: JNZ 0x18252f437  -> 0x18252f437 (FUN_18252f3ac)
+  0x18252f41f: MOV R8,qword ptr [RSI + 0x48]
+  0x18252f423: LEA RCX,[0x1846d9f10]
+  0x18252f42a: MOV RDX,qword ptr [RDI + 0x68]
+  0x18252f42e: CALL 0x181841fb8  -> 0x181841fb8 (FUN_181841fb8)
+  0x18252f433: XOR AL,AL
+  0x18252f435: JMP 0x18252f439  -> 0x18252f439 (FUN_18252f3ac)
+  0x18252f437: MOV AL,0x1
+  0x18252f439: MOV RBX,qword ptr [RSP + 0x40]
+  0x18252f43e: MOV RBP,qword ptr [RSP + 0x48]
+  0x18252f443: MOV RSI,qword ptr [RSP + 0x50]
+  0x18252f448: MOV RDI,qword ptr [RSP + 0x58]
+  0x18252f44d: ADD RSP,0x30
+  0x18252f451: POP R14
+  0x18252f453: RET

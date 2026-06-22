@@ -1,0 +1,31 @@
+
+===== DECOMP FUN_180bb3288 PSO desc helper @ 0x180bb3288 =====
+  name: FUN_180bb3288  params: 0  size(bytes): 39
+  signature: undefined FUN_180bb3288(void)
+
+longlong * FUN_180bb3288(longlong *param_1,longlong *param_2)
+
+{
+  longlong lVar1;
+  longlong lVar2;
+  
+  lVar1 = *param_2;
+  lVar2 = param_2[1];
+  *param_1 = lVar1;
+  param_1[1] = (lVar2 - lVar1 >> 3) * -0x5555555555555555;
+  return param_1;
+}
+
+
+
+===== DISASM FUN_180bb3288 PSO desc helper @ 0x180bb3288 =====
+  0x180bb3288: MOV RAX,qword ptr [RDX]
+  0x180bb328b: MOV R8,qword ptr [RDX + 0x8]
+  0x180bb328f: MOV RDX,-0x5555555555555555
+  0x180bb3299: SUB R8,RAX
+  0x180bb329c: MOV qword ptr [RCX],RAX
+  0x180bb329f: SAR R8,0x3
+  0x180bb32a3: MOV RAX,RCX
+  0x180bb32a6: IMUL R8,RDX
+  0x180bb32aa: MOV qword ptr [RCX + 0x8],R8
+  0x180bb32ae: RET

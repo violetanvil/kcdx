@@ -1,0 +1,143 @@
+
+===== DECOMP FUN_180b209fc shader-create LEAF (mfUploadHW chain) — Create*Shader candidate @ 0x180b209fc =====
+  name: FUN_180b209fc  params: 0  size(bytes): 294
+  signature: undefined FUN_180b209fc(void)
+
+undefined8 * FUN_180b209fc(undefined8 param_1,longlong *param_2)
+
+{
+  longlong lVar1;
+  undefined8 *puVar2;
+  undefined8 *_Dst;
+  undefined8 uVar3;
+  undefined8 *puVar4;
+  int local_res10 [2];
+  int local_res18 [2];
+  
+  _Dst = (undefined8 *)0x0;
+  if (DAT_18549b490 == 0) {
+    FUN_18045ad00();
+  }
+  puVar2 = (undefined8 *)(*DAT_18549b480)(0x30,local_res10);
+  LOCK();
+  DAT_1851ddb18 = DAT_1851ddb18 + local_res10[0];
+  UNLOCK();
+  LOCK();
+  DAT_1851ddb20 = DAT_1851ddb20 + 0x30;
+  UNLOCK();
+  LOCK();
+  DAT_1851ddb1c = DAT_1851ddb1c + 1;
+  UNLOCK();
+  puVar4 = _Dst;
+  if (puVar2 != (undefined8 *)0x0) {
+    puVar2[2] = param_1;
+    *puVar2 = NCryDX12::CRefCounted::vftable;
+    *puVar2 = NCryDX12::CShader::vftable;
+    *(undefined4 *)(puVar2 + 1) = 0;
+    LOCK();
+    *(int *)(puVar2 + 1) = *(int *)(puVar2 + 1) + 1;
+    UNLOCK();
+    puVar4 = puVar2;
+  }
+  puVar2 = _Dst;
+  if ((*param_2 != 0) && (lVar1 = param_2[1], lVar1 != 0)) {
+    if (DAT_18549b490 == 0) {
+      FUN_18045ad00();
+    }
+    _Dst = (undefined8 *)(*DAT_18549b480)(lVar1,local_res18,0);
+    LOCK();
+    DAT_1851ddb18 = DAT_1851ddb18 + local_res18[0];
+    UNLOCK();
+    LOCK();
+    DAT_1851ddb20 = DAT_1851ddb20 + (int)lVar1;
+    UNLOCK();
+    LOCK();
+    DAT_1851ddb1c = DAT_1851ddb1c + 1;
+    UNLOCK();
+    puVar2 = (undefined8 *)param_2[1];
+    memcpy(_Dst,(void *)*param_2,(size_t)puVar2);
+  }
+  puVar4[3] = _Dst;
+  puVar4[4] = puVar2;
+  uVar3 = FUN_180b20b10(puVar4);
+  puVar4[5] = uVar3;
+  return puVar4;
+}
+
+
+
+===== DISASM FUN_180b209fc shader-create LEAF (mfUploadHW chain) — Create*Shader candidate @ 0x180b209fc =====
+  0x180b209fc: MOV qword ptr [RSP + 0x8],RBX
+  0x180b20a01: MOV qword ptr [RSP + 0x20],RBP
+  0x180b20a06: PUSH RSI
+  0x180b20a07: PUSH RDI
+  0x180b20a08: PUSH R14
+  0x180b20a0a: SUB RSP,0x20
+  0x180b20a0e: XOR EDI,EDI
+  0x180b20a10: MOV RSI,RDX
+  0x180b20a13: CMP dword ptr [0x18549b490],EDI
+  0x180b20a19: MOV RBP,RCX
+  0x180b20a1c: JZ 0x1822831d6  -> 0x1822831d6 (FUN_180b209fc)
+  0x180b20a22: XOR R8D,R8D
+  0x180b20a25: LEA RDX,[RSP + 0x48]
+  0x180b20a2a: LEA ECX,[R8 + 0x30]
+  0x180b20a2e: CALL qword ptr [0x18549b480]  <<< INDIRECT-CALL (vtable?)
+  0x180b20a34: MOV RBX,RAX
+  0x180b20a37: MOV EAX,dword ptr [RSP + 0x48]
+  0x180b20a3b: ADD.LOCK dword ptr [0x1851ddb18],EAX
+  0x180b20a42: ADD.LOCK dword ptr [0x1851ddb20],0x30
+  0x180b20a4a: INC.LOCK dword ptr [0x1851ddb1c]
+  0x180b20a51: TEST RBX,RBX
+  0x180b20a54: JZ 0x1822831e1  -> 0x1822831e1 (FUN_180b209fc)
+  0x180b20a5a: LEA RAX,[0x183a539a0]
+  0x180b20a61: MOV qword ptr [RBX + 0x10],RBP
+  0x180b20a65: MOV qword ptr [RBX],RAX
+  0x180b20a68: LEA RAX,[0x183a78700]
+  0x180b20a6f: MOV qword ptr [RBX],RAX
+  0x180b20a72: MOV dword ptr [RBX + 0x8],EDI
+  0x180b20a75: INC.LOCK dword ptr [RBX + 0x8]
+  0x180b20a79: MOV EAX,dword ptr [RBX + 0x8]
+  0x180b20a7c: CMP qword ptr [RSI],RDI
+  0x180b20a7f: JZ 0x180b20b0a  -> 0x180b20b0a (FUN_180b209fc)
+  0x180b20a85: MOV R14,qword ptr [RSI + 0x8]
+  0x180b20a89: TEST R14,R14
+  0x180b20a8c: JZ 0x180b20b0a  -> 0x180b20b0a (FUN_180b209fc)
+  0x180b20a8e: CMP dword ptr [0x18549b490],EDI
+  0x180b20a94: JZ 0x180b20b03  -> 0x180b20b03 (FUN_180b209fc)
+  0x180b20a96: MOV RAX,qword ptr [0x18549b480]
+  0x180b20a9d: LEA RDX,[RSP + 0x50]
+  0x180b20aa2: XOR R8D,R8D
+  0x180b20aa5: MOV RCX,R14
+  0x180b20aa8: CALL RAX
+  0x180b20aaa: MOV RBP,RAX
+  0x180b20aad: MOV EAX,dword ptr [RSP + 0x50]
+  0x180b20ab1: ADD.LOCK dword ptr [0x1851ddb18],EAX
+  0x180b20ab8: ADD.LOCK dword ptr [0x1851ddb20],R14D
+  0x180b20ac0: INC.LOCK dword ptr [0x1851ddb1c]
+  0x180b20ac7: MOV RDI,qword ptr [RSI + 0x8]
+  0x180b20acb: MOV RCX,RBP
+  0x180b20ace: MOV RDX,qword ptr [RSI]
+  0x180b20ad1: MOV R8,RDI
+  0x180b20ad4: CALL 0x181d938a7  -> 0x181d938a7 (memcpy)
+  0x180b20ad9: MOV qword ptr [RBX + 0x18],RBP
+  0x180b20add: MOV RCX,RBX
+  0x180b20ae0: MOV qword ptr [RBX + 0x20],RDI
+  0x180b20ae4: CALL 0x180b20b10  -> 0x180b20b10 (FUN_180b20b10)
+  0x180b20ae9: MOV RBP,qword ptr [RSP + 0x58]
+  0x180b20aee: MOV qword ptr [RBX + 0x28],RAX
+  0x180b20af2: MOV RAX,RBX
+  0x180b20af5: MOV RBX,qword ptr [RSP + 0x40]
+  0x180b20afa: ADD RSP,0x20
+  0x180b20afe: POP R14
+  0x180b20b00: POP RDI
+  0x180b20b01: POP RSI
+  0x180b20b02: RET
+  0x180b20b03: CALL 0x18045ad00  -> 0x18045ad00 (FUN_18045ad00)
+  0x180b20b08: JMP 0x180b20a96  -> 0x180b20a96 (FUN_180b209fc)
+  0x180b20b0a: MOV RBP,RDI
+  0x180b20b0d: JMP 0x180b20ad9  -> 0x180b20ad9 (FUN_180b209fc)
+  0x1822831d6: CALL 0x18045ad00  -> 0x18045ad00 (FUN_18045ad00)
+  0x1822831db: NOP
+  0x1822831dc: JMP 0x180b20a22  -> 0x180b20a22 (FUN_180b209fc)
+  0x1822831e1: MOV RBX,RDI
+  0x1822831e4: JMP 0x180b20a7c  -> 0x180b20a7c (FUN_180b209fc)

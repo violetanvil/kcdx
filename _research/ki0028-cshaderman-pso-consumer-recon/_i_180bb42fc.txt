@@ -1,0 +1,101 @@
+
+===== DECOMP FUN_180bb42fc PSO-create SYNC @ 0x180bb42fc =====
+  name: FUN_180bb42fc  params: 0  size(bytes): 197
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_180bb42fc(undefined4 *param_1,undefined8 param_2,longlong *param_3)
+
+{
+  undefined1 auStack_108 [32];
+  undefined **local_e8;
+  longlong *local_e0;
+  code *local_d8;
+  char *local_d0;
+  undefined1 **local_c8;
+  undefined4 local_c0;
+  undefined1 *local_b8;
+  code *local_b0;
+  undefined1 *local_a8;
+  undefined4 local_a0;
+  undefined4 uStack_9c;
+  undefined4 uStack_98;
+  undefined4 uStack_94;
+  undefined4 local_90;
+  undefined4 uStack_8c;
+  undefined4 uStack_88;
+  undefined4 uStack_84;
+  ulonglong local_18;
+  
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_108;
+  local_a0 = *param_1;
+  uStack_9c = param_1[1];
+  uStack_98 = param_1[2];
+  uStack_94 = param_1[3];
+  local_e0 = (longlong *)0x0;
+  local_90 = param_1[4];
+  uStack_8c = param_1[5];
+  uStack_88 = param_1[6];
+  uStack_84 = param_1[7];
+  local_e8 = JobManager::Detail::
+             CGenericJob<JobManager::Detail::SJobLambdaFunction<void___cdecl(void)>,detail::Accumulator<80,114,101,99,97,99,104,101,80,83,79,115,74,111,98,95,83,104,97,100,101,114,115,65,99,116,105,118,97,116,105,111,110,80,104,97,115,101>::Value<void>_>
+             ::vftable;
+  local_c0 = 0x10098;
+  local_b8 = &LAB_1813e9420;
+  local_b0 = FUN_1803b70f0;
+  local_a8 = &LAB_18255870c;
+  local_c8 = &local_b8;
+  local_d8 = FUN_1813e93bc;
+  local_d0 = "PrecachePSOsJob_ShadersActivationPhase";
+  FUN_1820d2ed0(&local_e8);
+  *(undefined1 *)(*param_3 + 0x20) = local_c0._2_1_;
+  local_e0 = param_3;
+  (**(code **)(*DAT_18492b928 + 0x10))(DAT_18492b928,&local_e0);
+  return;
+}
+
+
+
+===== DISASM FUN_180bb42fc PSO-create SYNC @ 0x180bb42fc =====
+  0x180bb42fc: PUSH RBP
+  0x180bb42fe: LEA RBP,[RSP + -0x57]
+  0x180bb4303: SUB RSP,0x100
+  0x180bb430a: MOV RAX,qword ptr [0x1848fcfc0]
+  0x180bb4311: XOR RAX,RSP
+  0x180bb4314: MOV qword ptr [RBP + 0x47],RAX
+  0x180bb4318: MOVUPS XMM0,xmmword ptr [RCX]
+  0x180bb431b: LEA RAX,[0x183dfd9a0]
+  0x180bb4322: MOV qword ptr [RSP + 0x28],0x0
+  0x180bb432b: MOVUPS XMM1,xmmword ptr [RCX + 0x10]
+  0x180bb432f: MOV qword ptr [RSP + 0x20],RAX
+  0x180bb4334: LEA RCX,[RSP + 0x20]
+  0x180bb4339: LEA RAX,[0x1813e9420]
+  0x180bb4340: MOV dword ptr [RBP + -0x61],0x10098
+  0x180bb4347: MOV qword ptr [RBP + -0x59],RAX
+  0x180bb434b: LEA RAX,[0x1803b70f0]
+  0x180bb4352: MOV qword ptr [RBP + -0x51],RAX
+  0x180bb4356: LEA RAX,[0x18255870c]
+  0x180bb435d: MOV qword ptr [RBP + -0x49],RAX
+  0x180bb4361: LEA RAX,[RBP + -0x59]
+  0x180bb4365: MOV qword ptr [RBP + -0x69],RAX
+  0x180bb4369: LEA RAX,[0x1813e93bc]
+  0x180bb4370: MOV qword ptr [RBP + -0x79],RAX
+  0x180bb4374: LEA RAX,[0x183dfd970]
+  0x180bb437b: MOV qword ptr [RBP + -0x71],RAX
+  0x180bb437f: MOVUPS xmmword ptr [RBP + -0x41],XMM0
+  0x180bb4383: MOVUPS xmmword ptr [RBP + -0x31],XMM1
+  0x180bb4387: CALL 0x1820d2ed0  -> 0x1820d2ed0 (FUN_1820d2ed0)
+  0x180bb438c: MOV AL,byte ptr [RBP + -0x5f]
+  0x180bb438f: LEA RDX,[RSP + 0x28]
+  0x180bb4394: MOV qword ptr [RSP + 0x28],R8
+  0x180bb4399: MOV RCX,qword ptr [R8]
+  0x180bb439c: MOV byte ptr [RCX + 0x20],AL
+  0x180bb439f: MOV RCX,qword ptr [0x18492b928]
+  0x180bb43a6: MOV RAX,qword ptr [RCX]
+  0x180bb43a9: CALL qword ptr [RAX + 0x10]  <<< INDIRECT-CALL (vtable?)
+  0x180bb43ac: MOV RCX,qword ptr [RBP + 0x47]
+  0x180bb43b0: XOR RCX,RSP
+  0x180bb43b3: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie)
+  0x180bb43b8: ADD RSP,0x100
+  0x180bb43bf: POP RBP
+  0x180bb43c0: RET

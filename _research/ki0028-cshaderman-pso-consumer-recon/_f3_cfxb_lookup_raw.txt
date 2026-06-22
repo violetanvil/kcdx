@@ -1,0 +1,1030 @@
+INFO  Using log config file: jar:file:/C:/Users/Michael/Documents/KCD2%20Mods/kcdx/third-party-ghidra/ghidra_12.1_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1_PUBLIC\preferences (Preferences)  
+INFO  Loading previous preferences: C:\Users\Michael\AppData\Roaming\ghidra\ghidra_12.1.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (582 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (1633 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_12.1_PUBLIC\Ghidra\Features\SwiftDemangler\ghidra_scripts
+    C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessAnalyzer)  
+INFO  Opening project: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_project\KCD2 (HeadlessProject)  
+INFO  REPORT: Processing read-only project file: /WHGame.dll (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: Ki28CfxbLookupDecomp.java  (HeadlessAnalyzer)  
+FindPostUpdateHookCandidates.java:133: error: cannot find symbol
+        DefinedDataIterator strs = DefinedDataIterator.definedStrings(program);
+                                                      ^
+  symbol:   method definedStrings(ghidra.program.model.listing.Program)
+  location: class ghidra.program.util.DefinedDataIterator
+FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
+            Reference[] refs = rm.getReferencesTo(strAddr);
+                                                 ^
+skipping C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\FindPostUpdateHookCandidates.java
+INFO  SCRIPT: C:\Users\Michael\Documents\KCD2 Mods\kcdx\third-party-ghidra\ghidra_scripts\Ki28CfxbLookupDecomp.java (HeadlessAnalyzer)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DECOMP FUN_180774fac (.cfxb consumer A) @ 0x180774fac ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   name: FUN_180774fac  conv: unknown  params: 0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   entry: 0x180774fac  size: 613 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   signature: undefined FUN_180774fac(void) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+longlong FUN_180774fac(longlong param_1,undefined8 param_2,char param_3,longlong param_4)
+
+{
+  longlong lVar1;
+  char cVar2;
+  undefined8 uVar3;
+  longlong lVar4;
+  longlong *plVar5;
+  undefined *puVar6;
+  char *pcVar7;
+  undefined1 auStack_4e8 [32];
+  undefined1 local_4c8 [8];
+  longlong local_4c0;
+  longlong local_4b8;
+  undefined1 local_4b0 [8];
+  undefined8 local_4a8;
+  undefined1 local_4a0 [16];
+  longlong local_490;
+  undefined8 local_488;
+  undefined8 local_480;
+  undefined1 *local_478;
+  undefined1 local_470 [520];
+  undefined8 local_268;
+  undefined8 local_260;
+  undefined1 *local_258;
+  undefined1 local_250 [520];
+  ulonglong local_48;
+  
+  local_48 = DAT_1848fcfc0 ^ (ulonglong)auStack_4e8;
+  local_250[0] = 0;
+  local_268 = 0;
+  local_470[0] = 0;
+  local_260 = 0x1ff;
+  local_258 = local_250;
+  local_480 = 0x1ff;
+  puVar6 = &DAT_183a504d4;
+  local_478 = local_470;
+  local_488 = 0;
+  if (param_3 == '\0') {
+    puVar6 = &DAT_183a504cc;
+  }
+  FUN_1806a0e14(&local_268,&DAT_183a504dc,param_2,puVar6);
+  pcVar7 = ".cfib";
+  if (param_3 == '\0') {
+    pcVar7 = ".cfxb";
+  }
+  FUN_1806a0e14(&local_488,&DAT_183a504dc,param_2,pcVar7);
+  FUN_181ab4e48(local_4b0,param_1 + 0x98);
+  plVar5 = (longlong *)(param_1 + 0x60);
+  uVar3 = FUN_1804d785c(&local_488);
+  FUN_1806962e0(local_4c8,uVar3);
+  FUN_1803f2ebc(plVar5,local_4a0,local_4c8);
+  cVar2 = FUN_1803f2f20();
+  if (cVar2 == '\0') {
+    local_490 = *plVar5;
+  }
+  FUN_1804fc884(local_4c8);
+  if (local_490 == *plVar5) {
+    FUN_18091ee18(param_1 + 0x20,&local_4c0,local_478);
+    lVar4 = 0;
+    if (local_4c0 != 0) {
+      uVar3 = FUN_1804d785c(&local_488);
+      FUN_1806962e0(local_4c8,uVar3);
+      plVar5 = (longlong *)FUN_1813c753c(plVar5,local_4a0,local_4c8);
+      lVar4 = *plVar5;
+      if (local_4b8 != 0) {
+        LOCK();
+        *(int *)(local_4b8 + 8) = *(int *)(local_4b8 + 8) + 1;
+        UNLOCK();
+      }
+      *(longlong *)(lVar4 + 0x28) = local_4c0;
+      lVar1 = *(longlong *)(lVar4 + 0x30);
+      *(longlong *)(lVar4 + 0x30) = local_4b8;
+      if (lVar1 != 0) {
+        FUN_1804f67e8();
+      }
+      FUN_1804fc884(local_4c8);
+      lVar4 = local_4c0;
+    }
+    FUN_1823c7fe8(&local_4c0);
+  }
+  else {
+    lVar4 = *(longlong *)(local_490 + 0x28);
+  }
+  FUN_18042deb4(local_4a8);
+  if (param_4 == 0) {
+    if (lVar4 != 0) goto LAB_180775104;
+  }
+  else if (lVar4 != 0) {
+    if (*(char *)(lVar4 + 0x7a) != '\0') {
+      lVar4 = FUN_1822323da();
+      return lVar4;
+    }
+    goto LAB_180775104;
+  }
+  (**(code **)(*DAT_18492b8e0 + 0x38))
+            (DAT_18492b8e0,"[Error] [SHADERS] Failed to load shader \'%s\'!",param_2);
+LAB_180775104:
+  FUN_180c40aa8(&local_488,local_478);
+  FUN_180c40aa8(&local_268,local_258);
+  return lVar4;
+}
+
+ (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DISASM FUN_180774fac @ 0x180774fac ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fac: PUSH RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fae: PUSH RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774faf: PUSH RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fb0: PUSH RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fb1: PUSH R12 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fb3: PUSH R14 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fb5: PUSH R15 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fb7: LEA RBP,[RSP + -0x3b0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fbf: SUB RSP,0x4b0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fc6: MOV RAX,qword ptr [0x1848fcfc0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fcd: XOR RAX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fd0: MOV qword ptr [RBP + 0x3a0],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fd7: MOV R15,RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fda: MOV byte ptr [RBP + 0x198],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fe1: MOV R14,R9 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fe4: MOV qword ptr [RBP + 0x180],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774fef: MOV ECX,0x1ff (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774ff4: MOV byte ptr [RSP + 0x78],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774ff9: TEST R8B,R8B (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180774ffc: MOV qword ptr [RBP + 0x188],RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775003: LEA RAX,[RBP + 0x198] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077500a: MOV qword ptr [RSP + 0x68],RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077500f: MOV qword ptr [RBP + 0x190],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775016: LEA R9,[0x183a504d4] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077501d: LEA RAX,[RSP + 0x78] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775022: MOV qword ptr [RSP + 0x60],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077502b: MOV qword ptr [RSP + 0x70],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775030: LEA RCX,[RBP + 0x180] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775037: LEA RAX,[0x183a504cc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077503e: MOV BL,R8B (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775041: MOV R12,RDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775044: MOV R8,RDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775047: CMOVZ R9,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077504b: LEA RDX,[0x183a504dc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775052: CALL 0x1806a0e14  -> 0x1806a0e14 (FUN_1806a0e14) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775057: LEA RAX,[0x183a504bc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077505e: TEST BL,BL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775060: LEA R9,[0x183a504c4] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775067: MOV R8,R12 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077506a: CMOVZ R9,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077506e: LEA RDX,[0x183a504dc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775075: LEA RCX,[RSP + 0x60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077507a: CALL 0x1806a0e14  -> 0x1806a0e14 (FUN_1806a0e14) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077507f: LEA RDX,[R15 + 0x98] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775086: XOR EBX,EBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775088: LEA RCX,[RSP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077508d: CALL 0x181ab4e48  -> 0x181ab4e48 (FUN_181ab4e48) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775092: LEA RCX,[RSP + 0x60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775097: LEA RSI,[R15 + 0x60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077509b: CALL 0x1804d785c  -> 0x1804d785c (FUN_1804d785c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750a0: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750a3: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750a8: CALL 0x1806962e0  -> 0x1806962e0 (FUN_1806962e0) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750ad: LEA R8,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750b2: MOV RCX,RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750b5: LEA RDX,[RSP + 0x48] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750ba: CALL 0x1803f2ebc  -> 0x1803f2ebc (FUN_1803f2ebc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750bf: MOV RDI,qword ptr [RSP + 0x58] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750c4: LEA R8,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750c9: MOV RDX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750cc: CALL 0x1803f2f20  -> 0x1803f2f20 (FUN_1803f2f20) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750d1: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750d3: JZ 0x18077515e  -> 0x18077515e (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750d9: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750de: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750e3: CMP RDI,qword ptr [RSI] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750e6: JZ 0x180775166  -> 0x180775166 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750e8: MOV RBX,qword ptr [RDI + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750ec: MOV RCX,qword ptr [RSP + 0x40] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750f1: CALL 0x18042deb4  -> 0x18042deb4 (FUN_18042deb4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750f6: TEST R14,R14 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750f9: JNZ 0x18077514a  -> 0x18077514a (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750fb: TEST RBX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807750fe: JZ 0x1807751ea  -> 0x1807751ea (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775104: MOV RDX,qword ptr [RSP + 0x70] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775109: LEA RCX,[RSP + 0x60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077510e: CALL 0x180c40aa8  -> 0x180c40aa8 (FUN_180c40aa8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775113: MOV RDX,qword ptr [RBP + 0x190] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077511a: LEA RCX,[RBP + 0x180] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775121: CALL 0x180c40aa8  -> 0x180c40aa8 (FUN_180c40aa8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775126: MOV RAX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775129: MOV RCX,qword ptr [RBP + 0x3a0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775130: XOR RCX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775133: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775138: ADD RSP,0x4b0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077513f: POP R15 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775141: POP R14 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775143: POP R12 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775145: POP RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775146: POP RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775147: POP RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775148: POP RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775149: RET (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077514a: TEST RBX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077514d: JZ 0x1807751ea  -> 0x1807751ea (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775153: CMP byte ptr [RBX + 0x7a],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775157: JZ 0x180775104  -> 0x180775104 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775159: JMP 0x1822323da  -> 0x1822323da (FUN_1822323da) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077515e: MOV RDI,qword ptr [RSI] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775161: JMP 0x1807750d9  -> 0x1807750d9 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775166: MOV R8,qword ptr [RSP + 0x70] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077516b: LEA RCX,[R15 + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077516f: LEA RDX,[RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775174: CALL 0x18091ee18  -> 0x18091ee18 (FUN_18091ee18) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775179: MOV RDI,qword ptr [RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077517e: TEST RDI,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775181: JZ 0x1807751db  -> 0x1807751db (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775183: LEA RCX,[RSP + 0x60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775188: MOV RBX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077518b: CALL 0x1804d785c  -> 0x1804d785c (FUN_1804d785c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775190: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775193: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775198: CALL 0x1806962e0  -> 0x1806962e0 (FUN_1806962e0) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077519d: LEA R8,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751a2: MOV RCX,RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751a5: LEA RDX,[RSP + 0x48] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751aa: CALL 0x1813c753c  -> 0x1813c753c (FUN_1813c753c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751af: MOV RDX,qword ptr [RAX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751b2: MOV RAX,qword ptr [RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751b7: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751ba: JZ 0x1807751c0  -> 0x1807751c0 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751bc: INC.LOCK dword ptr [RAX + 0x8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751c0: MOV qword ptr [RDX + 0x28],RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751c4: MOV RCX,qword ptr [RDX + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751c8: MOV qword ptr [RDX + 0x30],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751cc: TEST RCX,RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751cf: JNZ 0x18077520a  -> 0x18077520a (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751d1: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751d6: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751db: LEA RCX,[RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751e0: CALL 0x1823c7fe8  -> 0x1823c7fe8 (FUN_1823c7fe8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751e5: JMP 0x1807750ec  -> 0x1807750ec (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751ea: MOV RCX,qword ptr [0x18492b8e0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751f1: MOV R8,R12 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751f4: MOV RDX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751f7: MOV R9,qword ptr [RDX + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1807751fb: LEA RDX,[0x183d250a8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775202: CALL R9 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180775205: JMP 0x180775104  -> 0x180775104 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077520a: CALL 0x1804f67e8  -> 0x1804f67e8 (FUN_1804f67e8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18077520f: JMP 0x1807751d1  -> 0x1807751d1 (FUN_180774fac) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DECOMP FUN_18091f4f4 (.cfxb consumer B) @ 0x18091f4f4 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   name: FUN_18091f4f4  conv: unknown  params: 0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   entry: 0x18091f4f4  size: 261 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   signature: undefined FUN_18091f4f4(void) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 * FUN_18091f4f4(undefined8 param_1,undefined8 *param_2,char *param_3)
+
+{
+  char *pcVar1;
+  longlong lVar2;
+  undefined4 *puVar3;
+  undefined *puVar4;
+  
+  pcVar1 = strstr(param_3,".cfib");
+  if (pcVar1 == (char *)0x0) {
+    pcVar1 = strstr(param_3,".cfxb");
+    if (pcVar1 == (char *)0x0) {
+      if ((*(int *)(*(longlong *)((longlong)ThreadLocalStoragePointer + (ulonglong)_tls_index * 8) +
+                   0x18) < DAT_18547b02c) && (FUN_181c1e988(&DAT_18547b02c), DAT_18547b02c == -1)) {
+        puVar3 = &DAT_18547b030;
+        lVar2 = 2;
+        do {
+          FUN_181a71990(puVar3);
+          puVar3 = puVar3 + 3;
+          lVar2 = lVar2 + -1;
+        } while (lVar2 != 0);
+        LOCK();
+        DAT_18547b030 = 0xffffffff;
+        UNLOCK();
+        LOCK();
+        DAT_18547b03c = 0;
+        UNLOCK();
+        _DAT_18547b034 = lVar2;
+        _DAT_18547b040 = lVar2;
+        _Init_thread_footer(&DAT_18547b02c);
+      }
+      *param_2 = &DAT_18547b03c;
+      return param_2;
+    }
+    puVar4 = &DAT_183a504cc;
+  }
+  else {
+    puVar4 = &DAT_183a504d4;
+  }
+  FUN_1806ba3d8(param_2,param_3,puVar4);
+  return param_2;
+}
+
+ (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DISASM FUN_18091f4f4 @ 0x18091f4f4 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f4f4: MOV qword ptr [RSP + 0x8],RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f4f9: MOV qword ptr [RSP + 0x10],RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f4fe: MOV qword ptr [RSP + 0x18],RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f503: PUSH RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f504: SUB RSP,0x20 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f508: MOV RBX,RDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f50b: MOV RCX,R8 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f50e: LEA RDX,[0x183a504c4] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f515: MOV RDI,R8 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f518: CALL qword ptr [0x183a03440]  -> 0x344 (strstr) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f51e: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f521: JZ 0x18091f537  -> 0x18091f537 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f523: LEA R8,[0x183a504d4] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f52a: MOV RDX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f52d: MOV RCX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f530: CALL 0x1806ba3d8  -> 0x1806ba3d8 (FUN_1806ba3d8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f535: JMP 0x18091f582  -> 0x18091f582 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f537: LEA RDX,[0x183a504bc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f53e: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f541: CALL qword ptr [0x183a03440]  -> 0x344 (strstr) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f547: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f54a: JZ 0x18091f555  -> 0x18091f555 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f54c: LEA R8,[0x183a504cc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f553: JMP 0x18091f52a  -> 0x18091f52a (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f555: MOV ECX,dword ptr [0x1850c657c] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f55b: MOV RAX,qword ptr GS:[0x58] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f564: MOV EDX,0x18 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f569: MOV RAX,qword ptr [RAX + RCX*0x8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f56d: MOV EAX,dword ptr [RDX + RAX*0x1] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f570: CMP dword ptr [0x18547b02c],EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f576: JG 0x18091f5d6  -> 0x18091f5d6 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f578: LEA RAX,[0x18547b03c] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f57f: MOV qword ptr [RBX],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f582: MOV RBP,qword ptr [RSP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f587: MOV RAX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f58a: MOV RBX,qword ptr [RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f58f: MOV RSI,qword ptr [RSP + 0x40] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f594: ADD RSP,0x20 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f598: POP RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f599: RET (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f59a: MOV RCX,RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f59d: CALL 0x181a71990  -> 0x181a71990 (FUN_181a71990) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5a2: ADD RSI,0xc (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5a6: SUB RBP,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5aa: JNZ 0x18091f59a  -> 0x18091f59a (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5ac: XCHG dword ptr [0x18547b030],EDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5b2: XOR EAX,EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5b4: MOV qword ptr [0x18547b034],RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5bb: XCHG dword ptr [0x18547b03c],EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5c1: LEA RCX,[0x18547b02c] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5c8: MOV qword ptr [0x18547b040],RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5cf: CALL 0x181c1e91c  -> 0x181c1e91c (_Init_thread_footer) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5d4: JMP 0x18091f578  -> 0x18091f578 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5d6: LEA RCX,[0x18547b02c] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5dd: CALL 0x181c1e988  -> 0x181c1e988 (FUN_181c1e988) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5e2: OR EDI,0xffffffff (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5e5: CMP dword ptr [0x18547b02c],EDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5eb: JNZ 0x18091f578  -> 0x18091f578 (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5ed: LEA RSI,[0x18547b030] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5f4: LEA EBP,[RDI + 0x3] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x18091f5f7: JMP 0x18091f59a  -> 0x18091f59a (FUN_18091f4f4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DECOMP FUN_180b04478 (lookupdata.bin parse) @ 0x180b04478 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   name: FUN_180b04478  conv: unknown  params: 0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   entry: 0x180b04478  size: 486 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   signature: undefined FUN_180b04478(void) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+void FUN_180b04478(longlong param_1)
+
+{
+  undefined8 uVar1;
+  char cVar2;
+  undefined1 local_res8 [8];
+  undefined8 local_res10;
+  undefined8 local_res18;
+  undefined1 local_res20 [8];
+  undefined1 local_28 [16];
+  
+  FUN_1823d1e20(param_1 + 0xe0);
+  uVar1 = FUN_1804f692c(local_res20,*(undefined8 *)(param_1 + 0x208));
+  FUN_180696e08(local_res8,"%ENGINE%/",uVar1);
+  FUN_1804fc884(local_res20);
+  FUN_1804f03dc(&local_res10,local_res8,"lookupdata.bin");
+  FUN_1804f03dc(&local_res18,local_res8,"staticmacrolist.bin");
+  cVar2 = FUN_180b04984(param_1 + 0xe0,local_res10);
+  if (cVar2 == '\0') {
+LAB_180b0451d:
+    FUN_180a607a4(1,2,"Disabling read-only shader cache!");
+    FUN_1824f72dc(param_1,0);
+  }
+  else {
+    cVar2 = FUN_180b04660(param_1,local_res18,1);
+    if (cVar2 != '\0') {
+      cVar2 = FUN_180b0479c(param_1,1);
+      if (cVar2 == '\0') goto LAB_180b0451d;
+    }
+  }
+  uVar1 = FUN_1804f692c(local_28,*(undefined8 *)(param_1 + 0x208));
+  uVar1 = FUN_1804fdc7c(local_res20,param_1 + 0x220,uVar1);
+  FUN_1804f35a4(local_res8,uVar1);
+  FUN_1804fc884(local_res20);
+  FUN_1804fc884(local_28);
+  uVar1 = FUN_1804f03dc(local_res20,local_res8,"lookupdata.bin");
+  FUN_1804f35a4(&local_res10,uVar1);
+  FUN_1804fc884(local_res20);
+  uVar1 = FUN_1804f03dc(local_res20,local_res8,"staticmacrolist.bin");
+  FUN_1804f35a4(&local_res18,uVar1);
+  FUN_1804fc884(local_res20);
+  FUN_180b05024();
+  FUN_1823d1e20(param_1 + 0x128);
+  cVar2 = FUN_180b04984(param_1 + 0x128,local_res10);
+  if (cVar2 == '\0') {
+LAB_180b04615:
+    FUN_180a607a4(1,2,"Deleting USER folder shader cache!");
+    FUN_1824f72dc(param_1,1);
+  }
+  else {
+    cVar2 = FUN_180b04660(param_1,local_res18,0);
+    if (cVar2 != '\0') {
+      cVar2 = FUN_180b0479c(param_1,0);
+      if (cVar2 != '\0') goto LAB_180b0463b;
+      goto LAB_180b04615;
+    }
+  }
+  FUN_1824fe388(param_1);
+LAB_180b0463b:
+  FUN_1804fc884(&local_res18);
+  FUN_1804fc884(&local_res10);
+  FUN_1804fc884(local_res8);
+  return;
+}
+
+ (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DISASM FUN_180b04478 @ 0x180b04478 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04478: PUSH RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0447a: PUSH RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0447b: PUSH RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0447c: MOV RBP,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0447f: SUB RSP,0x30 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04483: LEA RBX,[RCX + 0xe0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0448a: MOV RDI,RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0448d: MOV RCX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04490: CALL 0x1823d1e20  -> 0x1823d1e20 (FUN_1823d1e20) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04495: MOV RDX,qword ptr [RDI + 0x208] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0449c: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044a0: CALL 0x1804f692c  -> 0x1804f692c (FUN_1804f692c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044a5: MOV R8,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044a8: LEA RDX,[0x183a531a0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044af: LEA RCX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044b3: CALL 0x180696e08  -> 0x180696e08 (FUN_180696e08) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044b8: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044bc: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044c1: LEA R8,[0x183dedeb0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044c8: LEA RDX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044cc: LEA RCX,[RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044d0: CALL 0x1804f03dc  -> 0x1804f03dc (FUN_1804f03dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044d5: LEA R8,[0x183dedef8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044dc: LEA RDX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044e0: LEA RCX,[RBP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044e4: CALL 0x1804f03dc  -> 0x1804f03dc (FUN_1804f03dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044e9: MOV RDX,qword ptr [RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044ed: MOV R9B,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044f0: MOV RCX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044f3: CALL 0x180b04984  -> 0x180b04984 (FUN_180b04984) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044f8: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044fa: JZ 0x180b0451d  -> 0x180b0451d (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b044fc: MOV RDX,qword ptr [RBP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04500: MOV R8B,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04503: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04506: CALL 0x180b04660  -> 0x180b04660 (FUN_180b04660) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0450b: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0450d: JZ 0x180b0453b  -> 0x180b0453b (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0450f: MOV DL,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04511: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04514: CALL 0x180b0479c  -> 0x180b0479c (FUN_180b0479c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04519: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0451b: JNZ 0x180b0453b  -> 0x180b0453b (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0451d: MOV EDX,0x2 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04522: LEA R8,[0x183deded0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04529: LEA ECX,[RDX + -0x1] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0452c: CALL 0x180a607a4  -> 0x180a607a4 (FUN_180a607a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04531: XOR EDX,EDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04533: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04536: CALL 0x1824f72dc  -> 0x1824f72dc (FUN_1824f72dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0453b: MOV RDX,qword ptr [RDI + 0x208] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04542: LEA RCX,[RBP + -0x10] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04546: CALL 0x1804f692c  -> 0x1804f692c (FUN_1804f692c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0454b: MOV R8,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0454e: LEA RDX,[RDI + 0x220] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04555: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04559: CALL 0x1804fdc7c  -> 0x1804fdc7c (FUN_1804fdc7c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0455e: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04561: LEA RCX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04565: CALL 0x1804f35a4  -> 0x1804f35a4 (FUN_1804f35a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0456a: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0456e: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04573: LEA RCX,[RBP + -0x10] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04577: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0457c: LEA R8,[0x183dedeb0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04583: LEA RDX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04587: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0458b: CALL 0x1804f03dc  -> 0x1804f03dc (FUN_1804f03dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04590: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04593: LEA RCX,[RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04597: CALL 0x1804f35a4  -> 0x1804f35a4 (FUN_1804f35a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0459c: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045a0: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045a5: LEA R8,[0x183dedef8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045ac: LEA RDX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045b0: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045b4: CALL 0x1804f03dc  -> 0x1804f03dc (FUN_1804f03dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045b9: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045bc: LEA RCX,[RBP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045c0: CALL 0x1804f35a4  -> 0x1804f35a4 (FUN_1804f35a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045c5: LEA RCX,[RBP + 0x38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045c9: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045ce: MOV RDX,qword ptr [RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045d2: CALL 0x180b05024  -> 0x180b05024 (FUN_180b05024) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045d7: LEA RCX,[RBX + 0x48] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045db: CALL 0x1823d1e20  -> 0x1823d1e20 (FUN_1823d1e20) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045e0: MOV RDX,qword ptr [RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045e4: LEA RCX,[RBX + 0x48] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045e8: XOR R9D,R9D (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045eb: CALL 0x180b04984  -> 0x180b04984 (FUN_180b04984) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045f0: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045f2: JZ 0x180b04615  -> 0x180b04615 (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045f4: MOV RDX,qword ptr [RBP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045f8: XOR R8D,R8D (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045fb: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b045fe: CALL 0x180b04660  -> 0x180b04660 (FUN_180b04660) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04603: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04606: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04608: JZ 0x180b04636  -> 0x180b04636 (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0460a: XOR EDX,EDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0460c: CALL 0x180b0479c  -> 0x180b0479c (FUN_180b0479c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04611: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04613: JNZ 0x180b0463b  -> 0x180b0463b (FUN_180b04478) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04615: MOV EDX,0x2 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0461a: LEA R8,[0x183dedfb8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04621: LEA ECX,[RDX + -0x1] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04624: CALL 0x180a607a4  -> 0x180a607a4 (FUN_180a607a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04629: MOV DL,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0462b: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0462e: CALL 0x1824f72dc  -> 0x1824f72dc (FUN_1824f72dc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04633: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04636: CALL 0x1824fe388  -> 0x1824fe388 (FUN_1824fe388) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0463b: LEA RCX,[RBP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0463f: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04644: LEA RCX,[RBP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04648: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0464d: LEA RCX,[RBP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04651: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b04656: ADD RSP,0x30 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0465a: POP RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0465b: POP RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0465c: POP RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180b0465d: RET (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== CALLERS of FUN_180b04478 (lookupdata.bin parse) @ 0x180b04478 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   from 0x1857032d0  type=DATA  (no fn) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   from 0x180b03512  type=UNCONDITIONAL_CALL  in FUN_180b033a0 @0x180b033a0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DECOMP FUN_1819dfb54 (ShaderCacheMisses.txt recorder) @ 0x1819dfb54 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   name: FUN_1819dfb54  conv: unknown  params: 0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   entry: 0x1819dfb54  size: 439 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   signature: undefined FUN_1819dfb54(void) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_1819dfb54(longlong param_1)
+
+{
+  ulonglong uVar1;
+  int iVar2;
+  undefined8 uVar3;
+  FILE *_File;
+  ulonglong uVar4;
+  undefined1 auStack_1048 [32];
+  undefined4 local_1028 [3];
+  char acStack_1019 [2049];
+  char local_818 [2048];
+  ulonglong local_18;
+  undefined8 local_10;
+  
+  local_10 = 0x1819dfb71;
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_1048;
+  *(undefined8 *)(param_1 + 0x338) = 0;
+  FUN_1804f6ac8(param_1 + 0x330,&DAT_183a3c1e0);
+  if (DAT_1850da088 != 0) {
+    (**(code **)(*DAT_18492b850 + 0x238))(DAT_18492b850,"%USER%/TestResults",0,0);
+    (**(code **)(*DAT_18492b850 + 8))
+              (DAT_18492b850,"%USER%\\Shaders\\ShaderCacheMisses.txt",local_818,0x810000);
+    uVar3 = FUN_1804f692c(local_1028,local_818);
+    FUN_1804f35a4(param_1 + 0x330,uVar3);
+    FUN_1804fc884(local_1028);
+    _File = fopen(local_818,"r");
+    if (_File != (FILE *)0x0) {
+      while (iVar2 = feof(_File), iVar2 == 0) {
+        acStack_1019[1] = '\0';
+        fgets(acStack_1019 + 1,0x7ff,_File);
+        if (acStack_1019[1] != '\0') {
+          uVar1 = 0xffffffffffffffff;
+          do {
+            uVar4 = uVar1;
+            uVar1 = uVar4 + 1;
+          } while (acStack_1019[uVar4 + 2] != '\0');
+          if (0 < (int)(uVar4 + 1)) {
+            if (0x7ff < uVar4) {
+                    /* WARNING: Subroutine does not return */
+              FUN_181c1eea8();
+            }
+            acStack_1019[uVar4 + 1] = '\0';
+          }
+          local_1028[0] = 0;
+          if (acStack_1019[1] != '\0') {
+            local_1028[0] = FUN_1805afcf0(acStack_1019 + 1);
+          }
+          FUN_18250f490(param_1 + 0x318,local_1028);
+        }
+      }
+      FUN_1824d537c(*(undefined8 *)(param_1 + 0x318),*(undefined8 *)(param_1 + 800));
+      fclose(_File);
+    }
+  }
+  return;
+}
+
+ (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DISASM FUN_1819dfb54 @ 0x1819dfb54 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb54: MOV qword ptr [RSP + 0x10],RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb59: MOV qword ptr [RSP + 0x18],RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb5e: PUSH RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb5f: LEA RBP,[RSP + -0xf40] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb67: MOV EAX,0x1040 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb6c: CALL 0x181c1f880  -> 0x181c1f880 (__chkstk) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb71: SUB RSP,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb74: MOV RAX,qword ptr [0x1848fcfc0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb7b: XOR RAX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb7e: MOV qword ptr [RBP + 0xf30],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb85: LEA RDI,[RCX + 0x330] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb8c: MOV qword ptr [RCX + 0x338],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb97: MOV RBX,RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfb9a: LEA RDX,[0x183a3c1e0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfba1: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfba4: CALL 0x1804f6ac8  -> 0x1804f6ac8 (FUN_1804f6ac8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfba9: CMP dword ptr [0x1850da088],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbb0: JZ 0x1819dfce2  -> 0x1819dfce2 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbb6: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbbd: LEA RDX,[0x1846d0ff8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbc4: XOR R9D,R9D (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbc7: XOR R8D,R8D (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbca: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbcd: CALL qword ptr [RAX + 0x238] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbd3: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbda: LEA R8,[RBP + 0x730] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbe1: MOV R9D,0x810000 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbe7: LEA RDX,[0x1846d0f38] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbee: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbf1: CALL qword ptr [RAX + 0x8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbf4: LEA RDX,[RBP + 0x730] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfbfb: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc00: CALL 0x1804f692c  -> 0x1804f692c (FUN_1804f692c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc05: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc08: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc0b: CALL 0x1804f35a4  -> 0x1804f35a4 (FUN_1804f35a4) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc10: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc15: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc1a: LEA RDX,[0x183b777cc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc21: LEA RCX,[RBP + 0x730] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc28: CALL qword ptr [0x183a03be0]  -> 0x378 (fopen) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc2e: MOV RDI,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc31: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc34: JZ 0x1819dfce2  -> 0x1819dfce2 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc3a: JMP 0x1819dfcb5  -> 0x1819dfcb5 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc3c: MOV R8,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc3f: MOV byte ptr [RSP + 0x30],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc44: MOV EDX,0x7ff (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc49: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc4e: CALL qword ptr [0x183a03cc0]  -> 0x394 (fgets) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc54: MOV CL,byte ptr [RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc58: TEST CL,CL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc5a: JZ 0x1819dfcb5  -> 0x1819dfcb5 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc5c: LEA RDX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc61: OR RAX,-0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc65: INC RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc68: CMP byte ptr [RDX + RAX*0x1],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc6c: JNZ 0x1819dfc65  -> 0x1819dfc65 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc6e: TEST EAX,EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc70: JLE 0x1819dfc8a  -> 0x1819dfc8a (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc72: DEC RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc75: CMP RAX,0x800 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc7b: JNC 0x1819dfd06  -> 0x1819dfd06 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc81: MOV byte ptr [RSP + RAX*0x1 + 0x30],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc86: MOV CL,byte ptr [RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc8a: MOV dword ptr [RSP + 0x20],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc92: TEST CL,CL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc94: JZ 0x1819dfca4  -> 0x1819dfca4 (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc96: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfc9b: CALL 0x1805afcf0  -> 0x1805afcf0 (FUN_1805afcf0) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfca0: MOV dword ptr [RSP + 0x20],EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfca4: LEA RDX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfca9: LEA RCX,[RBX + 0x318] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcb0: CALL 0x18250f490  -> 0x18250f490 (FUN_18250f490) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcb5: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcb8: CALL qword ptr [0x183a03cb0]  -> 0x392 (feof) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcbe: TEST EAX,EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcc0: JZ 0x1819dfc3c  -> 0x1819dfc3c (FUN_1819dfb54) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcc6: MOV RDX,qword ptr [RBX + 0x320] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfccd: MOV RCX,qword ptr [RBX + 0x318] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcd4: CALL 0x1824d537c  -> 0x1824d537c (FUN_1824d537c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcd9: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcdc: CALL qword ptr [0x183a03d40]  -> 0x3a4 (fclose) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfce2: MOV RCX,qword ptr [RBP + 0xf30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfce9: XOR RCX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcec: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcf1: LEA R11,[RSP + 0x1040] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcf9: MOV RBX,qword ptr [R11 + 0x18] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfcfd: MOV RDI,qword ptr [R11 + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfd01: MOV RSP,R11 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfd04: POP RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfd05: RET (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x1819dfd06: CALL 0x181c1eea8  -> 0x181c1eea8 (FUN_181c1eea8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== CALLERS of FUN_1819dfb54 (ShaderCacheMisses.txt recorder) @ 0x1819dfb54 ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   from 0x1857e0370  type=DATA  (no fn) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   from 0x180da36f9  type=UNCONDITIONAL_CALL  in FUN_180da342c @0x180da342c (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DECOMP FUN_180bb058c (Shaders/Cache/globals.txt) @ 0x180bb058c ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   name: FUN_180bb058c  conv: unknown  params: 0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   entry: 0x180bb058c  size: 683 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   signature: undefined FUN_180bb058c(void) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_180bb058c(longlong param_1)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined8 uVar3;
+  undefined8 uVar4;
+  longlong lVar5;
+  char *pcVar6;
+  undefined1 auStack_1e8 [32];
+  ulonglong local_1c8;
+  undefined8 local_1c0;
+  undefined1 local_1b8 [16];
+  undefined1 local_1a8 [16];
+  char local_198 [128];
+  char local_118 [256];
+  ulonglong local_18;
+  
+  local_18 = DAT_1848fcfc0 ^ (ulonglong)auStack_1e8;
+  FUN_180bb0ecc();
+  uVar3 = FUN_1804f692c(local_1b8,"Shaders/Cache/globals.txt");
+  uVar4 = FUN_1804fd468(&local_1c8,param_1 + 0x220);
+  FUN_1804fdc7c(&local_1c0,uVar4,uVar3);
+  FUN_1804fc884(&local_1c8);
+  FUN_1804fc884(local_1b8);
+  lVar5 = (**(code **)(*DAT_18492b850 + 0x120))(DAT_18492b850,local_1c0,&DAT_183b777cc,2);
+  if (lVar5 == 0) {
+    FUN_180bb190c(param_1);
+  }
+  else {
+    local_118[0] = '\n';
+    local_118[1] = '\0';
+    memset(local_118 + 2,0,0xfe);
+    local_198[0] = '\n';
+    local_198[1] = '\0';
+    memset(local_198 + 2,0,0x7e);
+    (**(code **)(*DAT_18492b850 + 0x158))(DAT_18492b850,local_118,0x100,lVar5);
+    pcVar6 = strstr(local_118,"FX_CACHE_VER");
+    if (pcVar6 != (char *)0x0) {
+      local_1c8 = local_1c8 & 0xffffffff00000000;
+      FUN_180721634(local_118,"%127s %f",local_198,&local_1c8);
+      iVar2 = _stricmp(local_198,"FX_CACHE_VER");
+      if (iVar2 == 0) {
+        if (DAT_18409e3a8 <=
+            (double)CONCAT44((uint)((ulonglong)(DAT_1840b7750 - (double)(float)local_1c8) >> 0x20) &
+                             DAT_184099330._4_4_,
+                             SUB84(DAT_1840b7750 - (double)(float)local_1c8,0) & (uint)DAT_184099330
+                            )) {
+          FUN_180bb190c(param_1);
+          (**(code **)(*DAT_18492b850 + 0x1b8))(DAT_18492b850,lVar5);
+          goto LAB_180bb0805;
+        }
+      }
+    }
+    (**(code **)(*DAT_18492b850 + 0x158))(DAT_18492b850,local_118,0x100,lVar5);
+    FUN_1804f6ac8(param_1 + 0x700,local_118);
+    while( true ) {
+      iVar2 = (**(code **)(*DAT_18492b850 + 0x1c0))(DAT_18492b850,lVar5);
+      if (iVar2 != 0) break;
+      local_1c8 = 0;
+      (**(code **)(*DAT_18492b850 + 0x158))(DAT_18492b850,local_118,0x100,lVar5);
+      iVar2 = FUN_180721634(local_118,"%127s %I64x",local_198,&local_1c8);
+      if (1 < iVar2) {
+        uVar3 = FUN_180bb1fb8(local_1b8,local_198,&local_1c8);
+        FUN_180bb175c(param_1 + 0x6b8,local_1a8,uVar3);
+        FUN_1803d18a8(local_1b8);
+      }
+    }
+    (**(code **)(*DAT_18492b850 + 0x1b8))(DAT_18492b850,lVar5);
+    cVar1 = FUN_180bb0838(param_1);
+    if (cVar1 != '\0') {
+      FUN_18250eae0(param_1,local_1c0);
+    }
+  }
+LAB_180bb0805:
+  FUN_1804fc884(&local_1c0);
+  return;
+}
+
+ (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+===== DISASM FUN_180bb058c @ 0x180bb058c ===== (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb058c: MOV RAX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb058f: MOV qword ptr [RAX + 0x10],RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0593: MOV qword ptr [RAX + 0x18],RSI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0597: MOV qword ptr [RAX + 0x20],RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb059b: PUSH RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb059c: LEA RBP,[RAX + -0xe8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05a3: SUB RSP,0x1e0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05aa: MOV RAX,qword ptr [0x1848fcfc0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05b1: XOR RAX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05b4: MOV qword ptr [RBP + 0xd0],RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05bb: MOV RDI,RCX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05be: CALL 0x180bb0ecc  -> 0x180bb0ecc (FUN_180bb0ecc) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05c3: LEA RDX,[0x183dede70] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05ca: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05cf: CALL 0x1804f692c  -> 0x1804f692c (FUN_1804f692c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05d4: LEA RDX,[RDI + 0x220] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05db: MOV RBX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05de: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05e3: CALL 0x1804fd468  -> 0x1804fd468 (FUN_1804fd468) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05e8: MOV R8,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05eb: LEA RCX,[RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05f0: MOV RDX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05f3: CALL 0x1804fdc7c  -> 0x1804fdc7c (FUN_1804fdc7c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05f8: LEA RCX,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb05fd: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0602: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0607: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb060c: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0613: LEA R8,[0x183b777cc] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb061a: MOV RDX,qword ptr [RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb061f: MOV R9D,0x2 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0625: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0628: CALL qword ptr [RAX + 0x120] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb062e: MOV RBX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0631: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0634: JZ 0x180bb07fd  -> 0x180bb07fd (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb063a: MOV ESI,0xa (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb063f: LEA RCX,[RBP + -0x2e] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0643: XOR EDX,EDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0645: MOV word ptr [RBP + -0x30],SI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0649: MOV R8D,0xfe (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb064f: CALL 0x181d938b3  -> 0x181d938b3 (memset) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0654: XOR EDX,EDX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0656: MOV word ptr [RSP + 0x50],SI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb065b: LEA R8D,[RSI + 0x74] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb065f: LEA RCX,[RSP + 0x52] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0664: CALL 0x181d938b3  -> 0x181d938b3 (memset) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0669: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0670: LEA RDX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0674: MOV ESI,0x100 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0679: MOV R9,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb067c: MOV R8D,ESI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb067f: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0682: CALL qword ptr [RAX + 0x158] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0688: LEA RDX,[0x183dede60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb068f: LEA RCX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0693: CALL 0x181ab4e74  -> 0x181ab4e74 (strstr) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0698: TEST RAX,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb069b: JZ 0x180bb071b  -> 0x180bb071b (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb069d: LEA R9,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06a2: MOV dword ptr [RSP + 0x20],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06aa: LEA R8,[RSP + 0x50] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06af: LEA RDX,[0x183dedea0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06b6: LEA RCX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06ba: CALL 0x180721634  -> 0x180721634 (FUN_180721634) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06bf: LEA RDX,[0x183dede60] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06c6: LEA RCX,[RSP + 0x50] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06cb: CALL qword ptr [0x183a03dc0]  -> 0x35a (_stricmp) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06d1: TEST EAX,EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06d3: JNZ 0x180bb071b  -> 0x180bb071b (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06d5: MOVSD XMM1,qword ptr [0x1840b7750] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06dd: MOVSS XMM0,dword ptr [RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06e3: CVTPS2PD XMM0,XMM0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06e6: SUBSD XMM1,XMM0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06ea: ANDPS XMM1,xmmword ptr [0x184099330] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06f1: COMISD XMM1,qword ptr [0x18409e3a8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06f9: JC 0x180bb071b  -> 0x180bb071b (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06fb: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb06fe: CALL 0x180bb190c  -> 0x180bb190c (FUN_180bb190c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0703: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb070a: MOV RDX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb070d: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0710: CALL qword ptr [RAX + 0x1b8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0716: JMP 0x180bb0805  -> 0x180bb0805 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb071b: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0722: LEA RDX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0726: MOV R9,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0729: MOV R8D,ESI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb072c: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb072f: CALL qword ptr [RAX + 0x158] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0735: LEA RCX,[RDI + 0x700] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb073c: LEA RDX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0740: CALL 0x1804f6ac8  -> 0x1804f6ac8 (FUN_1804f6ac8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0745: JMP 0x180bb07b4  -> 0x180bb07b4 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0747: MOV qword ptr [RSP + 0x20],0x0 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0750: LEA RDX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0754: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0757: MOV R9,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb075a: MOV R8D,ESI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb075d: CALL qword ptr [RAX + 0x158] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0763: LEA R9,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0768: LEA R8,[RSP + 0x50] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb076d: LEA RDX,[0x183dede90] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0774: LEA RCX,[RBP + -0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0778: CALL 0x180721634  -> 0x180721634 (FUN_180721634) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb077d: CMP EAX,0x1 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0780: JLE 0x180bb07b4  -> 0x180bb07b4 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0782: LEA R8,[RSP + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0787: LEA RDX,[RSP + 0x50] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb078c: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0791: CALL 0x180bb1fb8  -> 0x180bb1fb8 (FUN_180bb1fb8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0796: MOV R8,RAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0799: LEA RCX,[RDI + 0x6b8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07a0: LEA RDX,[RSP + 0x40] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07a5: CALL 0x180bb175c  -> 0x180bb175c (FUN_180bb175c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07aa: LEA RCX,[RSP + 0x30] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07af: CALL 0x1803d18a8  -> 0x1803d18a8 (FUN_1803d18a8) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07b4: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07bb: MOV RDX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07be: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07c1: CALL qword ptr [RAX + 0x1c0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07c7: MOV RCX,qword ptr [0x18492b850] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07ce: TEST EAX,EAX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07d0: JZ 0x180bb0747  -> 0x180bb0747 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07d6: MOV RAX,qword ptr [RCX] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07d9: MOV RDX,RBX (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07dc: CALL qword ptr [RAX + 0x1b8] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07e2: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07e5: CALL 0x180bb0838  -> 0x180bb0838 (FUN_180bb0838) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07ea: TEST AL,AL (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07ec: JZ 0x180bb0805  -> 0x180bb0805 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07ee: MOV RDX,qword ptr [RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07f3: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07f6: CALL 0x18250eae0  -> 0x18250eae0 (FUN_18250eae0) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07fb: JMP 0x180bb0805  -> 0x180bb0805 (FUN_180bb058c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb07fd: MOV RCX,RDI (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0800: CALL 0x180bb190c  -> 0x180bb190c (FUN_180bb190c) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0805: LEA RCX,[RSP + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb080a: CALL 0x1804fc884  -> 0x1804fc884 (FUN_1804fc884) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb080f: MOV RCX,qword ptr [RBP + 0xd0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0816: XOR RCX,RSP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0819: CALL 0x181c1e8c0  -> 0x181c1e8c0 (__security_check_cookie) (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb081e: LEA R11,[RSP + 0x1e0] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0826: MOV RBX,qword ptr [R11 + 0x18] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb082a: MOV RSI,qword ptr [R11 + 0x20] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb082e: MOV RDI,qword ptr [R11 + 0x28] (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0832: MOV RSP,R11 (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0835: POP RBP (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java>   0x180bb0836: RET (GhidraScript)  
+INFO  Ki28CfxbLookupDecomp.java> 
+done. (GhidraScript)  
