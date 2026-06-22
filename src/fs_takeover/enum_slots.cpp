@@ -87,9 +87,17 @@ size_t DirPrefixLen(const char* pattern) {
 // keys. Written into `out` (NormalizeVPath returns a std::string; this is the
 // COLD enumeration path, not the per-open hot path, so the string is acceptable
 // here — enumeration is not the per-frame surface memory.md scopes).
+//
+// The engine's pak aliases are folded here too (FoldEngineAliasToIndexKey), the
+// SAME fold ResolveVPath + find_slots IndexDirPrefix apply — so a ForEachFile
+// over an aliased dir (`data/gameshaders/`) matches the index keys stored under
+// the pak root (`shaders/`). kcdx owns the alias on every enumeration path, not
+// just open (KI-0028).
 std::string IndexDirPrefix(const char* pattern) {
     const size_t dlen = DirPrefixLen(pattern);
-    return asset_overlay::NormalizeVPath(std::string(pattern, dlen));
+    std::string prefix = asset_overlay::NormalizeVPath(std::string(pattern, dlen));
+    FoldEngineAliasToIndexKey(prefix);
+    return prefix;
 }
 
 }  // namespace

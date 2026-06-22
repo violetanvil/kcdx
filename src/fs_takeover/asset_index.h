@@ -114,12 +114,27 @@ using AssetIndex = std::unordered_map<std::string, ByteSource>;
 AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
                            const std::wstring& engineDir = std::wstring());
 
+// Fold the engine's pak-alias namespaces in an already-NormalizeVPath'd key to
+// the pak-root-relative key the entries are STORED under, IN PLACE. kcdx owns
+// every alias the engine uses (the totalizing-FS invariant), so this fold is the
+// single shared chokepoint applied wherever a key is matched against the index —
+// the open/resolve path (ResolveVPath) AND the directory-enumeration path
+// (find/enum prefix matching) — so a shader resolves identically whether opened
+// by name or enumerated. Folds:
+//   %engine%/X            -> X            (Engine.pak pak-root; KI-0026)
+//   data/gameshaders/X    -> shaders/X    (Shaders.pak `shaders/` root; KI-0028)
+// A key matching no alias is left unchanged. INPUT MUST already be
+// NormalizeVPath'd (lowercase + forward slash) — the literals matched are the
+// folded forms. Allocation-light: an in-place prefix rewrite.
+void FoldEngineAliasToIndexKey(std::string& key);
+
 // Resolve a vpath to its winning ByteSource, or nullptr on a miss.
 //
-// The O(1) hot-path lookup (§5): NormalizeVPath the input, one hash lookup into
-// `index`, return the ByteSource* or nullptr. No search, no bisection, no per-
-// mode gate. A miss means kcdx does not serve this vpath from the index — the
-// engine resolves it (the fall-through a later step wires); here, return nullptr.
+// The O(1) hot-path lookup (§5): NormalizeVPath the input, fold the engine pak
+// aliases (FoldEngineAliasToIndexKey), one hash lookup into `index`, return the
+// ByteSource* or nullptr. No search, no bisection, no per-mode gate. A miss means
+// kcdx does not serve this vpath from the index — the engine resolves it (the
+// fall-through a later step wires); here, return nullptr.
 const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath);
 
 // === The process-lifetime built index — set once at the seat, read forever ===

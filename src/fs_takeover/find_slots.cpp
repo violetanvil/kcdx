@@ -7,6 +7,7 @@
 #include <io.h>       // _wfindfirst64 / _wfindnext64 / _wfinddata64_t / _findclose
 #include <unordered_set>
 
+#include "asset_index.h"       // GetBuiltIndex + FoldEngineAliasToIndexKey (alias fold)
 #include "boot_trace.h"        // FS_BOOT_TRACE — boot-window slot trace (KI-0026)
 #include "file_handle.h"       // the kcdx handle pool — find-handle mint/peek/advance/close
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
@@ -54,9 +55,18 @@ size_t DirPrefixLen(const char* pattern) {
 // index vpaths (the directory part before the glob, NormalizeVPath'd so it
 // compares against the index's normalized keys). Mirrors enum_slots.cpp
 // IndexDirPrefix. Cold enumeration path — the std::string is acceptable here.
+//
+// The engine's pak aliases are folded here too (FoldEngineAliasToIndexKey), the
+// SAME fold ResolveVPath applies on the open path — so an enumeration of an
+// aliased dir (`FindFirst "data/gameshaders/*.ext"`) matches the index keys
+// stored under the pak root (`shaders/`), exactly as opening one shader by name
+// does. Without this the enum form missed the 21 shaders the `shaders/*.ext`
+// form found (KI-0028); kcdx owns the alias on EVERY path, not just open.
 std::string IndexDirPrefix(const char* pattern) {
     const size_t dlen = DirPrefixLen(pattern);
-    return asset_overlay::NormalizeVPath(std::string(pattern, dlen));
+    std::string prefix = asset_overlay::NormalizeVPath(std::string(pattern, dlen));
+    FoldEngineAliasToIndexKey(prefix);
+    return prefix;
 }
 
 // The normalized FILENAME GLOB MASK of the requested vpath pattern — the

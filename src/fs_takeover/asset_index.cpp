@@ -185,42 +185,71 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
     return index;
 }
 
-// kcdx OWNS the %engine% alias → expand an `%engine%/X` index-lookup key to the
-// pak-root-relative key `X` (DROP the `%engine%/` prefix). Engine.pak entries are
-// keyed pak-relative (NormalizeVPath-folded, e.g. `config/engine_core.thread_config`,
-// no `engine/` prefix), but the engine opens them by the aliased path
-// `%engine%/config/engine_core.thread_config`. Without this strip the lookup key
-// keeps the alias and misses the stored pak-relative key — the file fails to match
-// itself, the miss arm thunks to a non-existent loose path, and the engine raises
-// CSystem::FatalError(0xC8) at graphics-init (KI-0026). The alias maps to the pak
-// ROOT because that is the form the entries are stored in.
+// kcdx OWNS the engine's pak-alias namespaces → fold an aliased index-lookup key
+// to the pak-root-relative key the entries are STORED under. The engine opens a
+// pak-resident file by an ALIASED path; the index keys it by the pak's own
+// (NormalizeVPath-folded) entry name. Without the fold the lookup keeps the alias,
+// misses the stored key, the miss arm thunks to a non-existent loose path, and the
+// engine fails to load the file (KI-0026 fatal at graphics-init; KI-0028 black
+// frames from un-served shaders). kcdx, as the totalizing FS owner, resolves every
+// alias the engine uses — this is the alias chokepoint.
+//
+// Two aliases are folded (each verified against the on-disk pak central directory):
+//
+//   1. %engine%/X → X            (DROP the prefix). Engine.pak entries are keyed
+//      pak-relative (e.g. `config/engine_core.thread_config`); the engine opens
+//      them as `%engine%/config/...`. (KI-0026.)
+//
+//   2. data/gameshaders/X → shaders/X   (REPLACE the prefix). Shaders.pak entries
+//      are stored under `shaders/` (verified: 21 `shaders/*.ext` + 180
+//      `shaders/hwscripts/cryfx/*.cfx` in the pak CD), but the engine's shader
+//      subsystem opens them via the `data/gameshaders/` alias (`runtime.ext`,
+//      `scaleform4.ext`, `hwscripts/cryfx/posteffects.cfx`, …). Without this fold
+//      EVERY shader lookup in the alias form missed → loose-open errno=2 → the
+//      shader never loaded → the render pipeline presented (PROBE K: 120fps) but
+//      composited every frame BLACK, and no UI (the Scaleform shader missed too).
+//      This IS KI-0028. The single prefix swap covers BOTH the `.ext` and the
+//      `hwscripts/cryfx/*.cfx` families (both live under `shaders/` in the pak).
 //
 // INVARIANT: applied to the already-NormalizeVPath'd key (lowercase + forward
-// slash), so the literal to match is the folded `%engine%/` (`%` and `/` are
-// unchanged by the fold). A non-`%engine%/` key is returned unchanged; the strip
-// never swallows — a `%engine%`-stripped key that still misses falls through to
-// the existing miss arm exactly as before. Allocation-light: a prefix check that
-// rewrites the same string in place (no second allocation), on the hot lookup path.
-// NOT folded into NormalizeVPath itself — that fold is shared by the overlay
-// resolver + the overlay-map build, and must stay a pure case+slash fold (the
-// shared-key contract); the alias strip is an INDEX-key concern only.
+// slash), so the literals to match are the folded forms (`%`, `/` unchanged by the
+// fold; `data/gameshaders/` is lowercase). A key matching no alias is returned
+// unchanged; the fold never swallows — a folded key that still misses falls through
+// to the existing miss arm exactly as before. Allocation-light: a prefix check that
+// rewrites the same string in place, on the hot lookup path. NOT folded into
+// NormalizeVPath itself — that fold is shared by the overlay resolver + the
+// overlay-map build and must stay a pure case+slash fold (the shared-key contract);
+// the alias fold is an INDEX-key concern only.
 namespace {
 constexpr const char kEngineAlias[] = "%engine%/";
 constexpr size_t kEngineAliasLen = sizeof(kEngineAlias) - 1;  // exclude the NUL
 
-void ExpandEngineAliasToIndexKey(std::string& key) {
-    if (key.compare(0, kEngineAliasLen, kEngineAlias) == 0)
-        key.erase(0, kEngineAliasLen);  // %engine%/X -> X (pak-root-relative)
-}
+constexpr const char kGameShadersAlias[] = "data/gameshaders/";
+constexpr size_t kGameShadersAliasLen = sizeof(kGameShadersAlias) - 1;
+constexpr const char kShadersRoot[] = "shaders/";  // the pak-stored prefix
 }  // namespace
+
+void FoldEngineAliasToIndexKey(std::string& key) {
+    if (key.compare(0, kEngineAliasLen, kEngineAlias) == 0) {
+        key.erase(0, kEngineAliasLen);  // %engine%/X -> X (pak-root-relative)
+        return;
+    }
+    // data/gameshaders/X -> shaders/X (the Shaders.pak stored prefix; KI-0028).
+    // A prefix REPLACE (not a strip): erase `data/gameshaders/`, prepend
+    // `shaders/`. The mutually-exclusive `return` above means a key reaches here
+    // only if it was not the %engine% alias.
+    if (key.compare(0, kGameShadersAliasLen, kGameShadersAlias) == 0) {
+        key.replace(0, kGameShadersAliasLen, kShadersRoot);
+    }
+}
 
 const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath) {
     // The O(1) hot-path lookup (§5 "no extra hotpath checks"): normalize once,
-    // expand the %engine% alias to the pak-root key (KI-0026), one hash lookup,
-    // return the source or nullptr (a miss = the engine resolves it via the
-    // fall-through). No search, no bisection.
+    // fold the engine's pak aliases to the stored pak-root key (%engine% KI-0026,
+    // data/gameshaders KI-0028), one hash lookup, return the source or nullptr (a
+    // miss = the engine resolves it via the fall-through). No search, no bisection.
     std::string key = asset_overlay::NormalizeVPath(vpath);
-    ExpandEngineAliasToIndexKey(key);
+    FoldEngineAliasToIndexKey(key);
     const auto found = index.find(key);
     return found == index.end() ? nullptr : &found->second;
 }
