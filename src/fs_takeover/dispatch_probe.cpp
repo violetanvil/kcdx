@@ -53,6 +53,17 @@ constexpr uint32_t kRvaPrecache     = 0x25091e0;
 //   0xbb23c0 = FUN_180bb23c0 = PSO PRECACHING Compute ("Precached %u Compute PSOs").
 constexpr uint32_t kRvaPsoPrecacheGfx  = 0xbb2ad8;
 constexpr uint32_t kRvaPsoPrecacheComp = 0xbb23c0;
+// PROBE R4 — the LAZY per-PSO-request leaf (the menu's ACTUAL pipeline-build path:
+// the precache path runs on NEITHER swap-ON nor swap-OFF, so the menu builds PSOs
+// lazily per-draw through here). SOURCE: recon FINDINGS Front 1, body-read
+// (_h_180bb42c8.txt, _i_*.txt).
+//   0xbb42c8 = FUN_180bb42c8 = the per-PSO-create leaf; branches FUN_18091848c()
+//              => sync FUN_180bb42fc (enqueues "PrecachePSOsJob_ShadersActivation
+//              Phase") vs deferred FUN_180bb44b0 (dispatches LaunchPSOCreationJobs
+//              Graphics). EVERY lazy PSO build goes through this one site. Its
+//              reach swap-ON vs swap-OFF is THE discriminator: fires swap-OFF but
+//              not swap-ON => the render loop never REQUESTS a pipeline swap-ON.
+constexpr uint32_t kRvaPsoCreateLeaf = 0xbb42c8;
 
 std::atomic<bool> g_armed{false};
 
@@ -68,6 +79,9 @@ std::atomic<uint64_t> g_precacheCalls{0};  // _PrecacheShaderList reached
 // PROBE R3 — runtime PSO-precache reach counters (the actual menu pipeline build).
 std::atomic<uint64_t> g_psoGfxCalls{0};    // PSO PRECACHING Graphics reached
 std::atomic<uint64_t> g_psoCompCalls{0};   // PSO PRECACHING Compute reached
+// PROBE R4 — the lazy per-PSO-request leaf. Hot-ish (per-draw), so rate-bound the
+// log: first N in full, then count-only (logging.md hot-path discipline).
+std::atomic<uint64_t> g_psoLeafCalls{0};
 
 // --- FUN_180b04984 lookupdata.bin loader after-hook ---
 // ABI (body-read): undefined8 (longlong p1, undefined8 p2, undefined8 p3,
@@ -184,6 +198,27 @@ void __fastcall HookedPsoComp(void* self, unsigned int mode) {
     g_origPsoComp(self, mode);
 }
 
+// PROBE R4 — the lazy per-PSO-create leaf (FUN_180bb42c8). 4-arg per the decompile
+// (param_1 = a {desc,…} bundle ptr). We only need REACH + count, so forward all
+// four args untouched and rate-bound the log.
+constexpr uint64_t kPsoLeafLogFirst = 12;
+using PsoLeafFn_t = void(__fastcall*)(void* p1, void* p2, void* p3, void* p4);
+PsoLeafFn_t g_origPsoLeaf = nullptr;
+void __fastcall HookedPsoLeaf(void* p1, void* p2, void* p3, void* p4) {
+    const uint64_t n = g_psoLeafCalls.fetch_add(1) + 1;
+    // THE DISCRIMINATOR: this firing swap-OFF (menu) but not swap-ON (black) means
+    // the render loop never REQUESTS a pipeline swap-ON — the wedge is upstream of
+    // the PSO-create, in the render-submission/draw path that asks for pipelines.
+    if (n <= kPsoLeafLogFirst) {
+        LOG_DEBUG_KV(kCat, "pso_create_leaf_enter", KV("call_n", n),
+            KV::BareStr("detail",
+                "lazy per-draw PSO-create REACHED — the render loop requested a "
+                "pipeline. Fires swap-OFF but not swap-ON => the wedge is upstream "
+                "in render-submission, not the PSO-create itself."));
+    }
+    g_origPsoLeaf(p1, p2, p3, p4);
+}
+
 bool HookRva(const kcdx::pe::ModuleView& whgame, uint32_t rva, void* detour,
              void** origOut, const char* label) {
     void* target = reinterpret_cast<void*>(
@@ -233,7 +268,8 @@ DWORD WINAPI SummaryMain(LPVOID) {
             KV("loadlist_calls",g_loadListCalls.load()),
             KV("precache_calls",g_precacheCalls.load()),
             KV("pso_gfx_calls", g_psoGfxCalls.load()),
-            KV("pso_comp_calls",g_psoCompCalls.load()));
+            KV("pso_comp_calls",g_psoCompCalls.load()),
+            KV("pso_leaf_calls",g_psoLeafCalls.load()));
     }
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the watcher."));
@@ -306,6 +342,11 @@ void DispatchProbeStart() {
                    reinterpret_cast<void*>(&HookedPsoComp),
                    reinterpret_cast<void**>(&g_origPsoComp),
                    "PSOPrecacheComp_FUN_180bb23c0");
+    // PROBE R4 — the lazy per-PSO-create leaf (the menu's actual build path).
+    any |= HookRva(whgame, kRvaPsoCreateLeaf,
+                   reinterpret_cast<void*>(&HookedPsoLeaf),
+                   reinterpret_cast<void**>(&g_origPsoLeaf),
+                   "PSOCreateLeaf_FUN_180bb42c8");
 
     LOG_INFO_KV(kCat, "dispatch_hooks_armed", KV("ok", any ? 1 : 0),
         KV::BareStr("detail",

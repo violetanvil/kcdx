@@ -68,6 +68,24 @@ pso_gfx_calls=0  pso_comp_calls=0      ← the runtime PSO-precache NEVER ran
 - swap-OFF `pso_gfx_calls>0` → CONFIRMS `FUN_180bb2ad8` is the swap-induced missing trigger → trace what gates its invocation (its caller + the readiness condition the swap perturbs). This is the root-cause site.
 - swap-OFF `pso_gfx_calls=0` too → even the menu doesn't precache via `FUN_180bb2ad8` (precache may be cvar-disabled — `r_PipelineStatePrecacheMode`) → the menu builds pipelines LAZILY per-draw via the job-deferred create (`FUN_180bb42c8 → FUN_180bb44b0 → LaunchPSOCreationJobsGraphics`), and THAT lazy dispatch is what fails swap-ON → re-target the probe to the per-draw create + what wakes the PSOCompilationWorkers.
 
+## ⚠⚠ THE PREMISE IS OVERTURNED (2026-06-22, PROBE R4 + PROBE P swap-OFF) — gfx_calls=1 on the WORKING MENU; PSO-create is NOT the divergence
+
+Two measurements on the SAME swap-OFF run that REACHED THE MENU (`kcdx-dev_2026-06-22_16-23-56.log`):
+
+1. **PROBE R4** (hooked the lazy per-PSO-create leaf `FUN_180bb42c8`): `pso_leaf_calls=0` — the leaf NEVER fires, even on the working menu. So the menu does NOT build PSOs through the PipelineStateCacheManager lazy-create chain either. That entire subsystem (precache `FUN_180bb2ad8` AND lazy-leaf `FUN_180bb42c8`) is IDLE when the menu renders. **The PSOCompilationWorkers + this whole chain are a background/streaming-shader pool, NOT the menu's render path.**
+
+2. **PROBE P swap-OFF** (the A/B half never previously read — PROBE P was only ever run swap-ON): **`gfx_calls=1` on the WORKING MENU.** The SAME single present-blit PSO (vs_len=704 ps_len=752, byte-identical to the swap-ON black run), and NOTHING ELSE.
+
+**THIS OVERTURNS PROBE P's FOUNDING ASSUMPTION.** PROBE P's outcome map (and every "render-build stalls" / O5 conclusion since) rested on "a CryEngine menu creates DOZENS-to-HUNDREDS of graphics PSOs." **FALSE for this engine/menu: the working menu creates exactly ONE** `ID3D12Device::CreateGraphicsPipelineState` (the present blit). `gfx_calls=1` is NORMAL — identical on the black path and the menu path. PROBE P's "O5: the engine never builds the scene/UI pipelines" was a MISREAD: the engine never builds them swap-OFF either, yet the menu renders fine.
+
+**The menu's pipelines come from a path PROBE P (slot 10 CreateGraphicsPipelineState) does NOT see** — almost certainly `pipelinecache.dat` (the 28944-byte on-disk D3D12 PSO cache) deserialized via `ID3D12PipelineLibrary::LoadGraphicsPipeline` / `ID3D12Device1::CreatePipelineState` (slot 31), NOT slot 10. The PSOs are loaded from the cache blob, not created from bytecode — so slot-10 stays at 1 both ways.
+
+**RE-LOCALIZATION (honest, the target moves OFF the shader/PSO axis entirely):** PSO creation is IDENTICAL swap-ON vs swap-OFF (gfx_calls=1 both). Present succeeds both (PROBE K: 120fps, GPU scanout). So the black-vs-menu divergence is NEITHER in PSO creation NOR in present — it is in WHAT IS RECORDED INTO THE FRAME between them: the draw calls / command-list recording, the bound render targets/descriptors, or a render RESOURCE (the Scaleform UI surface, a render target, a constant/descriptor) that is wrong or missing swap-ON. The frame is presented but EMPTY because nothing (or the wrong thing) is drawn into it.
+
+**What this EXONERATES (stop chasing):** the entire CShaderMan / shader-cache / PipelineStateCacheManager / PSO-create subsystem. validation (R), shaderlist precache (R2), runtime precache (R3), lazy-create-leaf (R4) — ALL run identically (or not at all) on both paths. The shader/PSO axis is DEAD as the divergence. The 6+ probes mapped it thoroughly and it is uniformly NOT the differentiator.
+
+**Next instrument (a fresh axis — the draw/command-record path):** the divergence is in the per-frame command-list recording or a render resource. Candidate probes (theory-independent, NOT yet built): hook `ID3D12GraphicsCommandList::DrawInstanced`/`DrawIndexedInstanced` (count the draws swap-ON vs swap-OFF — black = far fewer/zero real draws into the scene/UI target) and/or `OMSetRenderTargets` (is the right backbuffer/UI target bound). This moves the investigation from "are the pipelines built" (answered: identically) to "are the draws recorded into the frame" — the actual content question PROBE K's "frames presented but black" pointed at from the start. KI-0028 OPEN; the shader-axis root-cause hunt is CLOSED as a dead end, a real (if negative) result.
+
 ---
 
 ## The RE that LED to PROBE R (validation-reject, now falsified — kept for the architecture map)
