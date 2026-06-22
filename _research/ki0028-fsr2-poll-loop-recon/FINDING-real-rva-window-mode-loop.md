@@ -273,14 +273,26 @@ B find-handle straddle, C un-normalized path, D pak mtime=0) are read on the con
 DIRECT wedge drivers — **no window/present/swapchain/display-mode consumer branches on any divergent slot
 value.** This is a strong negative reached by reading real consumer bodies, not by inference. Residual
 paths, precisely defined:
-1. **Indirect / multi-hop:** a divergent value consumed at boot (a metadata premature-TRUE, the
-   `%engine%/...` form re-resolved inside kcdx_FOpen, a stored/forwarded mtime later diffed against a
-   fresh stat) makes a downstream load take a wrong arm whose effect surfaces LATER as the un-presentable
-   swapchain — N stages and threads removed from the slot call. NOT statically traceable (would require
-   whole-engine symbolic data-flow across threads on a stripped binary); a live swap-on/off probe is the
-   only path. Concrete probe targets surfaced by the consumer reads: `0x244dd9c`/`0x89682d` (A's level-
-   cache + Menu.gfx gates), the kcdx_FOpen alias re-resolution (C's residual — the KI-0026 alias-namespace
-   class), the `0x9a2074` cache-assembly globals (D's residual).
+1. **Indirect / multi-hop:** a divergent value consumed at boot (a metadata premature-TRUE, a
+   stored/forwarded mtime later diffed against a fresh stat) makes a downstream load take a wrong arm
+   whose effect surfaces LATER as the un-presentable swapchain — N stages and threads removed from the
+   slot call. NOT statically traceable (would require whole-engine symbolic data-flow across threads on a
+   stripped binary); a live swap-on/off probe is the only path. Concrete probe targets surfaced by the
+   consumer reads: `0x244dd9c`/`0x89682d` (A's level-cache + Menu.gfx gates), the `0x9a2074` cache-
+   assembly globals (D's residual).
+
+**C's residual is CLOSED by reading kcdx's own source (not just falsified).** The C-residual was
+hypothesized as "the `%engine%/...` un-normalized form could mis-resolve inside kcdx_FOpen if its alias
+re-resolution mismatches the index key (the KI-0026 class)." Read `src/fs_takeover/open_slots.cpp`: the
+un-normalized return is a DELIBERATE, documented design (lines 344-393), not a divergence to chase. On a
+pak hit, `kcdx_AdjustFileName` returns `pName` UNCHANGED specifically so the engine's subsequent
+`kcdx_FOpen` re-resolves it through the SAME `asset_overlay::NormalizeVPath(pName)` +
+`ExpandEngineAliasToIndexKey` strip that hit the pak entry — both `kcdx_AdjustFileName` (line 300) and
+`OpenResolvedAndMint` (line 168) key the index through the IDENTICAL `NormalizeVPath(pName)` call, so the
+form round-trips to the same key in both. Returning a `Data/`-normalized loose string instead would be the
+BUG (FOpen's `engine/`-prefix would miss the strip → loose open → errno=2 → the 0xC8 fatal — the exact
+KI-0026 failure the unchanged-return AVOIDS). So C is not a wedge lead at all; the divergence is the
+correct behavior. C is fully closed.
 
 **Honest status of "find it with static":** static FOUND the divergences (4, verified) AND read ALL of
 their consumers, killing every one as a direct driver — the static method run to its conclusion, not
