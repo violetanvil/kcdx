@@ -185,6 +185,83 @@ probe should isolate WHAT the swapped CCryPak serves/changes that diverges the b
 WHGame global guessed from a static read of a per-frame function. The wedged-stack frames
 (`0x869c39` etc.) are confirmed per-frame noise — stop chasing frames on that stack.
 
+## STATIC SLOT-DIFF (2026-06-22) — 4 VERIFIED return-contract divergences; the wedge is in a SLOT OUTPUT, not a stack frame
+
+After PROBE M killed the stack-frame chase, the right static target was the swap's OWN output: kcdx
+swaps the CCryPak vtable per-slot (`src/fs_takeover/vtable_table.cpp` — MOST slots THUNK to the engine
+original; a KCDX-owned family is replaced). The swap-ON vs swap-OFF divergence IS exactly that owned
+set. A 4-way parallel static diff (each KCDX slot's return contract vs the engine original it replaces;
+reuse-first off `_research/phase8.5-pak-resolver`, `ki0027-*`, the DB) found four VERIFIED divergences,
+all matching the KI-0028 signature (FS-silent, served-early, surfaces-late):
+
+| # | slot(s) | divergence (kcdx vs engine) | confidence | rank |
+|---|---------|------------------------------|-----------|------|
+| **A** | metadata 67/70/45/92/93 | **existence-TIMING / pakPriority-bypass** — kcdx's index reports every pak vpath EXISTS/sized from `CSystem::Init` onward, bypassing the engine's `pakPriority`/`location`/mount-timing gates → premature TRUE/size for a pak asset the engine original would call not-yet/not-here | kcdx side VERIFIED; boot-consumer branch INFERRED | **1** |
+| **B** | find 63/64/65 | **handle-type straddle** — kcdx FindFirst returns a small int `(id<<1)\|1`; the engine returns a **refcounted `CCryPakFindData` object** pointer. A boot consumer that does anything but `-1<h`+pass-back (derefs `obj[1]`/`obj[3]`, refcounts, object-releases) operates `(void*)3` | handle types VERIFIED; the derefing consumer UNVERIFIED | **1** |
+| **C** | slot 1 AdjustFileName | **un-normalized pak path** — on a pak hit kcdx returns raw `pName` (`%engine%/…`); the engine returns the normalized Data/-rooted path. A consumer branching on the returned string's FORM (not re-opening via FOpen) diverges. kcdx's "the consumer is always kcdx_FOpen" is an unproven runtime-mechanism claim | both bodies VERIFIED; consumer assumption UNVERIFIED | 2 |
+| **D** | slot 66 FGetModificationTime | **pak mtime = 0** — kcdx returns epoch for a pak asset; the engine returns the entry's DOS time. A boot cache-freshness check (`source_mtime` vs `cache_mtime`) could mis-fire / never-settle | kcdx VERIFIED; engine DOS-time INFERRED; consumer UNVERIFIED | 3 |
+
+Exonerated by the diff: the FOpen read-handle opaque-straddle (P3 — no engine consumer operates a
+FOpen-class handle off-vtable; kcdx owning the whole read family is what makes the id safe). FGetSize
+returning 0-not-(-1) on a bad handle is the KI-0026 FIX, not a regression.
+
+**A and B are the strongest** — both FS-silent, both in slot families with prior FATAL precedent
+(KI-0026 = metadata existence at graphics-init; KI-0027 = find-slot wrong-set fatals a load). The
+wedge is "the next boot blocker after the table DB loads" — same find/metadata families, next consumer.
+
+**THE ONE UNREAD LINK (every subagent flagged it, AP19):** WHICH boot consumer branches on these
+answers. That call-edge is the missing piece between the divergence and the wedge — and it is STATICALLY
+REACHABLE: find the graphics/window/swapchain/present-init code that calls slot 67/70/45 (existence
+gate) or slot 63 (FindFirst) during the boot window, and read whether it branches on / derefs the
+result. That is the owed next static step, BEFORE any launch. (A live probe is the fallback: instrument
+slots 67/70/45/63/66 at boot to log `(vpath, kcdx-answer, would-be-engine-answer)` swap-on vs swap-off —
+but read the consumer statically first; the diff already narrowed the target to ~5 slots.)
+
+Provenance: 4 subagent digests, reuse-first off existing `_research/` Ghidra dumps (no fresh cold
+analysis). kcdx-side contracts VERIFIED from source; engine-side from prior body-reads. Every
+boot-consumer branch is UNVERIFIED (the unread link above).
+
+## CONSUMER-SIDE STATIC READ (2026-06-22) — divergences A and B FALSIFIED by reading the real consumers
+
+The slot-diff's one unread link (which boot consumer branches on the divergent answers) was read
+statically. Both rank-1 candidates are killed — not by guessing, by reading the binary:
+
+**A (existence-timing) — FALSIFIED as a DIRECT wedge driver.** A provenance-verified xref of the
+`gEnv->pCryPak` global (`0x18492B850` = gEnv+0x50; 680 loads, matching phase8.5's count) found all 44
+genuine existence/size consumers: slot 70 = **0 callers**; slot 67 = 41; slot 45 = 3. **Every one is an
+asset / level / data loader — NONE is a window/swapchain/present/display-mode/device consumer.** The two
+strongest boot consumers, body-read: `0x89682d` (`Menu.gfx` required-asset gate — a premature-TRUE
+MASKS a fatal, doesn't wedge) and `0x244dd9c`/`+0x244deef` (menucommon level-cache `GetFileSize` gate —
+the F6 size-mismatch shape, but gates level-pak loading, not present). So an existence-timing divergence
+cannot DIRECTLY drive the no-present wedge. (Recon: `_research/ki0028-metadata-consumer-recon/`.)
+
+**B (find-handle straddle) — FALSIFIED.** The engine FindClose body (`0x18097383c`) was read — it IS
+the kill site (derefs `handle+0x8`, virtual-calls through `handle+0x0`, so a kcdx integer `3` WOULD
+fault). Then ALL 53 genuine find-triplet consumers in WHGame were classified: **every one treats the
+FindFirst return opaquely** (`-1<h` + pass-back to slots 64/65). The 5 a mechanical deref-scan flagged
+were decompiler variable-reuse false positives, each body-read and cleared; 9 more were `+0x1f8`-on-a-
+different-object collisions. **No consumer derefs the handle — kcdx's integer is safe against all of
+them.** (Recon: `_research/ki0028-findfirst-straddle-recon/` — `_dump.txt`, `_triplet.txt`, 2 java workers.)
+
+**Where static has now CONCLUSIVELY localized:** the FS-takeover slot OUTPUTS are not a DIRECT cause of
+the no-present wedge — no window/present/swapchain consumer reads any divergent slot value. This is a
+strong negative (two theories killed by reading real consumer bodies). Two residual paths, precisely
+defined:
+1. **Indirect / multi-hop (A's residual):** a metadata premature-TRUE makes a downstream asset/level
+   load take a wrong arm (e.g. `0x244dd9c` uses a level-cache pak the engine would call absent) whose
+   effect surfaces LATER as the un-presentable swapchain. Multi-hop — NOT statically traceable; needs a
+   live swap-on/off probe of `0x244dd9c` / `0x89682d` specifically.
+2. **Divergences C (un-normalized pak path, slot 1) and D (pak mtime=0, slot 66)** — rank-2/3, their
+   consumers NOT yet read. Slot 1 (AdjustFileName) has the broadest consumer set; D's mtime-0 maps to a
+   cache-freshness never-settle (the PROBE M completion-handshake shape) but its consumer is unread.
+
+**Honest status of "find it with static":** static FOUND the divergences (4, verified) AND read the
+consumers for the top 2, killing both as direct drivers — that is the static method working to its
+conclusion, not failing. What static canNOT settle is the INDIRECT multi-hop path (a wrong value
+consumed at load that surfaces at present N stages later, across threads) — that residual is a
+runtime-only fact (results-driven §4). The remaining static work is C/D's consumers; the remaining
+runtime work is the multi-hop probe.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
