@@ -29,6 +29,19 @@ constexpr const char* kCat = "DISPATCH_PROBE";
 //              fires "Disabling read-only shader cache!" on a 0 return.
 constexpr uint32_t kRvaLoader = 0xb04984;
 constexpr uint32_t kRvaDriver = 0xb04478;
+// PROBE R2 — the precache-submit span (DOWNSTREAM of validation, which PROBE R
+// proved ACCEPTS swap-ON). SOURCE: same recon FINDINGS, body-read.
+//   0x250dd8c = FUN_18250dd8c = the compile-ORCHESTRATOR (mfLoadShaderList ->
+//               FUN_18171a644 -> _PrecacheShaderList); "Starting shader
+//               compilation for %s..." at ShaderCache.cpp:0x5a5.
+//   0x19d4a54 = FUN_1819d4a54 = mfLoadShaderList; fills the precache list at
+//               this+0x300 from %USER%/shaders/shaderlist.txt.
+//   0x25091e0 = FUN_1825091e0 = _PrecacheShaderList; submits the list. Its reach
+//               swap-ON is the O3 discriminator (reached => gate is in/after the
+//               submit; NOT reached => gate is between validation and it).
+constexpr uint32_t kRvaOrchestrator = 0x250dd8c;
+constexpr uint32_t kRvaLoadList     = 0x19d4a54;
+constexpr uint32_t kRvaPrecache     = 0x25091e0;
 
 std::atomic<bool> g_armed{false};
 
@@ -37,6 +50,10 @@ std::atomic<uint64_t> g_loaderCalls{0};
 std::atomic<uint64_t> g_loaderReject{0};   // return 0 (cache disabled)
 std::atomic<uint64_t> g_loaderAccept{0};   // return nonzero (cache used)
 std::atomic<uint64_t> g_driverCalls{0};
+// PROBE R2 — precache-submit span reach counters.
+std::atomic<uint64_t> g_orchCalls{0};      // compile orchestrator reached
+std::atomic<uint64_t> g_loadListCalls{0};  // mfLoadShaderList reached
+std::atomic<uint64_t> g_precacheCalls{0};  // _PrecacheShaderList reached
 
 // --- FUN_180b04984 lookupdata.bin loader after-hook ---
 // ABI (body-read): undefined8 (longlong p1, undefined8 p2, undefined8 p3,
@@ -82,6 +99,45 @@ void __fastcall HookedDriver(void* p1) {
     g_origDriver(p1);
 }
 
+// --- PROBE R2: precache-submit span after-hooks (reach discriminators) ---
+// Each is a member-ish call taking `this` (the CShaderMan*). We only need REACH
+// (did this stage run swap-ON), so each forwards `this` untouched and logs once.
+// A re-entrant/many-call site would flood, but these are shader-init-once calls.
+using ThisFn_t = void(__fastcall*)(void* self);
+
+ThisFn_t g_origOrch = nullptr;
+void __fastcall HookedOrch(void* self) {
+    const uint64_t n = g_orchCalls.fetch_add(1) + 1;
+    LOG_DEBUG_KV(kCat, "orchestrator_enter", KV("call_n", n),
+        KV::BareStr("detail",
+            "compile orchestrator (mfLoadShaderList -> _PrecacheShaderList) "
+            "REACHED — shader-system compile sequence started this run."));
+    g_origOrch(self);
+}
+
+ThisFn_t g_origLoadList = nullptr;
+void __fastcall HookedLoadList(void* self) {
+    const uint64_t n = g_loadListCalls.fetch_add(1) + 1;
+    LOG_DEBUG_KV(kCat, "loadlist_enter", KV("call_n", n),
+        KV::BareStr("detail",
+            "mfLoadShaderList REACHED — about to fill the precache list from "
+            "%USER%/shaders/shaderlist.txt (absent on this cache)."));
+    g_origLoadList(self);
+}
+
+ThisFn_t g_origPrecache = nullptr;
+void __fastcall HookedPrecache(void* self) {
+    const uint64_t n = g_precacheCalls.fetch_add(1) + 1;
+    // THE O3 DISCRIMINATOR: this running swap-ON means the gate is in/after the
+    // submit (the per-shader vtable slots or the job dispatch); NOT running means
+    // the gate is between cache-validation-accept (PROBE R) and here.
+    LOG_DEBUG_KV(kCat, "precache_enter", KV("call_n", n),
+        KV::BareStr("detail",
+            "_PrecacheShaderList REACHED — the submit ran. The gate is in/after "
+            "the per-shader submit or the job-deferred PSO creation, NOT before."));
+    g_origPrecache(self);
+}
+
 bool HookRva(const kcdx::pe::ModuleView& whgame, uint32_t rva, void* detour,
              void** origOut, const char* label) {
     void* target = reinterpret_cast<void*>(
@@ -114,17 +170,22 @@ std::atomic<bool> g_watcherStarted{false};
 DWORD WINAPI SummaryMain(LPVOID) {
     LOG_INFO_KV(kCat, "watcher_started",
         KV::BareStr("detail",
-            "KI-0028 shader-cache-validation watcher armed. loader_reject>0 "
-            "swap-ON + ==0 swap-OFF => cache disabled by the swap (the wedge). "
-            "loader_accept>0 swap-ON => cache VALIDATES, gate is past validation. "
-            "loader_calls==0 swap-ON => validation never reached, widen up."));
+            "KI-0028 watcher armed. PROBE R: loader_accept>0 swap-ON => cache "
+            "VALIDATES (proven). PROBE R2 (the O3 discriminator): precache_calls>0 "
+            "swap-ON => _PrecacheShaderList RAN, gate is in/after the submit; "
+            "precache_calls==0 but orch/loadlist>0 => gate is INSIDE the orchestrator "
+            "before the submit; orch_calls==0 => the compile sequence never starts "
+            "swap-ON, gate is between validation-accept and the orchestrator."));
     for (int reads = 0; reads < 40; ++reads) {  // ~2 min
         Sleep(kSummaryMs);
         LOG_INFO_KV(kCat, "summary",
             KV("loader_calls",  g_loaderCalls.load()),
             KV("loader_reject", g_loaderReject.load()),
             KV("loader_accept", g_loaderAccept.load()),
-            KV("driver_calls",  g_driverCalls.load()));
+            KV("driver_calls",  g_driverCalls.load()),
+            KV("orch_calls",    g_orchCalls.load()),
+            KV("loadlist_calls",g_loadListCalls.load()),
+            KV("precache_calls",g_precacheCalls.load()));
     }
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the watcher."));
@@ -174,6 +235,20 @@ void DispatchProbeStart() {
                    reinterpret_cast<void*>(&HookedDriver),
                    reinterpret_cast<void**>(&g_origDriver),
                    "validate_driver_FUN_180b04478");
+    // PROBE R2 — the precache-submit span (downstream of the now-falsified
+    // validation gate).
+    any |= HookRva(whgame, kRvaOrchestrator,
+                   reinterpret_cast<void*>(&HookedOrch),
+                   reinterpret_cast<void**>(&g_origOrch),
+                   "compile_orchestrator_FUN_18250dd8c");
+    any |= HookRva(whgame, kRvaLoadList,
+                   reinterpret_cast<void*>(&HookedLoadList),
+                   reinterpret_cast<void**>(&g_origLoadList),
+                   "mfLoadShaderList_FUN_1819d4a54");
+    any |= HookRva(whgame, kRvaPrecache,
+                   reinterpret_cast<void*>(&HookedPrecache),
+                   reinterpret_cast<void**>(&g_origPrecache),
+                   "PrecacheShaderList_FUN_1825091e0");
 
     LOG_INFO_KV(kCat, "dispatch_hooks_armed", KV("ok", any ? 1 : 0),
         KV::BareStr("detail",

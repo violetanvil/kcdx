@@ -19,6 +19,32 @@ The dispatch tracer (`src/fs_takeover/dispatch_probe.{h,cpp}`) after-hooked the 
 
 **Honest status (AP17):** the RE correctly mapped the architecture and the validation gate, and PROBE R correctly KILLED the validation-reject hypothesis by direct measurement (not a guess). The localization is now: validation passes (PROBE R) but `gfx_calls=1` (PROBE P) — the gate is in the **span between cache-validation-accept and PSO-build dispatch**: `mfLoadShaderList` (fills the precache list from `%USER%/shaders/shaderlist.txt`) → `_PrecacheShaderList` (`FUN_1825091e0`, submits the list) → the per-shader submit slots → `LaunchPSOCreationJobsGraphics`. The next probe targets THAT span (below), theory-independent — NOT another validation-side fix.
 
+## ⚠ PROBE R2 RESULT (RAN 2026-06-22, swap-ON) — the compile sequence STOPS after mfLoadShaderList; the gate is a MISSING TRIGGER (O4), not a wedge-inside
+
+PROBE R2 extended the tracer to the precache-submit span (`mfLoadShaderList` `FUN_1819d4a54`, compile-orchestrator `FUN_18250dd8c`, `_PrecacheShaderList` `FUN_1825091e0`). Live swap-ON (user-confirmed black + sound, `kcdx-dev_2026-06-22_16-00-16.log`):
+
+```
+loader_calls=2  loader_accept=2   (validation ACCEPTS — re-confirmed)
+driver_calls=1
+loadlist_calls=1                  (mfLoadShaderList ENTERED once, 16:00:21.423)
+orch_calls=0                      (compile orchestrator FUN_18250dd8c NEVER ran)
+precache_calls=0                  (_PrecacheShaderList NEVER ran)
+```
+
+**Live invasive cdb on the still-black process (PID 7164, `~*k 12; qd` — left running):** 192 threads, **NONE in the mfLoadShaderList region or ANY CShaderMan/shader-init code**. So `mfLoadShaderList` ENTERED, ran, and RETURNED — it is NOT where the wedge sits (no in-function block/loop/fault). Main is in the per-frame message pump (`NtUserPeekMessage` → WHGame `CreateInstance` per-frame loop → `kcdx!HookedUpdate+0x94a`) — TICKING normally. All workers idle (128 `WaitForSingleObject`, 30 `RtlSleepConditionVariableSRW`, 32 `WaitForAlertByThreadId`) — the job pool parked, no PSO-build work queued.
+
+**The pinned picture:** validate cache (R) → call `mfLoadShaderList` once (reads the ABSENT `%USER%/shaders/shaderlist.txt`, returns) → the shader-compile/precache sequence NEVER PROCEEDS to the orchestrator or `_PrecacheShaderList` → no PSO-build jobs queued → workers idle → `gfx_calls=1` → black. Main keeps pumping frames.
+
+**This is the O4 axis (a MISSING TRIGGER), NOT O3 (empty registry submitted):** the engine does not even REACH the submit. Something swap-OFF causes the engine to advance from "shader list loaded" to "precache + build pipelines" that does NOT fire swap-ON. NOT a hang, NOT a wedge-inside-a-function, NOT a validation reject, NOT an empty-list submit — a sequence that stops advancing after the list load.
+
+**Honest scope (do NOT over-claim):** which trigger fails to fire is UNVERIFIED. `mfLoadShaderList` running ALONE (orchestrator not) means its caller this run is NOT `FUN_18250dd8c` — there is another mfLoadShaderList caller, and the orchestrator is a SEPARATE entry that simply never ran. Whether "orchestrator never runs" is swap-INDUCED or normal-for-this-cold-cache is the next A/B unknown.
+
+**Owed next (theory-independent A/B — the swap-OFF baseline):** re-run with the `kcdx-noswap` marker (swap-OFF, reaches the menu) and read the SAME R/R2 tallies. Outcome map:
+- swap-OFF: `orch_calls>0` / `precache_calls>0` (the sequence advances) → CONFIRMS the orchestrator/precache trigger is swap-INDUCED-absent → the differentiator is what the swap changes between mfLoadShaderList-returns and the orchestrator-fires. Find that trigger's gate.
+- swap-OFF: `orch_calls=0` too (same as swap-ON) → the orchestrator path is NOT how the menu's pipelines build (a different precache entry does it both ways) → the R2 span is exonerated, widen to the OTHER pipeline-build entry (the `PipelineStateCacheManager` precache `FUN_180bb2ad8`/`FUN_180bb23c0`, or the render-thread first-frame trigger — Layer C of the original spec).
+
+This is a clean phase boundary: the validation-reject theory is dead (R), the wedge is a missing trigger after mfLoadShaderList (R2 + live cdb), and the swap-OFF baseline is the next variable-isolating run. KI-0028 OPEN.
+
 ---
 
 ## The RE that LED to PROBE R (validation-reject, now falsified — kept for the architecture map)
