@@ -13,6 +13,7 @@
 #include "present_probe.h"  // === DIAGNOSTIC (PROBE K) === KI-0028 present-count delta
 #include "pso_probe.h"  // === DIAGNOSTIC (PROBE P) === KI-0028 shader-blob -> PSO
 #include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
+#include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -158,6 +159,16 @@ void __fastcall HookedConstructStore(void* csystem) {
     // swap-ON and swap-OFF for the A/B diff. NO-RESIDUE: remove with PROBE R.
     kcdx::fs_takeover::DispatchProbeStart();
     // === END PROBE R arm ===
+
+    // === DIAGNOSTIC (PROBE S) — KI-0028 command-list DRAW recording ============
+    // The premise-overturn (FINDINGS): PSO-create is IDENTICAL swap-ON/OFF (PROBE
+    // P gfx_calls=1 on the working menu), present succeeds both (PROBE K) — so the
+    // black-vs-menu divergence is in WHAT IS RECORDED INTO THE FRAME: the draws.
+    // PROBE S hooks the D3D12 command list (Draw* + OMSetRenderTargets) and counts
+    // them swap-ON vs swap-OFF. Armed beside P, before the noswap return, for the
+    // A/B. NO-RESIDUE: remove with PROBE S on retirement.
+    kcdx::fs_takeover::DrawcallProbeStart();
+    // === END PROBE S arm ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",

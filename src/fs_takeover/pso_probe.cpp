@@ -11,6 +11,7 @@
 
 #include "MinHook.h"
 #include "../log.h"
+#include "drawcall_probe.h"  // PROBE S shares PROBE P's single D3D12CreateDevice hook
 
 namespace kcdx::fs_takeover {
 
@@ -236,6 +237,10 @@ void CaptureDevice(ID3D12Device* dev) {
             "patched ID3D12Device CreateGraphicsPipelineState (slot 10) + "
             "CreateComputePipelineState (slot 11) on the shared class vtable."));
     StartWatcherOnce();
+    // Hand the captured device to PROBE S — MinHook allows ONE hook per target, so
+    // PROBE S cannot re-hook D3D12CreateDevice; it patches CreateCommandList on the
+    // device captured here. NO-RESIDUE: remove this call with PROBE S on retire.
+    kcdx::fs_takeover::DrawcallProbeOnDeviceCaptured(dev);
 }
 
 // --- d3d12!D3D12CreateDevice detour (one-shot device capture) ---
