@@ -86,6 +86,29 @@ Two measurements on the SAME swap-OFF run that REACHED THE MENU (`kcdx-dev_2026-
 
 **Next instrument (a fresh axis — the draw/command-record path):** the divergence is in the per-frame command-list recording or a render resource. Candidate probes (theory-independent, NOT yet built): hook `ID3D12GraphicsCommandList::DrawInstanced`/`DrawIndexedInstanced` (count the draws swap-ON vs swap-OFF — black = far fewer/zero real draws into the scene/UI target) and/or `OMSetRenderTargets` (is the right backbuffer/UI target bound). This moves the investigation from "are the pipelines built" (answered: identically) to "are the draws recorded into the frame" — the actual content question PROBE K's "frames presented but black" pointed at from the start. KI-0028 OPEN; the shader-axis root-cause hunt is CLOSED as a dead end, a real (if negative) result.
 
+## ⚠ PROBE S RESULT (RAN 2026-06-22, swap-ON vs swap-OFF A/B) — draws ARE recorded to valid targets; NOT a draw-submission or null-RT failure
+
+PROBE S (`src/fs_takeover/drawcall_probe.{h,cpp}`) hooked the D3D12 command list (DrawInstanced slot 12, DrawIndexedInstanced 13, OMSetRenderTargets 46 — slot 47 was a probe bug that AV'd, fixed). Shares PROBE P's single D3D12CreateDevice hook (MinHook is 1-per-target). A/B:
+
+| metric | swap-OFF (MENU, `…16-37-33`) | swap-ON (BLACK, `…16-39-40`) |
+|--------|------------------------------|------------------------------|
+| draw_instanced | 1383 | **9500** |
+| draw_indexed   | **96** | **0** |
+| om_set_rt      | 346 | 2376 |
+| om_null_rt     | 0 | **0** |
+
+**BOTH simple outcomes FALSIFIED.** The black path is NOT "no draws recorded" (it records MORE — 9500 vs 1383) and NOT "null render target" (om_null_rt=0 both). The render loop issues thousands of draws to VALID, bound render targets — yet the frame composites black. The draws happen; they produce no visible image.
+
+**The two sharp leads (qualitative diffs, ground truth):**
+1. **`draw_indexed=0` swap-ON vs 96 swap-OFF.** The working menu draws indexed geometry (96 indexed draws — typically the real UI/scene meshes); the black path does ZERO indexed draws. The actual indexed-geometry path is ABSENT swap-ON.
+2. **9500 non-indexed draws + 2376 RT binds swap-ON** — far MORE than the menu. The black path runs many render passes (likely fullscreen/clear/post passes drawing into intermediate targets) that never resolve to a visible backbuffer image, while the real (indexed) content draws never happen.
+
+**RE-LOCALIZATION (honest):** the wedge is NEITHER draw-submission NOR present NOR PSO-build NOR the shader cache — all exonerated by direct measurement. The draws execute, to bound targets, but produce black. The divergence is now in WHAT THE DRAWS PRODUCE: the bound RESOURCES (textures/materials all-black or missing → every draw samples black), the render-target the visible content draws into vs what reaches the backbuffer (drawing into an off-screen target that never composites), or the indexed-geometry path that is entirely absent swap-ON (the real scene/UI content is never submitted; only fullscreen passes run). The `draw_indexed=0` is the strongest single thread — the geometry that makes the menu is not drawn.
+
+**Next instrument (a deeper sub-phase — per-draw resource/target capture):** counting is exhausted; the question is now WHICH targets the swap-ON draws write and WHAT they sample. Candidate: capture per-OMSetRenderTargets the bound RT descriptor (is the visible content drawn into the backbuffer-derived RT or an off-screen one?), and/or the indexed-draw absence (xref what issues DrawIndexedInstanced in the menu render path and whether that path runs swap-ON). This is a render-graph / resource-binding investigation — a meaningfully bigger instrument than the counters. KI-0028 OPEN; the bug is pinned to "draws execute but produce/composite black," the narrowest it has ever been.
+
+(NOTE: this FINDINGS file's TITLE is now stale — the investigation moved from "CShaderMan cache-load" through the full shader/PSO axis (exonerated) to the D3D12 draw/resource layer. The accumulated body is the chronological probe record; the LATEST sections (PROBE S, here) are the live frontier.)
+
 ---
 
 ## The RE that LED to PROBE R (validation-reject, now falsified — kept for the architecture map)
