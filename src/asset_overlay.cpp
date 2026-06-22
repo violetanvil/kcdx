@@ -537,7 +537,17 @@ std::string NormalizeVPath(const std::string& vpath) {
     std::string out;
     out.reserve(vpath.size());
     for (char c : vpath) {
-        if (c == '\\') {
+        if (c == '\\' || c == '/') {
+            // Fold '\\' -> '/' AND collapse consecutive separators: the engine
+            // emits a '//' in some enumeration patterns
+            // (`%ENGINE%/Shaders/Cache/D3D12//*.*` — KI-0028), and a doubled
+            // separator must normalize to the SAME key as a single one or the
+            // index prefix-match misses (`shaders/cache/d3d12//` would not prefix
+            // an entry keyed `shaders/cache/d3d12/X`). A separator that follows a
+            // separator is dropped. Both the map-build key and the lookup key run
+            // through here, so the shared-key contract is preserved (both collapse
+            // identically); a '//' and a '/' were never distinct paths.
+            if (!out.empty() && out.back() == '/') continue;
             out.push_back('/');
         } else if (c >= 'A' && c <= 'Z') {
             // Explicit ASCII fold — NOT std::tolower (locale-dependent; a vpath
