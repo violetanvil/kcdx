@@ -431,6 +431,80 @@ present-count>0 + refresh~0 → present called, no GPU scanout (present path); b
 presented, black screen is a surface/compositor issue; never captured → widen the capture point. Arm K
 (beside W), rerun swap-ON, then swap-OFF for the baseline delta.
 
+## RE-LOCALIZATION (2026-06-22, PROBE K run 2) — the wedge is BLACK FRAMES PRESENTED, not a present failure
+
+PROBE K (vtable slots fixed to 16/17) run 2, swap-ON, user-confirmed **black screen the whole ~2 min**.
+The corrected present counters are unambiguous and land on PROBE K's THIRD outcome branch:
+
+- `hr_present=0`, `hr_framestats=0` (S_OK — valid reads this time).
+- present=0 for the first ~3s (swapchain just created), then **`d_present=120, d_refresh=120` PER SECOND
+  for the rest of the run** (~115s). `present_count` climbed 0 → 10516; `refresh_count` (GPU scanout)
+  advanced in lockstep. The window converged at second 1; the heartbeat ran the whole time (tick=9518).
+
+**Per PROBE K's pre-committed outcome map (`present_probe.h`): "both advance → frames ARE presented;
+black screen is a surface/compositor association, NOT present."** The game is flipping the swapchain at
+120fps with real GPU scanout, AND the screen is black → **the presented FRAMES ARE BLACK.** Present
+succeeds; the content is empty.
+
+**What this DEFINITIVELY rules out (every prior frame, by direct measurement):**
+- Deadlock / hang — NO (heartbeat ran, 9518 ticks).
+- Stuck in a loop / waiting on a producer — NO (call_once guard; Main ticks).
+- Window activation (`GetActiveWindow`) — NO (converged at second 1).
+- Present-submission failure — NO (present called 120×/s, succeeds).
+- FS-slot-output divergence (A/B/C/D) — NO (all exonerated on the consumer side).
+- "ticks but never reaches present" (PROBE K branch 1) — NO (present reached, advancing).
+
+**The re-localized bug: a render-CONTENT failure.** The per-frame render runs and presents, but composites
+to BLACK — the scene/UI is not drawn into the frame, OR is drawn to the wrong render target, OR a render
+resource is missing/wrong so every frame is empty. The bug is UPSTREAM in the render pipeline (scene draw
+/ render-target binding / a render asset), NOT in present, window, or FS dispatch control-flow.
+
+**The FS-takeover connection (the swap IS still the differentiator — P-F):** swap-off reaches the menu,
+swap-on is black. Present works both ways (to verify swap-off next). So the swap must be making a RENDER
+resource wrong/missing — a shader, a pipeline-state-cache blob, a render config, a texture/material the
+render pipeline needs to draw a non-black frame. This re-connects to the FS takeover but at the RENDER-
+ASSET layer, not the slot-return layer: which render-critical asset does kcdx serve differently (wrong
+bytes, missing, wrong variant) that turns every frame black? Candidates from prior recon: the
+PipelineStateCacheManager (seen consuming AdjustFileName at `0x1e03c30` DriverD3D), shader paks, the
+render config. NOT a slot-return divergence (those are byte-identical on hit) — a SERVED-CONTENT question:
+does kcdx serve the RIGHT BYTES for render-critical assets?
+
+**MECHANISM FOUND (same run's log, no new launch — reuse-first per results-driven §4):** the black frames
+are caused by the FS takeover failing to serve RENDER-CRITICAL assets. Two failures, both in the swap-on
+log:
+
+1. **57 shader open failures** — `FS_OPEN loose_open_failed slot=FOpen vpath="data/gameshaders/<X>.ext"
+   errno=2` for runtime.ext, water.ext, hair.ext, eye.ext, **scaleform4.ext** (the UI renderer),
+   computeskinning.ext, particleimposter.ext, distanceclouds.ext, watervolume.ext, … + `shaders/cache/
+   globals.txt` read `got=-1 FAIL`. **ZERO gameshaders were ever served from the index** (the index-pak
+   trace for gameshaders is empty). Every shader the engine wants misses kcdx's index, falls to a loose
+   disk open, and fails errno=2 (it lives in a pak, not loose). **232 total loose-open failures** this
+   boot — systemic, not incidental.
+2. **zip64 paks unsupported** — `PAK_READER CDR parse failed pak=IPL_Textures-part0.pak: zip64 sentinel
+   in EOCD — unsupported` → `FS_INDEX pak_parse_skipped`. kcdx's pak reader cannot parse a zip64 central
+   directory, so that pak is skipped from the index entirely (1 pak observed; large texture/streaming paks
+   exceed the zip32 4GB/65535 limits and use zip64). Secondary to the shader misses but a real index gap.
+
+**This is the KI-0028 mechanism, and it matches the symptom exactly:** no shaders (incl. the Scaleform UI
+shader) + missing texture paks = the render pipeline runs and PRESENTS (PROBE K: 120fps, GPU scanout) but
+every frame composites to BLACK because there is nothing to draw with, and no UI/menu because the
+Scaleform shaders failed to load. Present succeeds; the content is empty. Swap-OFF the engine reads these
+from its own pak path and renders normally — the swap is the differentiator (P-F) at the RENDER-ASSET
+serve layer.
+
+**Open sub-question (the precise index defect — checkable from the log/index):** WHY does the index miss
+`data/gameshaders/*.ext`? Either (a) the `.ext` shaders live in a pak kcdx did not scan/index, (b) the
+KI-0026 alias-namespace class — they are keyed in the index under a vpath that does not match the engine's
+lookup form, so a present entry is not found, or (c) they are genuinely loose-expected and the takeover's
+loose path differs from the engine's. The 307006-entry index built — so the question is whether these
+specific shader vpaths are IN it under a different key, or ABSENT because their pak was skipped. Next:
+locate where `water.ext` actually lives (which pak) and whether that pak was indexed (and under what key).
+
+**Status:** KI-0028 is no longer mysterious — it is a render-asset-serving gap in the FS takeover (shader
+paks not served + zip64 paks skipped), NOT a hang/present/window/control-flow bug. The root-cause
+paragraph still owes the precise index-miss mechanism (a/b/c above) before the KI closes (AP17). Swap-OFF
+baseline still owed to confirm these same assets serve correctly unswapped.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
