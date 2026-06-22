@@ -1,0 +1,148 @@
+=== refs into singleton cluster [0x492b800..0x492b960): 11956 ===
+
+  fn 0x180393dcc (RVA 0x393dcc)  refs=1  (no strings)
+      0x180393dd6 (RVA 0x393dd6) mov rcx, qword ptr [rip + 0x4597ae3]  -> 0x492b8c0 
+
+  fn 0x1803955dc (RVA 0x3955dc)  refs=1  (no strings)
+      0x180395689 (RVA 0x395689) mov rcx, qword ptr [rip + 0x4596230]  -> 0x492b8c0 
+
+  fn 0x1803958c8 (RVA 0x3958c8)  refs=2  (no strings)
+      0x1803959eb (RVA 0x3959eb) mov rcx, qword ptr [rip + 0x4595e8e]  -> 0x492b880 
+      0x180395a19 (RVA 0x395a19) mov rcx, qword ptr [rip + 0x4595e60]  -> 0x492b880 
+
+  fn 0x1803b145c (RVA 0x3b145c)  refs=1  (no strings)
+      0x1803b149b (RVA 0x3b149b) mov rcx, qword ptr [rip + 0x457a3de]  -> 0x492b880 
+
+  fn 0x1803b380c (RVA 0x3b380c)  refs=1  strings: ".ogg"
+      0x1803b3ad5 (RVA 0x3b3ad5) mov rcx, qword ptr [rip + 0x4577ddc]  -> 0x492b8b8 
+
+  fn 0x1803b3c87 (RVA 0x3b3c87)  refs=1  (no strings)
+      0x1803b3c8f (RVA 0x3b3c8f) mov rcx, qword ptr [rip + 0x4577c22]  -> 0x492b8b8 
+
+  fn 0x1803b46a0 (RVA 0x3b46a0)  refs=1  strings: "08@HPX`hpx"
+      0x1803b477c (RVA 0x3b477c) mov rcx, qword ptr [rip + 0x4577135]  -> 0x492b8b8 
+
+  fn 0x1803b47ec (RVA 0x3b47ec)  refs=1  (no strings)
+      0x1803b483e (RVA 0x3b483e) mov rcx, qword ptr [rip + 0x4577073]  -> 0x492b8b8 
+
+  fn 0x1803b786c (RVA 0x3b786c)  refs=2  (no strings)
+      0x1803b78a6 (RVA 0x3b78a6) mov rcx, qword ptr [rip + 0x4573ff3]  -> 0x492b8a0 
+      0x1803b7904 (RVA 0x3b7904) mov rcx, qword ptr [rip + 0x4573fad]  -> 0x492b8b8 
+
+  fn 0x1803b7b2c (RVA 0x3b7b2c)  refs=1  (no strings)
+      0x1803b7b87 (RVA 0x3b7b87) mov rcx, qword ptr [rip + 0x4573d2a]  -> 0x492b8b8 
+
+  fn 0x1803b8d24 (RVA 0x3b8d24)  refs=3  strings: "trigger" | "Switch" | "state" | "name"
+      0x1803b8d56 (RVA 0x3b8d56) mov rcx, qword ptr [rip + 0x4572b5b]  -> 0x492b8b8 
+      0x1803b8e2c (RVA 0x3b8e2c) mov rcx, qword ptr [rip + 0x4572a85]  -> 0x492b8b8 
+      0x1803b8e44 (RVA 0x3b8e44) mov rcx, qword ptr [rip + 0x4572a6d]  -> 0x492b8b8 
+
+  fn 0x1803b8ebc (RVA 0x3b8ebc)  refs=1  (no strings)
+      0x1803b8ed3 (RVA 0x3b8ed3) mov rcx, qword ptr [rip + 0x45729de]  -> 0x492b8b8 
+
+  fn 0x1803b8fa4 (RVA 0x3b8fa4)  refs=1  (no strings)
+      0x1803b8fbb (RVA 0x3b8fbb) mov rcx, qword ptr [rip + 0x45728f6]  -> 0x492b8b8 
+
+  fn 0x1803b9058 (RVA 0x3b9058)  refs=1  (no strings)
+      0x1803b906f (RVA 0x3b906f) mov rcx, qword ptr [rip + 0x4572842]  -> 0x492b8b8 
+
+  fn 0x1803b97e8 (RVA 0x3b97e8)  refs=1  (no strings)
+      0x1803b9802 (RVA 0x3b9802) mov rcx, qword ptr [rip + 0x45720af]  -> 0x492b8b8 
+
+  fn 0x1803b9a1c (RVA 0x3b9a1c)  refs=2  strings: "standalone_file_purpose"
+      0x1803b9a6e (RVA 0x3b9a6e) mov rcx, qword ptr [rip + 0x4571e43]  -> 0x492b8b8 
+      0x1803b9a8b (RVA 0x3b9a8b) mov rcx, qword ptr [rip + 0x4571e26]  -> 0x492b8b8 
+
+  fn 0x1803bceec (RVA 0x3bceec)  refs=2  strings: "Unknown operand type while evaluating expression" | "wh_sys_ExprReportMissingVariable" | "Missing local variable" | "Context for local variable is missing" | "String not found" | "Missing both entity and soul '%s' for function '%s'"
+      0x1803bcf99 (RVA 0x3bcf99) mov rcx, qword ptr [rip + 0x456e908]  -> 0x492b8a8 
+      0x1803bd112 (RVA 0x3bd112) mov rcx, qword ptr [rip + 0x456e787]  -> 0x492b8a0 
+
+  fn 0x1803be751 (RVA 0x3be751)  refs=1  strings: "px" | "wh_dlg_ChatResponsesLeadTime"
+      0x1803be970 (RVA 0x3be970) mov rcx, qword ptr [rip + 0x456cf31]  -> 0x492b8a8 
+
+  fn 0x1803be9c0 (RVA 0x3be9c0)  refs=1  strings: "wh_dlg_IngameDialogueObstacleRadiusAddition" | "wh_dlg_CreateObstacleForIngameNpcDialogues"
+      0x1803bec23 (RVA 0x3bec23) mov rcx, qword ptr [rip + 0x456cc7e]  -> 0x492b8a8 
+
+  fn 0x1803bec28 (RVA 0x3bec28)  refs=1  strings: "wh_dlg_IngameDialogueObstacleRadiusAddition" | "wh_dlg_CreateObstacleForIngameNpcDialogues"
+      0x1803bec6b (RVA 0x3bec6b) mov rcx, qword ptr [rip + 0x456cc36]  -> 0x492b8a8 
+
+  fn 0x1803bed78 (RVA 0x3bed78)  refs=1  strings: "wh_dlg_IngameDialogueObstacleDistanceThreshold"
+      0x1803bf02b (RVA 0x3bf02b) mov rcx, qword ptr [rip + 0x456c876]  -> 0x492b8a8 
+
+  fn 0x1803c34e4 (RVA 0x3c34e4)  refs=1  strings: "Too many per instance streamable entities, some of them won't be spawned!" | "LocalBoundsMin" | "LocalBoundsMax"
+      0x1803c3559 (RVA 0x3c3559) mov rcx, qword ptr [rip + 0x4568340]  -> 0x492b8a0 
+
+  fn 0x1803c4d44 (RVA 0x3c4d44)  refs=1  (no strings)
+      0x1803c4d7a (RVA 0x3c4d7a) mov rcx, qword ptr [rip + 0x4566aff]  -> 0x492b880 
+
+  fn 0x1803c8370 (RVA 0x3c8370)  refs=5  strings: "r_ComputeSkinningTangents" | "r_ComputeSkinning" | "r_ComputeSkinningMorphs"
+      0x1803c8488 (RVA 0x3c8488) mov rcx, qword ptr [rip + 0x4563479]  -> 0x492b908 
+      0x1803c84aa (RVA 0x3c84aa) mov rcx, qword ptr [rip + 0x4563457]  -> 0x492b908 
+      0x1803c8a73 (RVA 0x3c8a73) mov rcx, qword ptr [rip + 0x4562e2e]  -> 0x492b8a8 
+      0x1803c8ab4 (RVA 0x3c8ab4) mov rcx, qword ptr [rip + 0x4562ded]  -> 0x492b8a8 
+      0x1803c8afc (RVA 0x3c8afc) mov rcx, qword ptr [rip + 0x4562da5]  -> 0x492b8a8 
+
+  fn 0x1803c8b74 (RVA 0x3c8b74)  refs=1  (no strings)
+      0x1803c8bc7 (RVA 0x3c8bc7) mov rcx, qword ptr [rip + 0x4562d3a]  -> 0x492b908 
+
+  fn 0x1803c8ddc (RVA 0x3c8ddc)  refs=1  strings: "(knN" | "=" | "~*?"
+      0x1803c8e9b (RVA 0x3c8e9b) mov rcx, qword ptr [rip + 0x4562966]  -> 0x492b808 
+
+  fn 0x1803c977a (RVA 0x3c977a)  refs=1  (no strings)
+      0x1803c981d (RVA 0x3c981d) mov rcx, qword ptr [rip + 0x4561fe4]  -> 0x492b808 
+
+  fn 0x1803c9908 (RVA 0x3c9908)  refs=1  strings: "2-+"
+      0x1803c997c (RVA 0x3c997c) mov rcx, qword ptr [rip + 0x4561e85]  -> 0x492b808 
+
+  fn 0x1803ce8f1 (RVA 0x3ce8f1)  refs=1  strings: "SequenceObject"
+      0x1803ceb73 (RVA 0x3ceb73) mov rcx, qword ptr [rip + 0x455cd26]  -> 0x492b8a0 
+
+  fn 0x1803cf330 (RVA 0x3cf330)  refs=1  (no strings)
+      0x1803cf349 (RVA 0x3cf349) mov rcx, qword ptr [rip + 0x455c588]  -> 0x492b8d8 
+
+  fn 0x1803cfaa0 (RVA 0x3cfaa0)  refs=4  strings: "EntityLoadManager::ParseEntities" | "CEntityLoadManager::ParseEntities" | "Entity" | "ReloadProperties" | "EntityId" | "Name"
+      0x1803cfb6b (RVA 0x3cfb6b) mov rcx, qword ptr [rip + 0x455bd4e]  -> 0x492b8c0 
+      0x1803cfbdc (RVA 0x3cfbdc) mov rcx, qword ptr [rip + 0x455bc9d]  -> 0x492b880 
+      0x1803cfd51 (RVA 0x3cfd51) mov rcx, qword ptr [rip + 0x455bb28]  -> 0x492b880 
+      0x1803cfd7c (RVA 0x3cfd7c) mov r14, qword ptr [rip + 0x455bb5d]  -> 0x492b8e0 
+
+  fn 0x1803cfded (RVA 0x3cfded)  refs=1  strings: "Entity creating: out of time, next entity idx: %d"
+      0x1803cfe6d (RVA 0x3cfe6d) mov rcx, qword ptr [rip + 0x455ba6c]  -> 0x492b8e0 
+
+  fn 0x1803d0060 (RVA 0x3d0060)  refs=1  strings: "EntityClass" | "Name" | "ReflexLight" | "r_DeferredShadingAreaLights"
+      0x1803d0167 (RVA 0x3d0167) mov rcx, qword ptr [rip + 0x455b73a]  -> 0x492b8a8 
+
+  fn 0x1803d0550 (RVA 0x3d0550)  refs=1  strings: "PrototypeMaterial" | "Area" | "Rope" | "ClipVolume" | "Light" | "MinSpec"
+      0x1803d0969 (RVA 0x3d0969) mov rcx, qword ptr [rip + 0x455ae98]  -> 0x492b808 
+
+  fn 0x1803d20f4 (RVA 0x3d20f4)  refs=2  strings: "Trying to spawn entity %s with no entity class. Spawning refused." | "CEntitySystem::SpawnEntity Failed, Can't spawn entity %s. ID range is full (internal error)" | "Entity ID range is full" | "`hpx" | "Entity with id=%d, %s already spawned on this client...override" | "null"
+      0x1803d21ef (RVA 0x3d21ef) mov rcx, qword ptr [rip + 0x45596aa]  -> 0x492b8a0 
+      0x1803d228d (RVA 0x3d228d) mov rcx, qword ptr [rip + 0x455962c]  -> 0x492b8c0 
+
+  fn 0x1803d2e35 (RVA 0x3d2e35)  refs=2  strings: "default"
+      0x1803d2e4c (RVA 0x3d2e4c) mov rcx, qword ptr [rip + 0x4558a6d]  -> 0x492b8c0 
+      0x1803d2e65 (RVA 0x3d2e65) mov rcx, qword ptr [rip + 0x4558a54]  -> 0x492b8c0 
+
+  fn 0x1803d37d4 (RVA 0x3d37d4)  refs=2  strings: "GaGaGaGa="
+      0x1803d384c (RVA 0x3d384c) mov rcx, qword ptr [rip + 0x45580b5]  -> 0x492b908 
+      0x1803d38b3 (RVA 0x3d38b3) mov rcx, qword ptr [rip + 0x455804e]  -> 0x492b908 
+
+  fn 0x1803d3a05 (RVA 0x3d3a05)  refs=4  (no strings)
+      0x1803d3a6a (RVA 0x3d3a6a) mov rcx, qword ptr [rip + 0x4557e97]  -> 0x492b908 
+      0x1803d3ac6 (RVA 0x3d3ac6) mov rcx, qword ptr [rip + 0x4557e3b]  -> 0x492b908 
+      0x1803d3b88 (RVA 0x3d3b88) mov rcx, qword ptr [rip + 0x4557d79]  -> 0x492b908 
+      0x1803d3bf3 (RVA 0x3d3bf3) mov rcx, qword ptr [rip + 0x4557d0e]  -> 0x492b908 
+
+  fn 0x1803d4728 (RVA 0x3d4728)  refs=2  (no strings)
+      0x1803d4791 (RVA 0x3d4791) mov rcx, qword ptr [rip + 0x4557170]  -> 0x492b908 
+      0x1803d47ca (RVA 0x3d47ca) mov rcx, qword ptr [rip + 0x45570ef]  -> 0x492b8c0 
+
+  fn 0x1803d4f1d (RVA 0x3d4f1d)  refs=1  (no strings)
+      0x1803d5028 (RVA 0x3d5028) mov rcx, qword ptr [rip + 0x45568d9]  -> 0x492b908 
+
+  fn 0x1803d508c (RVA 0x3d508c)  refs=2  strings: "`hpx"
+      0x1803d50be (RVA 0x3d50be) mov rcx, qword ptr [rip + 0x4556843]  -> 0x492b908 
+      0x1803d512c (RVA 0x3d512c) mov rcx, qword ptr [rip + 0x45567d5]  -> 0x492b908 
+
+  fn 0x1803d62b4 (RVA 0x3d62b4)  refs=1  strings: "2-+" | "SkinningTransformationsComputation"
+      0x1

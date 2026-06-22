@@ -1,0 +1,17 @@
+=== refs to wedge obj 0x549b4a0: 13 ===
+  writes(qword store): 3   reads: 10
+
+  WRITE @ 0x180da657f (RVA 0xda657f) mov qword ptr [rip + 0x46f4f16], 0
+        in fn 0x180da6504 (RVA 0xda6504)
+  WRITE @ 0x180da65a6 (RVA 0xda65a6) mov qword ptr [rip + 0x46f4ef3], rax
+        in fn 0x180da6504 (RVA 0xda6504)
+  WRITE @ 0x1839dc1b8 (RVA 0x39dc1b8) mov qword ptr [rip + 0x1abf2dd], 0
+        in fn 0x1839dc184 (RVA 0x39dc184)
+
+  -- read sites (enclosing fns) --
+  read fn 0x1808699f8 (RVA 0x8699f8)  strings: "r_Fullscreen"
+  read fn 0x180da6118 (RVA 0xda6118)  strings: "Intentional crash" | "wh_sys_DoCrash" | "Intentional fatal error" | "wh_sys_DoFatalError"
+  read fn 0x180da6504 (RVA 0xda6504)
+  read fn 0x1819dad00 (RVA 0x19dad00)
+  read fn 0x1839dc184 (RVA 0x39dc184)
+  read fn 0x1839e2f90 (RVA 0x39e2f90)

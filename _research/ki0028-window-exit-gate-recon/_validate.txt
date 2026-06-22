@@ -1,0 +1,19 @@
+=== validate: known flag writes ===
+flagByte 0x556d080: 2 writes -> 0x180869b72(RVA 0x869b72,mov[G],reg op0x88), 0x180869cb5(RVA 0x869cb5,mov[G],reg op0x88)
+flagDword 0x556d084: 2 writes -> 0x180869c1d(RVA 0x869c1d,mov[G],reg op0x89), 0x180869c85(RVA 0x869c85,mov[G],reg op0x89)
+
+=== guard singletons: mov-store writers (expect 0 if written via lea+indirect) ===
+WEDGE 0x549b4a0: 0 mov-store
+0x492b8c0: 0 mov-store
+0x492b8a8: 0 mov-store
+0x492b908: 0 mov-store
+0x492b890: 0 mov-store
+0x492b880: 0 mov-store
+
+=== guard singletons: LEA (address-taken) sites — the real init path ===
+WEDGE 0x549b4a0: 0 lea sites
+0x492b8c0: 0 lea sites
+0x492b8a8: 0 lea sites
+0x492b908: 0 lea sites
+0x492b890: 0 lea sites
+0x492b880: 0 lea sites

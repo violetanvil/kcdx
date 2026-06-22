@@ -347,6 +347,52 @@ Branch 2 is statically startable (find the exit-gating field + its writer) and i
 branch 1 is the live fallback if the writer is found to run identically. Both are theory-INDEPENDENT: each
 has an outcome that says "the loop is not the gate, widen the frame" rather than only confirming a guess.
 
+## CORRECTION (2026-06-22, exit-gate static read) — the loop is NOT a wait; the real gate is GetActiveWindow()
+
+The branch-2 static read (`_research/ki0028-window-exit-gate-recon/`) overturns the loop-as-wedge reading
+the whole chain carried — a third offset-vs-meaning correction in this investigation:
+
+- **The `0x869c39` "exit-gating" counters (`0x56628d8`/`0x56628dc`, tested `cmp …,-1` at sites `0x869c68`/
+  `0x869ca1`) are a `std::call_once` MAGIC-STATIC GUARD pair, not a cross-thread completion token.** The
+  acquire fn `0x1c1e988` claims by `mov [counter],0xffffffff`; the publish fn `0x1c1e91c` drives it to
+  `-1`. The SAME thread drives the once to completion — there is NO awaited external producer. The
+  `0x80002Bxx` value PROBE M saw the counters freeze at is the normal in-flight call-once id, identical
+  swap-on/off **because it is a local guard, not a differentiator.** PROBE M's null is now EXPLAINED, not
+  just observed. The "stuck waiting for a producer that never fires" reading (handoff, KI body, every
+  prior frame) was wrong — it was a `call_once` guard misread as a handshake.
+
+- **Main's `0x866090` sample is a BOUNDED window-focus poll (`fn 0x865fb4`, ≤5×5 ms), called once per
+  tick from the engine tick dispatcher `fn 0x667b24` — NOT an infinite loop.** Main shows up at this RVA
+  on every cdb sample because it runs full per-frame ticks and this poll is where the sample lands (the
+  per-frame-trap), NOT because it spins here. **Main is TICKING, not deadlocked in a loop.** This is
+  consistent with PROBE H (the heartbeat advanced ~41s) and with the "runs but never presents" symptom.
+
+- **The real gate is `GetActiveWindow() == <engine-expected HWND>`** (`test site 0x866029`; the expected
+  handle is read from `[this+0x2d0] → [+0x740]`). The engine is waiting for ITS window to become the OS
+  ACTIVE/foreground window. Swap-on, that never becomes true. **This matches the symptom exactly:** a
+  window that exists but never becomes foreground/active → no input focus (no input), the render/present
+  path gated on active-window → black screen, audio (a separate thread, ungated) keeps playing.
+
+**The new, concrete, falsifiable mechanism candidate:** the FS-takeover swap perturbs window
+creation/activation so the engine's window never becomes the OS active window — so `GetActiveWindow()`
+never equals the expected HWND at `[window+0x740]`, and the engine never advances past the
+active-window gate to present. NOT a slot-output divergence (all 4 exonerated); a window-lifecycle effect
+of the swap.
+
+**Wedge object identified (prior recon left it UNKNOWN):** `0x549b4a0` (the wedge `call [[0x549b4a0]+0x40]`
+target) is a display/render-context object built per-call by factory `fn 0xda65e4` from parent
+`0x549b498`, which `fn 0x1865a88` = `CSystem::Init` / CryENGINE bring-up writes (`"Failed to initialize
+CryENGINE!"`).
+
+**Next probe (live, theory-independent):** the expected-HWND at `[window+0x740]` is a runtime vtable
+getter, not a `.data` field — live-only. Probe = at the active-window gate (`0x866029`), log BOTH
+`GetActiveWindow()` AND the expected HWND `[window+0x740]`, swap-on vs swap-off. Outcomes:
+(a) swap-on the two HWNDs never converge but swap-off they do → CONFIRMS the window-activation mechanism,
+points at window creation/show as the swap-perturbed step;
+(b) both converge swap-on too (gate passes) → the gate is NOT the wedge, Main advances past it and wedges
+later → widen the frame to the next per-tick stall.
+Falsifiable either way; observes ground truth (the two HWNDs) rather than confirming a theory.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base

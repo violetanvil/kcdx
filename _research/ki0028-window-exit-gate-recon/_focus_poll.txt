@@ -1,0 +1,110 @@
+=== focus-poll fn entry 0x865fb4 .. 0x866150 (0x866090 = spin sample) ===
+
+0x00865fb4 mov     qword ptr [rsp + 8], rbx
+0x00865fb9 mov     qword ptr [rsp + 0x10], rsi
+0x00865fbe push    rdi
+0x00865fbf sub     rsp, 0x20
+0x00865fc3 cmp     byte ptr [rcx + 0x5c1], 0
+0x00865fca mov     rbx, rcx
+0x00865fcd mov     byte ptr [rcx + 0x2a2f], 0
+0x00865fd4 jne     0x18086609e  [fwd->0x86609e]
+0x00865fda cmp     byte ptr [rcx + 0x5b1], 0
+0x00865fe1 jne     0x18086609e  [fwd->0x86609e]
+0x00865fe7 cmp     byte ptr [rip + 0x40c5a4b], 0  ;[.data]0x492ba39
+0x00865fee jne     0x18086609e  [fwd->0x86609e]
+0x00865ff4 cmp     dword ptr [rip + 0x40c1265], 0  ;[.data]0x4927260
+0x00865ffb je      0x18086609e  [fwd->0x86609e]
+0x00866001 mov     rax, qword ptr [rcx]
+0x00866004 call    qword ptr [rax + 0x2d0]
+0x0086600a mov     rcx, qword ptr [rax]
+0x0086600d mov     rdx, qword ptr [rcx + 0x740]
+0x00866014 mov     rcx, rax
+0x00866017 call    rdx
+0x00866019 mov     rsi, rax
+0x0086601c test    rax, rax
+0x0086601f je      0x18086609e  [fwd->0x86609e]
+0x00866021 xor     edi, edi
+0x00866023 call    qword ptr [rip + 0x319d237]  ; IMPORT GetActiveWindow
+0x00866029 cmp     rax, rsi
+0x0086602c je      0x18086609e  [fwd->0x86609e]
+0x0086602e mov     r8, qword ptr [rbx + 0xcc8]
+0x00866035 test    r8, r8
+0x00866038 je      0x180866048  [fwd->0x866048]
+0x0086603a mov     rax, qword ptr [rbx]
+0x0086603d mov     dl, 1
+0x0086603f mov     rcx, rbx
+0x00866042 call    qword ptr [rax + 0x720]
+0x00866048 mov     rcx, qword ptr [rip + 0x40c5841]  ;[.data]0x492b890
+0x0086604f test    rcx, rcx
+0x00866052 je      0x180866085  [fwd->0x866085]
+0x00866054 mov     rax, qword ptr [rcx]
+0x00866057 call    qword ptr [rax + 0x80]
+0x0086605d test    rax, rax
+0x00866060 je      0x180866085  [fwd->0x866085]
+0x00866062 mov     rcx, qword ptr [rip + 0x40c5827]  ;[.data]0x492b890
+0x00866069 mov     rax, qword ptr [rcx]
+0x0086606c call    qword ptr [rax + 0x80]
+0x00866072 mov     rcx, qword ptr [rax]
+0x00866075 mov     rdx, qword ptr [rcx + 0x2b8]
+0x0086607c mov     rcx, rax
+0x0086607f call    rdx
+0x00866081 test    al, al
+0x00866083 jne     0x18086609e  [fwd->0x86609e]
+0x00866085 mov     ecx, 5
+0x0086608a call    qword ptr [rip + 0x319c6a8]  ; IMPORT Sleep
+0x00866090 inc     edi   <<< SPIN SAMPLE (inc edi after Sleep)
+0x00866092 mov     byte ptr [rbx + 0x2a2f], 1
+0x00866099 cmp     edi, 5
+0x0086609c jl      0x180866023  [BACK->0x866023]
+0x0086609e mov     rbx, qword ptr [rsp + 0x30]
+0x008660a3 mov     rsi, qword ptr [rsp + 0x38]
+0x008660a8 add     rsp, 0x20
+0x008660ac pop     rdi
+0x008660ad ret     
+0x008660ae int3    
+0x008660af int3    
+0x008660b0 mov     rax, qword ptr [rcx + 0x630]
+0x008660b7 xor     ecx, ecx
+0x008660b9 test    rax, rax
+0x008660bc je      0x1808660cd  [fwd->0x8660cd]
+0x008660be cmp     byte ptr [rax + 0x6d], cl
+0x008660c1 jne     0x1808660d0  [fwd->0x8660d0]
+0x008660c3 cmp     byte ptr [rax + 0x69], cl
+0x008660c6 jne     0x1808660d0  [fwd->0x8660d0]
+0x008660c8 cmp     byte ptr [rax + 0x68], cl
+0x008660cb jne     0x1808660d0  [fwd->0x8660d0]
+0x008660cd xor     al, al
+0x008660cf ret     
+0x008660d0 mov     al, 1
+0x008660d2 ret     
+0x008660d3 int3    
+0x008660d4 mov     rax, rsp
+0x008660d7 mov     qword ptr [rax + 8], rbx
+0x008660db mov     qword ptr [rax + 0x10], rsi
+0x008660df mov     qword ptr [rax + 0x18], rdi
+0x008660e3 mov     qword ptr [rax + 0x20], r14
+0x008660e7 push    rbp
+0x008660e8 lea     rbp, [rax - 0x5f]
+0x008660ec sub     rsp, 0xb0
+0x008660f3 mov     rbx, rcx
+0x008660f6 lea     rdx, [rcx + 0x30]
+0x008660fa lea     rcx, [rbp - 0x39]
+0x008660fe call    0x181ab4e48  -> fn 0x1ab4e48
+0x00866103 lea     rsi, [rbx + 0x60]
+0x00866107 mov     rcx, rsi
+0x0086610a call    0x180bb2830  -> fn 0xbb2830
+0x0086610f test    eax, eax
+0x00866111 jne     0x1808662d3  [fwd->0x8662d3]
+0x00866117 mov     rcx, rbx
+0x0086611a call    0x181181fac  -> fn 0x1181fac
+0x0086611f lea     rax, [rbx + 0x18]
+0x00866123 mov     rcx, qword ptr [rax]
+0x00866126 cmp     dword ptr [rcx - 4], 0
+0x0086612a je      0x1808662d3  [fwd->0x8662d3]
+0x00866130 lea     rdi, [rbx + 0x78]
+0x00866134 mov     qword ptr [rdi], rax
+0x00866137 movsxd  rax, dword ptr [rcx - 4]
+0x0086613b mov     qword ptr [rdi + 0xa0], rax
+0x00866142 cmp     dword ptr [rip + 0x4d09223], 0  ;[.data]0x556f36c
+0x00866149 je      0x180866157  [fwd->0x866157]
+0x0086614b mov     eax, 3

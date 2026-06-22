@@ -1,0 +1,8 @@
+
+=== WRITERS of G3 poll-gate byte 0x492ba39 (VA 0x18492ba39): 2 ===
+  write @ 0x180b95cbd (RVA 0xb95cbd) [mov[G],reg op0x88] in fn 0x180b95bcc (RVA 0xb95bcc)
+      strings: "cl_initClientActor" | "singleplayer" | "multiplayer"
+  write @ 0x180dab229 (RVA 0xdab229) [mov[G],reg op0x88] in fn 0x180daaf28 (RVA 0xdaaf28)
+      strings: "sv_gamerulesdefault" | "sv_gamerules" | "sv_requireinputdevice" | "dontcare"
+
+=== WRITERS of G4 poll-gate dword 0x4927260 (VA 0x184927260): 0 ===
