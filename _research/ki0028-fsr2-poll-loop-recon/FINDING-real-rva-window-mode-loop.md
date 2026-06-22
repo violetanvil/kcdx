@@ -695,8 +695,119 @@ wrong set and stalls shader-system init.)
 build." O5 confirmed by direct measurement (1 PSO, not hundreds). KI-0028 OPEN; root cause still owes the
 precise stall mechanism (AP17) — which file op the shader-system init loops/blocks on under the swap.
 
+## ENUM DIVERGENCE FOUND (2026-06-22, log + real-pak CDR read) — kcdx's enumeration emits NO directory entries; the shader source tree is undiscoverable
+
+The PROBE P re-localization ("shader-system init stalls before pipeline build") + the swap-on log's
+find-slot calls pin a VERIFIED enumeration divergence (the KI-0027 class — a find-slot returns the wrong
+set). Ground truth, three sources on disk:
+
+- **The engine enumerates the shader source tree at boot and gets ZERO from kcdx** (swap-on log,
+  `enum slot=FindFirst`):
+  - `Shaders/*.ext` → matched=21 ✓ (the leaf shaders).
+  - `Shaders/HWScripts/*.*` → **matched=0** ✗
+  - `data/GameShaders/HWScripts/*.*` → **matched=0** ✗
+  - `%ENGINE%/Shaders/Cache/D3D12//*.*` → **matched=0** ✗
+- **The pak ACTUALLY CONTAINS those entries** (real `Shaders.pak` central directory, read via python
+  zipfile — corrects the read_entry confusion: `read_entry name=` logs the engine's REQUESTED alias vpath,
+  NOT the CDR stored name): 201 entries, stored under **`Shaders/`** (capital): `Shaders/ComputeSkinning.ext`
+  (21) + **`Shaders/HWScripts/CryFX/*.cfx` (180)**. So the index keys (NormalizeVPath = lowercase) are
+  `shaders/computeskinning.ext` and `shaders/hwscripts/cryfx/agcbuiltin.cfx`.
+- **`IsFileExist3` on a `.cfx` HITS** (`data/GameShaders/HWScripts/CryFX/computeskinning.cfx` →
+  `how=index-either result=1`) — a direct key lookup (alias fold) finds it. So the `.cfx` ARE in the index;
+  only the ENUMERATION misses them.
+
+**THE MECHANISM (verified, AP17-grade candidate):** kcdx's index-walk enumeration arm
+(`enum_slots.cpp:185-201`) emits ONLY files at exactly the requested directory level and **NEVER emits a
+directory entry** for an intermediate subdir. Line 197 skips any vpath with a `/` past the prefix
+(single-level semantics). Enumerating `shaders/hwscripts/` over the index: the 180 `.cfx` all live one level
+deeper under `cryfx/` (`shaders/hwscripts/cryfx/X.cfx` — has a `/` past the `shaders/hwscripts/` prefix →
+SKIPPED), and there is NO `shaders/hwscripts/cryfx` DIRECTORY entry emitted to tell the engine the subdir
+exists. So `FindFirst("Shaders/HWScripts/*.*")` returns 0. The engine's OWN `_findfirst64` returns
+subdirectory entries (a dir walk yields files AND subdirs), so vanilla sees `CryFX` as a dir, recurses, and
+finds the 180 source shaders. kcdx's enum returns an EMPTY `HWScripts/` → the engine never discovers the
+`CryFX/` shader source tree → shader-system init cannot enumerate/compile its shader set → it stalls before
+building any material/scene pipeline (PROBE P: gfx_calls=1). The leaf `Shaders/*.ext` enum works (matched=21)
+ONLY because those 21 are files directly at the `shaders/` level (no intermediate dir) — which is why the
+alias-fold fix served them yet boot stayed black: serving the leaves is not enough; the engine needs to walk
+the HWScripts/CryFX source tree, and the enum hands it nothing.
+
+**Two sub-divergences in the same enum path:**
+1. **No directory entries emitted** (the primary — `shaders/hwscripts/` returns 0 because `cryfx/` is a
+   subdir the index-arm never surfaces). The index stores only FILE entries; a CryEngine dir walk expects
+   the subdir entry.
+2. **The `%ENGINE%/Shaders/Cache/D3D12//*.*` cache enum** — uppercase `%ENGINE%` + a `//` double-slash;
+   `FoldEngineAliasToIndexKey` folds `%engine%/` (lowercased by NormalizeVPath first, so case is handled)
+   but the `//` double-slash is NOT collapsed by NormalizeVPath → the prefix `shaders/cache/d3d12//` cannot
+   prefix-match `shaders/cache/d3d12/X` (the extra `/`). A separate enum-normalization gap.
+
+**STILL TO VERIFY before the fix lands (AP17 — do NOT assert the fix without it):** that emitting directory
+entries (and/or recursing) from the index-walk arm makes `Shaders/HWScripts/*.*` return the `CryFX` subdir,
+the engine recurses, discovers the source tree, and boot reaches the menu. The mechanism is verified
+(enum returns 0 for a populated tree; the engine needs that tree); the FIX's sufficiency is the live
+acceptance. Candidate fix: the index-walk arm emits, for each prefix, the immediate child FILE entries AND
+a synthetic DIRECTORY entry for each distinct immediate child SUBDIR (so a single-level `FindFirst` yields
+both, matching `_findfirst64`), + collapse `//` in the enum prefix. This is the find-slot ABI work KI-0027
+established (find-data attr@0x00 0x10=dir, name inline @0x24) — a directory entry sets the dir attr bit.
+
+## PROBE Q RESULT (RAN 2026-06-22, swap-ON) — synthetic dir entries CONFIRMED correct; engine recurses; but NOT sufficient (1 PSO still)
+
+PROBE Q (`find_slots.cpp` index-walk arm) emitted a synthetic DIRECTORY entry for each immediate child
+subdir instead of skipping it. Ground truth, swap-ON:
+
+- **The engine RECURSES on a dir entry — Outcome A CONFIRMED:**
+  - `Shaders/HWScripts/*.*` → **matched=1 entries="cryfx"** (was 0). The synthetic `cryfx` dir entry is returned.
+  - `Shaders/HWScripts/cryfx/*.*` → **matched=180** (water.cfx, glass.cfx, the FSR2 passes, …). The engine
+    saw the dir entry and walked into it — exactly a real `_findfirst64` dir walk. The synthetic-directory-
+    entry fix is CORRECT and is the right fix for the source-tree enumeration.
+  - `Shaders/*.ext` → matched=23 (was 21 — the 2 synthetic subdirs `hwscripts` + `cache` now also surface).
+- **PROBE Q caused no new errors** — the `libs/tables/` synth dirs (185 emissions) were harmless; no FS_FIND
+  error/warn.
+
+**BUT NOT SUFFICIENT — `gfx_calls` STILL = 1, screen STILL black.** Discovering + recursing the shader
+source tree (180 shaders) did NOT make the engine build the pipeline set. So source-tree enumeration was a
+real gap (now fixed) but NOT the last one.
+
+**LIVE invasive cdb (game still running, `~*k`, qd — left running):** the whole engine is IDLE-TICKING, not
+stalled. Main is in the per-frame focus-poll loop (`HookedUpdate+0x94a` → `0x16c7a0` → the `0x36eb39`/
+`0x36ff17` window frames — the per-frame trap, ticking normally). ALL 14+ JobWorkers are IDLE, parked at the
+identical `ffxFsr2GetUpscaleRatioFromQualityMode+0x152c749` → `0x4b34a2` → `0x567a86` (the SRW job-wait
+idle). **Idle workers = the engine is NOT queuing shader-compile / pipeline-build work** — it reached
+steady-state with no render content to build. The shader compiler IS loaded (`dxcompiler.dll`, `dxil.dll`,
+`D3DCOMPILER_47.dll`) — the engine got far enough to load it — but never dispatches compile jobs.
+
+**THE LAST REMAINING SHADER-ENUM FAILURE (isolated — the only shader/cache `matched=0` left):**
+`%ENGINE%/Shaders/Cache/D3D12//*.*` → **matched=0**. The compiled-shader-CACHE directory enumeration fails.
+Mechanism (two converging bugs):
+1. **`//` double-slash not collapsed.** NormalizeVPath lowercases + folds `\`→`/` but does NOT collapse a
+   `//`. The pattern's dir prefix becomes `%engine%/shaders/cache/d3d12//` — the extra `/` breaks the prefix
+   match against keys `%engine%/shaders/cache/d3d12/X`.
+2. **Alias-keying ASYMMETRY (the deeper bug).** Cache entries are keyed AT BUILD by `NormalizeVPath(pe.name)`
+   = `%engine%/shaders/cache/d3d12/posteffects.cfxb` — the `%engine%/` prefix is RETAINED (the build path,
+   `asset_index.cpp:112`, does NOT call `FoldEngineAliasToIndexKey`). But `IndexDirPrefix` (enum) AND
+   `ResolveVPath` (open) DO call the fold, which STRIPS `%engine%/`. So the lookup key is `shaders/cache/...`
+   while the entry key is `%engine%/shaders/cache/...` — they cannot match. (FOpen of a cache `.cfxb`
+   nonetheless served `result=3/17` — so there is some compensating path for the OPEN that does NOT apply to
+   the ENUM prefix; the asymmetry surfaces specifically on the directory enumeration. The exact open-vs-enum
+   asymmetry is the next checkable unknown — read how the cache .cfxb OPEN matched its `%engine%`-retained
+   key when the fold strips the prefix; the entries may ALSO be inserted under a stripped key, or the open
+   fold differs. DO NOT fix on theory — read the keying both ways first.)
+
+**Honest status:** PROBE Q is a CORRECT, evidence-backed fix for the source-tree enumeration (promote it).
+But the symptom persists — the engine idle-ticks with no pipeline build, and the last shader-enum gap is the
+`%engine%`-cache-dir enumeration (double-slash + alias-keying asymmetry). The connection from "cache enum
+returns 0" to "no compile jobs queued" is INFERRED, not yet proven — the engine reaching steady-state with
+idle workers is consistent with "it found no cache to load AND was never told to compile," but the causal
+edge (cache-enum-0 → no-compile-dispatch) is the next thing to verify, not assert (AP17). Next: fix the
+cache-dir enum (collapse `//` + resolve the alias-keying asymmetry so the enum prefix matches the stored
+key), re-run, and check whether `gfx_calls` jumps + the workers get compile work.
+
 ## Reuse pointers
 
+- PROBE Q: `find_slots.cpp` BuildUnifiedFindEntries index-walk arm — emits a synthetic dir entry per distinct
+  immediate child subdir (deduped, `isDir=true`); CONFIRMED the engine recurses on it. The correct fix for
+  source-tree enumeration; promote (drop the PROBE Q logging, keep the emission).
+- ENUM divergence: `src/fs_takeover/enum_slots.cpp:185-201` (index-walk arm, single-level, no dir entries) +
+  `find_slots.cpp` IndexDirPrefix. Real pak CDR: `python -c "import zipfile; zipfile.ZipFile(r'<Engine>/Shaders.pak').namelist()"` — entries under `Shaders/` (180 in `Shaders/HWScripts/CryFX/`).
 - PROBE P: `src/fs_takeover/pso_probe.{h,cpp}` — D3D12 device + PSO-creation hook; the consumption-side
   instrument that runs identically swap-on/off (escapes the FS-trace blind spot). `gfx_calls` count is the
   ground-truth signal: ~1 = render-build stalls before pipelines; dozens+ = pipelines built.
