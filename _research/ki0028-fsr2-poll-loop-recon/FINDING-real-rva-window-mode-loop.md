@@ -601,6 +601,44 @@ If swap-off renders despite the same 36 misses, the 36 are exonerated and the re
 is elsewhere in what the swap changes (a different served-content gap, or a render resource beyond the
 gameshaders alias). NOT another shader-alias fix until the baseline isolates the residual.
 
+## SWAP-OFF BASELINE (2026-06-22) — corrects "benign": the 36 misses are swap-ON-INDUCED, residual isolated
+
+The swap-off baseline (kcdx-noswap marker, fix-build engine) **reached the menu — success.** The decisive diff:
+
+- **Swap-OFF: 0 total loose_open_failed, 0 gameshaders requests.** The unswapped engine NEVER asks for
+  `data/gameshaders/*.ext` at all (the only 2 "gameshaders" lines are the cap-115 PASS string).
+- **Swap-ON: 211 total loose_open_failed, 57→36 gameshaders misses** (21 fixed by the fold).
+
+**This OVERTURNS the "36 are benign" read (my prior conclusion was wrong).** They are not vanilla-absent
+files the engine also can't find — the unswapped engine never requests them. The `data/gameshaders/*.ext`
+probes are **swap-ON-INDUCED**: something about HOW kcdx serves shaders drives the engine down a different
+code path (probing for per-shader `.ext` files, hitting the shader cache 88+49 times) that the
+binary-cache-driven unswapped path never takes.
+
+**Measurement limit:** swap-off emits NO `FS_BOOT_TRACE open slot=FOpen` lines (the engine uses its own
+CCryPak; kcdx's trace only fires on kcdx's slots), so a direct swap-off-vs-on open diff is impossible by
+construction. The swap-off log shows the engine's behavior only through its absence from kcdx's trace.
+
+**Residual ISOLATED (the falsifiable frontier):** swap-on now serves the 21 real shaders correctly
+(`runtime.ext`/`scaleform4.ext` → index-pak result=3), yet the screen is still black AND the engine probes
+36 nonexistent per-shader `.ext` files it never probes unswapped. The remaining cause is in WHAT kcdx
+serves for shaders vs what the engine's own pak reader serves — candidate mechanisms (NOT yet probed, do
+NOT fix on theory):
+  (1) kcdx serves the wrong shader VARIANT (the source `.cfx`/`.ext` where the engine's cache path expects
+      the compiled `.cfxb` in ShadersBin.pak / the per-permutation cache in ShaderCache.pak), so the engine
+      treats the cache as invalid and falls into source-probing/recompile (the 36 `.ext` probes + the
+      88/49 cache touches are the tell);
+  (2) kcdx serves shader bytes that are byte-correct but with wrong METADATA (size/mtime/CRC) the engine's
+      shader-cache freshness check rejects → invalidate → reprobe;
+  (3) a shader-cache file kcdx serves from `%engine%/shaders/cache` differs from what the engine wrote to
+      `%user%/shaders/cache`, so the validation mismatches.
+
+**Results-driven status:** ONE fix landed (21 shaders, real defect removed, swap-off still reaches menu so
+the fix did not regress the good path). The symptom persists with a NOW-ISOLATED residual. Per the floor,
+theories (1)-(3) are accumulating on one symptom → the next step is a fresh-frame probe of the
+shader-variant/cache-validation path (which exact bytes/metadata the engine rejects), NOT fix #2 on a
+guess. This is a deeper render-subsystem investigation than the alias fold — a natural phase boundary.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
