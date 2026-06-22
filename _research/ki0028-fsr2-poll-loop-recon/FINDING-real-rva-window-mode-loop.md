@@ -300,6 +300,53 @@ failing. What static canNOT settle is the INDIRECT multi-hop path (a wrong value
 surfaces at present N stages later, across threads) — a runtime-only fact (results-driven §4). Static work
 on the slot outputs is now COMPLETE; the remaining work is the live multi-hop probe.
 
+## Ground-truth synthesis (2026-06-22) — the probe target the slot-output exhaustion points to
+
+With all four slot-output divergences exonerated as direct drivers, the live evidence re-read end-to-end
+converges on ONE concrete probe target. The facts, each from a source on disk:
+
+- **The wedge is STEADY-STATE, not first-tick.** PROBE H (`boot_watch.h`:7-8) recorded: boot progresses
+  ~41s, the update tick fires, the suite reaches 320 — THEN the dev log goes silent at the wedge onset.
+  So `HookedUpdate`'s heavy first-tick synchronous block (NotifyVmReady → RegisterKcdxTable → RunCatalog →
+  RunAll → ApplyAll → LogInventory, hooks.cpp:359-503) COMPLETED — plugins ran, suite advanced. The wedge
+  comes later, on a steady-state tick. (This kills the tempting "stuck in kcdx's first-tick block" theory
+  before any probe was built around it.)
+- **Main parks in the `r_Fullscreen` window/display-mode loop.** The wedge stack's Main frame resolves to
+  real RVA `0x869c39` (§ above) — a window/display-mode routine carrying `lea rdx,"r_Fullscreen"` that
+  polls the window-manager singleton `0x492b890`. The job-worker pool (threads 3-6+ in the wedge capture)
+  is idle in `SleepConditionVariableSRW` waiting for work Main would queue; Main never completes the tick,
+  so no render work is queued, nothing presents, audio (separate thread) continues. "Runs but never
+  presents" = Main parked in this loop.
+- **The loop body itself is NOT the differentiator.** PROBE M's swap-on/off A/B showed the loop's counters
+  evolve IDENTICALLY both ways (both freeze at 0x80002B7x, neither reaches -1). So the loop is normal
+  per-frame window/display-mode code; what differs is the EXIT CONDITION it waits on never arriving with
+  the swap on.
+
+**The convergent probe target — corrected against PROBE M (do NOT re-run the killed probe).** The naive
+"read the loop's exit-condition state swap-on/off" probe IS PROBE M, already run: it read the 6 `.data`
+globals the `0x869c39` loop polls (counters `0x56628d8/dc`, flags `0x556d080/084`, window-mgr singletons
+`0x492b890`/`0x492b8c0`) swap-on vs swap-off and found them **identical** — the directly-polled state does
+NOT differ. So the loop's own polled fields are exonerated; re-reading them is theory-hopping back to a
+killed probe. Two honest branches remain, and the probe must pick the FALSIFYING one:
+
+1. **The loop is NOT the gate (PROBE M's null leans here).** If the polled state is identical swap-on/off
+   yet the boot wedges only swap-on, Main being parked at `0x869c39` may be a SYMPTOM (where Main happens
+   to spin) rather than the CAUSE. The differentiator is then elsewhere on Main's path — an earlier tick
+   does something different swap-on that prevents the state the loop awaits from EVER being produced
+   upstream. Ground-truth probe: bracket Main's steady-state tick (the `HookedUpdate` per-tick body +
+   the engine Update it wraps) on the LAST few ticks before the heartbeat stops, swap-on vs swap-off, and
+   log the first per-tick action that diverges. PROBE H already marks the onset; this reads what the tick
+   does in the final pre-onset window.
+2. **An UPSTREAM writer of the polled state differs.** The loop waits for a field some OTHER code writes
+   (a render-device-ready flag, a swapchain-created signal, a window-shown event). PROBE M read the field
+   VALUES; it did not find the WRITER. Probe: locate the writer of the one field the loop's exit tests
+   (static — read `0x869c39`'s exit branch to find which `0x492b8xx` field gates exit, then xref its
+   writer), then instrument whether that writer RUNS swap-on vs swap-off.
+
+Branch 2 is statically startable (find the exit-gating field + its writer) and is the cheaper first move;
+branch 1 is the live fallback if the writer is found to run identically. Both are theory-INDEPENDENT: each
+has an outcome that says "the loop is not the gate, widen the frame" rather than only confirming a guess.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
