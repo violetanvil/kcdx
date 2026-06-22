@@ -393,6 +393,44 @@ points at window creation/show as the swap-perturbed step;
 later → widen the frame to the next per-tick stall.
 Falsifiable either way; observes ground truth (the two HWNDs) rather than confirming a theory.
 
+## PREMISE CORRECTION (2026-06-22, PROBE W run 1) — the wedge is NOT a deadlock; the game TICKS but never PRESENTS
+
+PROBE W's first live run (swap-ON) overturns the load-bearing premise the whole KI + handoff + every
+prior frame carried. Ground truth from the run:
+
+- **The heartbeat advanced CONTINUOUSLY to tick=7710, no stall, right up to the final logged second**
+  (~107 ticks/s avg, ~35/s at the end). `BOOT_WATCH_STALL` NEVER fired. Suite reached 320; swap took
+  (`seat_index_stored entries=307006`).
+- **User-confirmed visual: black screen, no menu — THE WEDGE.** So `CGame_Update` fires ~35×/second the
+  entire time the screen is black. **The game is NOT hung/deadlocked/parked in a loop. It TICKS but never
+  PRESENTS a frame.**
+- **PROBE W's `WINDOW_PROBE_CONVERGED` fired at the FIRST sample (wall_s=9025):** a process window
+  (`0x210C08`) was visible AND OS-foreground immediately. So the engine's `GetActiveWindow()==expected`
+  focus-gate (`0x866029`) is SATISFIED EARLY — **the window-activation theory is FALSIFIED.** `fg_is_ours`
+  only dropped to 0 at the very end because the user quit the game (foreground drifts on teardown), not
+  during the wedge. The gate is NOT the wedge.
+
+**What this invalidates (the whole chain's framing was wrong):**
+- "Main is parked/stuck/waiting in the `0x869c39` loop" — NO. Main runs full per-frame ticks. The cdb
+  captures that showed "Main in a sleep loop" sampled a RUNNING tick at one instant (the bounded ≤25ms
+  focus poll, which Main re-enters every frame) — not a hung thread. The per-frame-trap, exactly as the
+  exit-gate recon's Reframe 6 warned.
+- "stuck waiting for a producer / completion handshake" — NO (already shown to be a `call_once` guard).
+- The window-activation gate — FALSIFIED, converges at second 1.
+
+**The corrected premise (matches the ORIGINAL KI-0028 symptom statement):** the game runs the per-frame
+loop but never produces a visible frame. This is a PRESENT / render-submission failure, not a control-flow
+hang. The tick runs; the frame is either not built, not submitted to the swapchain, or not presented.
+PROBE H (heartbeat-cessation detector) is the WRONG instrument for this wedge — it can never fire because
+there is no cessation. The right instrument is the swapchain's own present counters.
+
+**Next probe — PROBE K (already built, disarmed):** reads the DXGI swapchain's `GetLastPresentCount` +
+`PresentRefreshCount` (no present hook). Its pre-committed outcome map (`present_probe.h`) partitions the
+"ticks but never presents" wedge directly: present-count ~0 → loop never reaches present (upstream);
+present-count>0 + refresh~0 → present called, no GPU scanout (present path); both advance → frames
+presented, black screen is a surface/compositor issue; never captured → widen the capture point. Arm K
+(beside W), rerun swap-ON, then swap-OFF for the baseline delta.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base

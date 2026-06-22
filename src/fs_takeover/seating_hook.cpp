@@ -114,11 +114,22 @@ void __fastcall HookedConstructStore(void* csystem) {
     // PROBE W's window sampler (boot_watch.cpp WinProbeSample) which logs
     // WINDOW_PROBE / WINDOW_PROBE_CONVERGED via pure Win32 reads (no engine
     // offset/hook). PROBE L (which had disarmed this) is concluded — the probe
-    // threads were exonerated, so re-arming the watcher is safe. PROBE K
-    // (PresentProbeStart) stays disarmed; PROBE W needs only the watcher thread.
+    // threads were exonerated, so re-arming the watcher is safe.
     // NO-RESIDUE: remove this re-arm with PROBE W on retirement.
     kcdx::fs_takeover::BootWatchStart();
     // === END PROBE W arm ===
+
+    // === DIAGNOSTIC (PROBE K) — KI-0028 present-count delta (re-armed) ========
+    // PROBE W run 1 corrected the premise: the game TICKS (heartbeat advanced to
+    // 7710, no stall) but the screen is BLACK — a PRESENT failure, not a hang. The
+    // window-activation gate converged at second 1 (falsified). PROBE K reads the
+    // DXGI swapchain's own GetLastPresentCount + PresentRefreshCount (no present
+    // hook) to partition the wedge: present~0 → upstream; present>0/refresh~0 →
+    // present path; both advance → surface/compositor. Armed beside the watcher,
+    // before the PROBE F noswap return, so it runs swap-ON and swap-OFF identically.
+    // NO-RESIDUE: remove with PROBE K on retirement.
+    kcdx::fs_takeover::PresentProbeStart();
+    // === END PROBE K arm ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
