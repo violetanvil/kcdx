@@ -199,6 +199,102 @@ void DumpAllThreads(const char* label) {
     LOG_ERROR_KV(kCat, "BOOT_DUMP_END", KV::BareStr("label", label));
 }
 
+// === DIAGNOSTIC (PROBE W) — KI-0028 window-activation observer ==============
+//
+// WHY: the static exit-gate read (_research/ki0028-window-exit-gate-recon/)
+// found the engine's per-frame focus poll (fn 0x865fb4) gates on
+// `GetActiveWindow() == <engine-expected HWND>`. The whole boot proceeds past
+// this only when the process window becomes the OS active/foreground window.
+// All four FS-slot-output divergences are exonerated; kcdx calls ZERO window
+// APIs (grep-verified) — so if the window never activates swap-on, it is an
+// INDIRECT effect of the swap, observed here.
+//
+// This is Win32-ONLY — no engine offset, no hook, no ABI. From the existing
+// watcher thread we sample the process's top-level window state and log on
+// integer-second edges (event-debounced, NOT a new timer — the watcher already
+// wakes every kPollMs; logging.md/polling.md).
+//
+// OUTCOME MAP (pre-committed, theory-independent — run swap-ON then swap-OFF):
+//   - swap-OFF (reaches menu): a process top-level window becomes VISIBLE and
+//     FOREGROUND/ACTIVE — records the HWND + the wall-second it converged.
+//   - swap-ON (wedge): compare against swap-OFF:
+//       (a) no process window ever becomes foreground/active (or never visible)
+//           => CONFIRMS the window-activation mechanism (the swap prevents the
+//           window reaching active state; the engine's GetActiveWindow gate
+//           never passes).
+//       (b) the window DOES become foreground/active swap-on too => the
+//           active-window gate is NOT the wedge; Main passes it and wedges
+//           later => widen the frame. (The falsifier that kills this theory.)
+// Greppable tag: "WINDOW_PROBE".
+//
+// NO-RESIDUE: on retirement capture finding+wiring to _research/probe-archive/
+// then REMOVE from live source (working-artifacts.md).
+
+struct WinProbeEnum {
+    DWORD  pid;
+    HWND   foreground;
+    HWND   active;          // GetActiveWindow() of the foreground thread, if ours
+    int    topLevelCount;   // our process's top-level windows
+    int    visibleCount;    // ...of which visible
+    HWND   firstVisible;
+    bool   foregroundIsOurs;
+};
+
+BOOL CALLBACK WinProbeEnumProc(HWND hwnd, LPARAM lp) {
+    auto* e = reinterpret_cast<WinProbeEnum*>(lp);
+    DWORD wpid = 0;
+    GetWindowThreadProcessId(hwnd, &wpid);
+    if (wpid != e->pid) return TRUE;  // not ours
+    ++e->topLevelCount;
+    if (IsWindowVisible(hwnd)) {
+        ++e->visibleCount;
+        if (!e->firstVisible) e->firstVisible = hwnd;
+    }
+    return TRUE;
+}
+
+// Sample the process window state once. Pure Win32 reads, alloc-free. Emits one
+// WINDOW_PROBE line per wall-second the state is sampled (the caller gates on the
+// integer-second edge), plus a one-shot CONVERGED line the first time a process
+// window is BOTH visible AND the foreground window — the swap-OFF baseline's
+// convergence point, and the signal whose ABSENCE swap-ON is the answer.
+void WinProbeSample(uint64_t nowSec, bool* convergedLatch) {
+    WinProbeEnum e{};
+    e.pid        = GetCurrentProcessId();
+    e.foreground = GetForegroundWindow();
+    EnumWindows(WinProbeEnumProc, reinterpret_cast<LPARAM>(&e));
+
+    DWORD fgPid = 0;
+    if (e.foreground) GetWindowThreadProcessId(e.foreground, &fgPid);
+    e.foregroundIsOurs = (fgPid == e.pid && e.foreground != nullptr);
+
+    LOG_INFO_KV(kCat, "WINDOW_PROBE",
+        KV("wall_s",          nowSec),
+        KV("toplevel",        e.topLevelCount),
+        KV("visible",         e.visibleCount),
+        KV("fg_is_ours",      (uint64_t)(e.foregroundIsOurs ? 1 : 0)),
+        KV("foreground_hwnd", e.foreground),
+        KV("first_visible",   e.firstVisible));
+
+    // The convergence signal: a visible process window that is ALSO foreground.
+    // This is exactly the state the engine's GetActiveWindow gate (focus-poll
+    // 0x866029) waits for. One-shot — its PRESENCE swap-OFF and ABSENCE swap-ON
+    // is the KI-0028 answer.
+    if (!*convergedLatch && e.foregroundIsOurs && e.visibleCount > 0) {
+        *convergedLatch = true;
+        LOG_WARN_KV(kCat, "WINDOW_PROBE_CONVERGED",
+            KV("wall_s",          nowSec),
+            KV("foreground_hwnd", e.foreground),
+            KV::BareStr("detail",
+                "a process top-level window is BOTH visible AND the OS foreground "
+                "window — the state the engine's GetActiveWindow focus-gate waits "
+                "for. PRESENCE here = the window activated; ABSENCE across a full "
+                "wedge run = the swap prevents window activation (KI-0028 "
+                "mechanism CONFIRMED). Compare swap-ON vs swap-OFF."));
+    }
+}
+// === END PROBE W ===
+
 // The watcher thread. Wakes every kPollMs, reads the heartbeat's last-advance
 // ms, and on a kStallMs stall dumps (onset), then again at +kSecondDumpMs, then
 // stops arming. A live boot (heartbeat advancing) produces no dump. This is a
@@ -210,9 +306,28 @@ DWORD WINAPI WatcherMain(LPVOID) {
     bool secondDumped = false;
     uint64_t onsetMs  = 0;
 
+    // PROBE W state: sample window activation every wall-second across the WHOLE
+    // boot (independent of the stall logic), and latch the one-shot convergence.
+    uint64_t winProbeLastSec = 0;
+    bool     winConverged    = false;
+
     for (;;) {
         Sleep(kPollMs);
         const uint64_t now     = GetTickCount64();
+
+        // === PROBE W — window-activation sample (runs the entire boot, even
+        // before the first update tick; the window can activate before update).
+        // Event-debounced on the integer-second edge — one line per wall-second,
+        // NOT per kPollMs wake. ===
+        {
+            const uint64_t nowSec = now / 1000;
+            if (nowSec != winProbeLastSec) {
+                winProbeLastSec = nowSec;
+                WinProbeSample(nowSec, &winConverged);
+            }
+        }
+        // === END PROBE W sample ===
+
         const uint64_t lastMs  = g_lastMs.load(std::memory_order_relaxed);
         if (lastMs == 0) continue;  // no tick yet — boot hasn't reached update
 

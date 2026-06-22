@@ -107,20 +107,18 @@ void __fastcall HookedConstructStore(void* csystem) {
         return;  // already swapped this session
     }
 
-    // === DIAGNOSTIC (PROBE L) — KI-0028 probe-thread confound bisection ===
-    // P-F changed FOUR things between its swap-ON and swap-OFF arms (FS dispatch,
-    // BootWatch thread, PresentProbe thread, the index-build INFINITE wait), so it
-    // never isolated the FS swap as the wedge's cause. PROBE L disarms the two
-    // diagnostic threads (BootWatchStart / PresentProbeStart) for ONE launch while
-    // keeping the FS swap + index build live — one variable, the probe threads
-    // present vs absent. Boots to menu → a probe thread caused the wedge (the
-    // converged mechanism is wrong); still wedges → the threads are exonerated and
-    // the suspect narrows to swap-or-index-wait. NO-RESIDUE: restore both calls (and
-    // remove this PROBE L block) when answered.
-    //
-    //   kcdx::fs_takeover::BootWatchStart();   // PROBE H — disarmed for PROBE L
-    //   kcdx::fs_takeover::PresentProbeStart(); // PROBE K — disarmed for PROBE L
-    // === END PROBE L ===
+    // === DIAGNOSTIC (PROBE W) — KI-0028 window-activation observer ===========
+    // Arm the watcher thread BEFORE the PROBE F noswap early-return below, so it
+    // runs IDENTICALLY on the swap-ON and swap-OFF (noswap) arms — the window-
+    // activation timeline must be captured on both to compare. The watcher hosts
+    // PROBE W's window sampler (boot_watch.cpp WinProbeSample) which logs
+    // WINDOW_PROBE / WINDOW_PROBE_CONVERGED via pure Win32 reads (no engine
+    // offset/hook). PROBE L (which had disarmed this) is concluded — the probe
+    // threads were exonerated, so re-arming the watcher is safe. PROBE K
+    // (PresentProbeStart) stays disarmed; PROBE W needs only the watcher thread.
+    // NO-RESIDUE: remove this re-arm with PROBE W on retirement.
+    kcdx::fs_takeover::BootWatchStart();
+    // === END PROBE W arm ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
