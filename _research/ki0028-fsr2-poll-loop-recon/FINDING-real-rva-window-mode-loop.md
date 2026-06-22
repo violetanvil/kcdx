@@ -851,6 +851,56 @@ past the FS layer in render-build dispatch. The investigation moves from "is the
 the FS-enumeration root cause is documented (AP17-grade for that layer), the render-build-trigger mechanism
 is the next root cause owed.
 
+## NEXT-AXIS DESIGN + CHEAP NARROWING (2026-06-22) — the engine does NOT compile; isolated to the shader-cache-load/dispatch gate (CShaderMan)
+
+A fresh-frame subagent designed the next probe (theory-independent, withheld leading theory). Its core: a
+3-layer DISPATCH tracer armed BEFORE the swap decision (fires swap-on AND swap-off, like PROBE W), run as an
+A/B, diffing WHERE the swap-on path stops short of building pipelines:
+- Layer A — the job-queue enqueue (the producer that wakes the idle JobWorker pool).
+- Layer B — the shader-manager "compile this list" entry (CShaderMan / shader-cache-load → submit).
+- Layer C — the one-time "render-system ready, build pipelines now" trigger.
+Five-outcome map; O2 + O5 falsify "the swap perturbs render-build dispatch" entirely (→ worker-side gate or
+downstream of dispatch). The MOST LIKELY single divergence (the subagent's lean, NOT asserted): O3 — the
+FS-serve-vs-engine-REGISTRY gap (the engine enumerates+serves every shader file but CShaderMan's in-memory
+shader list never populates / never submits), a KI-0027-class mismatch one layer up from FS enumeration.
+
+**CHEAP GROUND-TRUTH NARROWING (no new launch — reuse-first §4):** checked whether the engine WROTE any
+compiled-shader output this session.
+- **ZERO `.cfxb`/`.cfib` compiled shaders written to `%user%/shaders/cache/` this session** (in fact none
+  present at all). The engine is NOT compiling shaders — confirms the workers-idle observation from the live
+  cdb (the compile dispatch never fires).
+- The ONLY user-cache write this session is `lookupdata.binversion.txt` (touched 14:29) — a cache-VERSION
+  bookkeeping file. So the engine reaches the shader-cache-VERSION check, does its version bookkeeping, and
+  then does NOT proceed to register/compile/build. (No accessible engine Game.log/Error.log — KCD2's engine
+  log is not in the bin dir or saved-games root, so the engine's own shader-init markers are unavailable;
+  the dispatch tracer is the instrument.)
+
+**This sharpens the residual to a falsifiable candidate:** the engine's shader-cache-load path performs the
+`lookupdata.bin`/`globals.txt`/`binversion.txt` cache-state check, and under the swap that check leads it to
+NOT dispatch the shader-registry-populate + compile-build work (workers stay idle, gfx_calls=1, black). WHY
+the cache check leads to no-dispatch under the swap — when swap-off it proceeds to the menu — is the open
+mechanism. Candidate (NOT proven): the `%user%/shaders/cache/globals.txt` read returns `got=-1` (empty, 114×)
+AND `lookupdata.bin` is read 2293× swap-on — the engine may be stuck in a cache-validation/lookup state that
+the swapped FS's serving (correct bytes, but a different timing/handle/EOF behavior than the engine's native
+CCryPak) leaves unsatisfiable, so it neither uses the cache NOR falls through to compile. This connects the
+heavy `lookupdata.bin` re-reads (seen since the first PROBE K run) to the no-compile-dispatch — but the
+causal edge is INFERRED; the dispatch tracer (Layer B at CShaderMan + the cache-load consumer) is what proves
+it.
+
+**Owed next (a real RE effort, multi-launch — a fresh investigation phase):**
+1. Resolve the CShaderMan shader-cache-load + shader-list-submit RVAs via the reuse-first ladder
+   (`reverse-engineering.md`: existing `_research/` dumps → predecessor CryEngine sigs → Ghidra last). Do NOT
+   hook by the nearest-export names (`NVSDK_NGX_*`/`ffxFsr2*` are noise).
+2. Build the 3-layer DISPATCH tracer (armed before the swap decision, fires both modes).
+3. A/B run (swap-on, then swap-off via the kcdx-noswap marker), diff the DISPATCH tallies + the cache-load
+   reach/count.
+4. Read which layer is the lowest ABSENT swap-on — that caller's early-exit is the gate.
+
+The cheap narrowing (no compile output + only a version-check write) already rules O1-broad ("never reaches
+the shader path") DOWN: the engine DOES reach the cache path (it writes the version file). So the gate is at
+the cache-load→dispatch decision (Layer B), not earlier. That is the strongest lead going into the next
+phase.
+
 ## Reuse pointers
 
 - PROBE Q: `find_slots.cpp` BuildUnifiedFindEntries index-walk arm — emits a synthetic dir entry per distinct
