@@ -12,6 +12,7 @@
 #include "boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 boot-progress watcher
 #include "present_probe.h"  // === DIAGNOSTIC (PROBE K) === KI-0028 present-count delta
 #include "pso_probe.h"  // === DIAGNOSTIC (PROBE P) === KI-0028 shader-blob -> PSO
+#include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -145,6 +146,18 @@ void __fastcall HookedConstructStore(void* csystem) {
     // NO-RESIDUE: remove with PROBE P on retirement.
     kcdx::fs_takeover::PsoProbeStart();
     // === END PROBE P arm ===
+
+    // === DIAGNOSTIC (PROBE R) — KI-0028 shader-cache VALIDATION gate ===========
+    // The CShaderMan RE (_research/ki0028-cshaderman-pso-consumer-recon) reframed
+    // the gate: the engine reads the full compiled cache yet builds 1 PSO (PROBE
+    // P) because shader-cache VALIDATION rejects the cache under the swap and
+    // DISABLES the read-only cache, falling into the .ext-reprobe path. PROBE R
+    // after-hooks the two validation RVAs (lookupdata.bin loader FUN_180b04984 —
+    // its return IS the gate bool — + the validate driver FUN_180b04478). Armed
+    // beside P, BEFORE the PROBE F noswap return, so the loader's verdict is read
+    // swap-ON and swap-OFF for the A/B diff. NO-RESIDUE: remove with PROBE R.
+    kcdx::fs_takeover::DispatchProbeStart();
+    // === END PROBE R arm ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",

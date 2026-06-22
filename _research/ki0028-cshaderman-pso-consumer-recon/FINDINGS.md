@@ -1,8 +1,29 @@
-# KI-0028 — CShaderMan cache-load → PSO-build path: the gate is a cache-VALIDATION reject, not a PSO consumer
+# KI-0028 — CShaderMan cache-load → PSO-build path: validation ACCEPTS; the gate is DOWNSTREAM (PROBE R)
 
 **Date:** 2026-06-22
-**Method:** fresh Ghidra 12.1 disassembly (KCD2.rep, WHGame.dll `release_1_5_1164953_841`, image base 0x180000000), 3 parallel read-only fronts + synthesizer re-ground of the load-bearing edge.
-**Trust:** PRIMARY EVIDENCE for every body cited (decompiled + the call site read). The kcdx-side read-contract bridge is the one remaining live unknown (flagged).
+**Method:** fresh Ghidra 12.1 disassembly (KCD2.rep, WHGame.dll `release_1_5_1164953_841`, image base 0x180000000), 3 parallel read-only fronts + synthesizer re-ground of the load-bearing edge. THEN PROBE R live (the validation-reject hypothesis, FALSIFIED).
+**Trust:** PRIMARY EVIDENCE for every body cited (decompiled + the call site read).
+
+## ⚠ PROBE R RESULT (RAN 2026-06-22, swap-ON) — the validation-reject theory is FALSIFIED
+
+The dispatch tracer (`src/fs_takeover/dispatch_probe.{h,cpp}`) after-hooked the two validation RVAs and read the loader's return live, swap-ON (user-confirmed black screen). Ground truth (`DISPATCH_PROBE` lines, `kcdx-dev_2026-06-22_15-53-22.log`):
+- `driver_enter call_n=1` — the validate driver `FUN_180b04478` was REACHED.
+- `lookupdata_loader call_n=1 ret=1 rejected=0 user_flag=1` — the `%USER%` lookupdata.bin copy **VALIDATED** (return 1).
+- `lookupdata_loader call_n=2 ret=1 rejected=0 user_flag=0` — the `%ENGINE%` copy **VALIDATED** (return 1).
+- Final tally: `loader_calls=2 loader_reject=0 loader_accept=2 driver_calls=1`, frozen for the whole ~90s run.
+
+**This is PROBE R's third pre-committed outcome (loader returns 1 swap-ON → cache VALIDATES → gate is PAST validation). The validation-reject mechanism — the strongest lead the RE produced — is DEAD.** The engine reads the lookupdata.bin cache index, BOTH copies pass validation under the swap, and the read-only cache is NOT disabled. So:
+- The `FUN_180b04984` unchecked-bytes-read header read is NOT corrupted by the swap (it returns 1, magic+version matched).
+- The 36 swap-on `data/gameshaders/*.ext` probes are NOT driven by `mfCreateCommonGlobalFlags`'s globals.txt-fail arm in a way that gates the build — OR the globals.txt arm fires but is not the wedge. (The `.ext` reprobe theory is now also suspect: validation passed, yet boot is still black.)
+- The wedge is **DOWNSTREAM of cache validation**: in the precache→pipeline-build dispatch. The cache validates; something AFTER that (the shader-list build / `_PrecacheShaderList` submit / the job-deferred PSO creation) does not run swap-ON.
+
+**Honest status (AP17):** the RE correctly mapped the architecture and the validation gate, and PROBE R correctly KILLED the validation-reject hypothesis by direct measurement (not a guess). The localization is now: validation passes (PROBE R) but `gfx_calls=1` (PROBE P) — the gate is in the **span between cache-validation-accept and PSO-build dispatch**: `mfLoadShaderList` (fills the precache list from `%USER%/shaders/shaderlist.txt`) → `_PrecacheShaderList` (`FUN_1825091e0`, submits the list) → the per-shader submit slots → `LaunchPSOCreationJobsGraphics`. The next probe targets THAT span (below), theory-independent — NOT another validation-side fix.
+
+---
+
+## The RE that LED to PROBE R (validation-reject, now falsified — kept for the architecture map)
+
+The RE hunted for "the `.cfxb`-cache CONSUMER." It correctly found the architecture but its CONCLUSION (validation-reject is the gate) was the hypothesis PROBE R killed. The body-read facts below are still VERIFIED and load-bearing for the next probe; only the "validation reject IS the wedge" framing is dead.
 
 ## The reframe this RE delivers
 
