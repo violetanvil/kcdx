@@ -571,6 +571,36 @@ the menu — the fix itself resolves the 36 naturally (if they are the same gap,
 missing, a far smaller residual). The mechanism (the missing alias fold) is established at AP17 grade by
 the 21 proven cases; the 36 are a scope detail the fix + baseline resolve, not an open mechanism question.
 
+## FIX LANDED, PARTIAL (2026-06-22) — 21 shaders now serve, screen STILL black; the 36 look benign
+
+The `data/gameshaders/` → `shaders/` alias fold (commit e88a9eb) WORKS at the live level — confirmed:
+`FOpen how=index-pak vpath="data/gameshaders/runtime.ext" result=3` (served from Shaders.pak), cap-115 (e)
+PASS, gameshaders misses 57 → 36. But the user-confirmed result is **STILL BLACK** — the fix was
+necessary-not-sufficient.
+
+**The 36 remaining misses appear BENIGN (do NOT chase them as the cause):** they are
+`data/gameshaders/posteffects.ext`, `depthoffield.ext`, `deferredshading.ext`, `sunshafts.ext`, … — and
+they go `how=miss-original result=0`: kcdx falls through to the ENGINE'S OWN resolver, which ALSO returns
+not-found. There is no `posteffects.ext` anywhere in the paks (Shaders.pak has `hwscripts/cryfx/
+posteffects.cfx` the source + ShadersBin.pak has `shaders/cache/d3d12/posteffects.cfxb` the compiled
+binary; no bare `posteffects.ext`). These are OPTIONAL per-shader override `.ext` files absent in vanilla —
+the unmodified engine gets the same not-found and renders fine. So the 36 are very likely NOT the
+black-frame cause; "fold them too / find their pak" would be chasing a non-cause (results-driven: a fix on
+a benign miss is fix #2 on a new theory).
+
+**PROBE K this run:** present advances (~35/s) but `present_count` reached only 3744 (vs 10516 on the
+pre-fix black run) — present is happening, fewer frames, still black. No new fatal/0xC8/device-lost. The
+21 real shaders (runtime, scaleform4, …) now serve, yet black persists.
+
+**Honest status:** one real fix landed (21 shaders served, a genuine defect removed) but did not resolve
+the symptom. Per the results-driven floor (after ONE failed fix, probe — do NOT fix #2 on a new theory),
+the next step is the variable-isolating probe I have NOT yet run: **the SWAP-OFF baseline.** It answers
+the load-bearing isolation question — does the UNSWAPPED engine (a) also miss the 36 (confirming benign)
+AND (b) reach the menu? That isolates what swap-ON still does differently now that the 21 shaders serve.
+If swap-off renders despite the same 36 misses, the 36 are exonerated and the remaining black-frame cause
+is elsewhere in what the swap changes (a different served-content gap, or a render resource beyond the
+gameshaders alias). NOT another shader-alias fix until the baseline isolates the residual.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
