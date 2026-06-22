@@ -505,6 +505,72 @@ paks not served + zip64 paks skipped), NOT a hang/present/window/control-flow bu
 paragraph still owes the precise index-miss mechanism (a/b/c above) before the KI closes (AP17). Swap-OFF
 baseline still owed to confirm these same assets serve correctly unswapped.
 
+## ROOT-CAUSE MECHANISM (2026-06-22, log analysis — option (b) CONFIRMED) — gameshaders alias not folded
+
+The precise index-miss mechanism is a **vpath alias-normalization gap** (the KI-0026 class: lookup key ≠
+stored key), proven from the swap-on log without a new launch:
+
+- **The shader paks WERE indexed.** `PAK_READER parsed Shaders.pak entries=201`, ShaderCache.pak=656,
+  ShadersBin.pak=180; `FS_INDEX asset_index_built entries=307006 roots=2 paks=46`. The shaders are IN the
+  index — not absent, not zip64-skipped (those paks parsed fine).
+- **They are keyed under the pak's OWN entry name `shaders/X.ext`** (`read_entry pak="Shaders.pak"
+  name="shaders/runtime.ext"`). The engine addresses the SAME file two ways:
+  - `FOpen vpath="shaders/runtime.ext"` → `how=index-pak result=3` — **SERVED** ✓ (kcdx key matches).
+  - `FOpen vpath="data/gameshaders/runtime.ext"` → `loose_open_failed errno=2`, `how=miss-original` —
+    **MISSED** ✗ (no index key `data/gameshaders/...`; falls to a loose disk open that doesn't exist).
+- **21 of the 57 failed `data/gameshaders/X.ext` are provably the SAME file already in-index as
+  `shaders/X.ext`** (runtime, water, hair, eye, **scaleform4** [the UI shader], illum, vegetation,
+  terrain, …). Pure key-namespace mismatch: kcdx has the bytes, keyed under `shaders/`, and does not fold
+  the engine's `data/gameshaders/` alias to that key.
+- A third shader namespace exists: `ShaderCache.pak`/`ShaderCacheStartup.pak` key entries as
+  `%engine%/shaders/cache/...` (the `%engine%` alias kcdx handles elsewhere — KI-0026 — but the cache
+  lookup forms may need their own fold).
+
+**Root cause (falsifiable, AP17 grade):** the engine addresses shaders via the `data/gameshaders/...`
+alias (and the cache via `%engine%/shaders/cache/...`), but kcdx's `asset_overlay::NormalizeVPath` /
+`ExpandEngineAliasToIndexKey` does NOT map `data/gameshaders/` → the indexed `shaders/` key. The wrong
+value is the normalized index-lookup key (it keeps `data/gameshaders/...` instead of folding to
+`shaders/...`); kcdx's `NormalizeVPath` produces it on every shader lookup; the original path makes the
+miss inevitable because the index is keyed by the pak's stored name (`shaders/...`) while the engine's
+shader subsystem requests the alias form (`data/gameshaders/...`), and no alias fold bridges them — so the
+lookup misses, falls to a loose disk open (no loose file exists; shaders live only in the pak), returns
+errno=2, and the shader never loads. With the Scaleform UI shader and core render shaders absent, the
+render pipeline presents (PROBE K: 120fps) but composites every frame to BLACK. This is the KI-0026
+alias-resolution defect (kcdx owns alias resolution; this alias is uncovered) applied to the `gameshaders`
+namespace.
+
+**Honest scope correction (do NOT overclaim):** of the 57 failed gameshaders, 21 are PROVEN present
+in-index under `shaders/` (pure fold gap). The other 36 (posteffects, deferredshading, light, common,
+sunshafts, hud3d, scaleform3, …) were "not seen served under `shaders/`" ONLY because the failed lookup
+aborted the load before any `shaders/`-form read — their in-index presence is UNPROVEN, not disproven (the
+served-check is circular for a file whose load failed). They are very likely the same fold gap (they are
+standard CryEngine `Shaders.pak` shader families), but that is a lead to confirm, not an asserted fact.
+The zip64 `IPL_Textures-part0.pak` skip is a SEPARATE, secondary defect (a real reader gap, but textures
+not shaders — it would degrade visuals, not blank the frame).
+
+**Overall serve health (context):** `FOpen index-pak served=4890` vs `miss-original=381` this boot — the
+takeover serves the large majority correctly; the failures are a concentrated alias-fold gap (heaviest in
+shaders), not a broken index. This is consistent with "mostly works, but the missing shaders blank the
+frame."
+
+**The fix direction (a real fix, surfaced — design-authority):** kcdx's index-key normalization must fold
+the engine's shader alias(es) — `data/gameshaders/X.ext` → `shaders/X.ext` (and confirm the
+`%engine%/shaders/cache/...` cache forms resolve) — so every shader lookup hits the indexed entry. This is
+the same alias-ownership pattern KI-0026 settled for `%engine%`; the gameshaders alias was simply not
+covered. (The zip64 reader gap is a separate fix.)
+
+**Still owed before the KI closes (AP17):** (1) confirm the 36 unproven gameshaders are the same fold gap
+— NOTE the served-line check is CIRCULAR for them (kcdx logs `read_entry` only on a lookup HIT; a failed
+lookup never produces a served line, so a failed shader can never appear as served under EITHER key). The
+non-circular confirmation is to read `Shaders.pak`'s central directory directly (does it contain
+`shaders/posteffects.ext`?) OR observe them serve on the swap-off baseline — NOT another served-line grep.
+(2) the SWAP-OFF baseline run — confirm these exact assets serve under the engine's own pak path unswapped
+(isolates the fold gap as the sole swap-on delta). (3) implement + verify the alias fold makes boot reach
+the menu — the fix itself resolves the 36 naturally (if they are the same gap, folding `data/gameshaders/`
+→ `shaders/` serves them; if some genuinely aren't in `Shaders.pak`, the fix surfaces exactly which remain
+missing, a far smaller residual). The mechanism (the missing alias fold) is established at AP17 grade by
+the 21 proven cases; the 36 are a scope detail the fix + baseline resolve, not an open mechanism question.
+
 ## Reuse pointers
 
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
