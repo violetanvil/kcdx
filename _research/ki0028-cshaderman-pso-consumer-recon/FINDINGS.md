@@ -45,6 +45,29 @@ precache_calls=0                  (_PrecacheShaderList NEVER ran)
 
 This is a clean phase boundary: the validation-reject theory is dead (R), the wedge is a missing trigger after mfLoadShaderList (R2 + live cdb), and the swap-OFF baseline is the next variable-isolating run. KI-0028 OPEN.
 
+## SWAP-OFF BASELINE (R2 build, 2026-06-22, reached MENU) — the shaderlist precache path is EXONERATED (runs on NEITHER path)
+
+Ran the R2 build with the `kcdx-noswap` marker (swap-OFF, `probe_f_swap_suppressed` confirmed, `kcdx-dev_2026-06-22_16-11-48.log`). **Reached the main menu.** The R/R2 tallies are BYTE-IDENTICAL to the swap-ON wedged run:
+```
+loader_accept=2  driver_calls=1  loadlist_calls=1  orch_calls=0  precache_calls=0
+```
+The compile-orchestrator (`FUN_18250dd8c`) and `_PrecacheShaderList` (`FUN_1825091e0`) run on NEITHER path, yet swap-OFF builds the menu's pipelines fine. **So the `_PrecacheShaderList` shaderlist path is NOT how the menu renders — it is the OFFLINE shader-compile path (cache-from-source), idle at runtime both ways. The entire R2 span is a red herring for this wedge.** The menu's pipelines build through a DIFFERENT entry.
+
+## ⚠ PROBE R3 + live cdb (2026-06-22, swap-ON) — the RUNTIME PSO-precache NEVER RUNS; PSOCompilationWorkers sit IDLE (O4 confirmed)
+
+R3 hooked the RUNTIME PSO-precache (`PipelineStateCacheManager` — `FUN_180bb2ad8` "Precached %u Graphics PSOs" + `FUN_180bb23c0` Compute). Live swap-ON (user black, `kcdx-dev_2026-06-22_16-15-50.log`):
+```
+loader_accept=2  loadlist_calls=1  orch_calls=0  precache_calls=0
+pso_gfx_calls=0  pso_comp_calls=0      ← the runtime PSO-precache NEVER ran
+```
+**Live invasive cdb on the still-black process (PID 47024, `~*k; qd` left running):** the engine spawns dedicated **`PSOCompilationWorker_0` + `PSOCompilationWorker_1`** threads — and BOTH are parked at `NtWaitForSingleObject → WaitForSingleObjectEx → WHGame!…+0xa2d96` (a work-queue wait). **The PSO-compilation infrastructure exists and is alive, but is IDLE — waiting for compile jobs that never arrive.** Nothing queues PSO-build work.
+
+**The consolidated mechanism (O4 — a MISSING TRIGGER, not a hang/reject/empty-submit):** validation accepts → shader list loads → but the runtime PSO-precache (`FUN_180bb2ad8`) is NEVER invoked swap-ON, so the dedicated PSOCompilationWorkers sit permanently idle, no pipelines build, `gfx_calls=1` (only the present blit), black. Main ticks + pumps frames the whole time. A one-time "render-system ready → precache/build pipelines" dispatch fires swap-OFF (menu) but not swap-ON.
+
+**THE ONE REMAINING A/B (owed before asserting — AP17):** `pso_gfx_calls=0` swap-ON is only conclusive against a swap-OFF baseline of the SAME R3 build showing `pso_gfx_calls>0`. The earlier swap-OFF baseline was the R2 build (no R3 hooks). Owed: re-run R3 swap-OFF (kcdx-noswap), read `pso_gfx_calls`. Outcome:
+- swap-OFF `pso_gfx_calls>0` → CONFIRMS `FUN_180bb2ad8` is the swap-induced missing trigger → trace what gates its invocation (its caller + the readiness condition the swap perturbs). This is the root-cause site.
+- swap-OFF `pso_gfx_calls=0` too → even the menu doesn't precache via `FUN_180bb2ad8` (precache may be cvar-disabled — `r_PipelineStatePrecacheMode`) → the menu builds pipelines LAZILY per-draw via the job-deferred create (`FUN_180bb42c8 → FUN_180bb44b0 → LaunchPSOCreationJobsGraphics`), and THAT lazy dispatch is what fails swap-ON → re-target the probe to the per-draw create + what wakes the PSOCompilationWorkers.
+
 ---
 
 ## The RE that LED to PROBE R (validation-reject, now falsified — kept for the architecture map)

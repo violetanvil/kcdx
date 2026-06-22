@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 
 #include "MinHook.h"
 #include "../log.h"
@@ -42,6 +43,16 @@ constexpr uint32_t kRvaDriver = 0xb04478;
 constexpr uint32_t kRvaOrchestrator = 0x250dd8c;
 constexpr uint32_t kRvaLoadList     = 0x19d4a54;
 constexpr uint32_t kRvaPrecache     = 0x25091e0;
+// PROBE R3 — the RUNTIME PSO-precache (NOT the dead _PrecacheShaderList shaderlist
+// path, which R2 + the swap-OFF baseline proved runs on NEITHER path). SOURCE:
+// recon FINDINGS Front 1, body-read PipelineStateCacheManager.cpp.
+//   0xbb2ad8 = FUN_180bb2ad8 = PSO PRECACHING Graphics ("Precached %u Graphics
+//              PSOs ... PipelineStateCacheManager.cpp:0x596") — the actual menu
+//              pipeline precache. Its reach swap-ON vs swap-OFF is the O4 trigger
+//              discriminator.
+//   0xbb23c0 = FUN_180bb23c0 = PSO PRECACHING Compute ("Precached %u Compute PSOs").
+constexpr uint32_t kRvaPsoPrecacheGfx  = 0xbb2ad8;
+constexpr uint32_t kRvaPsoPrecacheComp = 0xbb23c0;
 
 std::atomic<bool> g_armed{false};
 
@@ -54,6 +65,9 @@ std::atomic<uint64_t> g_driverCalls{0};
 std::atomic<uint64_t> g_orchCalls{0};      // compile orchestrator reached
 std::atomic<uint64_t> g_loadListCalls{0};  // mfLoadShaderList reached
 std::atomic<uint64_t> g_precacheCalls{0};  // _PrecacheShaderList reached
+// PROBE R3 — runtime PSO-precache reach counters (the actual menu pipeline build).
+std::atomic<uint64_t> g_psoGfxCalls{0};    // PSO PRECACHING Graphics reached
+std::atomic<uint64_t> g_psoCompCalls{0};   // PSO PRECACHING Compute reached
 
 // --- FUN_180b04984 lookupdata.bin loader after-hook ---
 // ABI (body-read): undefined8 (longlong p1, undefined8 p2, undefined8 p3,
@@ -138,6 +152,38 @@ void __fastcall HookedPrecache(void* self) {
     g_origPrecache(self);
 }
 
+// PROBE R3 — the RUNTIME PSO-precache (PipelineStateCacheManager). 2-arg
+// (param_1 = the manager `this`, param_2 = a u4 mode). Read [this+0x10] as a PSO
+// list-pointer base for a coarse "did it precache anything" signal (the decompile
+// computes the count as a delta of [param_1+0x10] across the inner call). THE O4
+// DISCRIMINATOR: this running swap-ON means the menu pipeline precache is reached
+// (gate is INSIDE it or downstream); NOT running swap-ON but running swap-OFF means
+// THIS is the missing trigger.
+using PsoPrecacheFn_t = void(__fastcall*)(void* self, unsigned int mode);
+
+PsoPrecacheFn_t g_origPsoGfx = nullptr;
+void __fastcall HookedPsoGfx(void* self, unsigned int mode) {
+    const uint64_t n = g_psoGfxCalls.fetch_add(1) + 1;
+    uint64_t listBase = 0;
+    if (self) std::memcpy(&listBase,
+        reinterpret_cast<const uint8_t*>(self) + 0x10, sizeof(listBase));
+    LOG_DEBUG_KV(kCat, "pso_precache_gfx_enter", KV("call_n", n),
+        KV("mode", (uint64_t)mode), KV("list_base", listBase),
+        KV::BareStr("detail",
+            "PSO PRECACHING Graphics REACHED (the menu pipeline precache). If this "
+            "fires swap-OFF but not swap-ON, THIS is the O4 missing trigger."));
+    g_origPsoGfx(self, mode);
+}
+
+PsoPrecacheFn_t g_origPsoComp = nullptr;
+void __fastcall HookedPsoComp(void* self, unsigned int mode) {
+    const uint64_t n = g_psoCompCalls.fetch_add(1) + 1;
+    LOG_DEBUG_KV(kCat, "pso_precache_comp_enter", KV("call_n", n),
+        KV("mode", (uint64_t)mode),
+        KV::BareStr("detail", "PSO PRECACHING Compute REACHED."));
+    g_origPsoComp(self, mode);
+}
+
 bool HookRva(const kcdx::pe::ModuleView& whgame, uint32_t rva, void* detour,
              void** origOut, const char* label) {
     void* target = reinterpret_cast<void*>(
@@ -170,12 +216,12 @@ std::atomic<bool> g_watcherStarted{false};
 DWORD WINAPI SummaryMain(LPVOID) {
     LOG_INFO_KV(kCat, "watcher_started",
         KV::BareStr("detail",
-            "KI-0028 watcher armed. PROBE R: loader_accept>0 swap-ON => cache "
-            "VALIDATES (proven). PROBE R2 (the O3 discriminator): precache_calls>0 "
-            "swap-ON => _PrecacheShaderList RAN, gate is in/after the submit; "
-            "precache_calls==0 but orch/loadlist>0 => gate is INSIDE the orchestrator "
-            "before the submit; orch_calls==0 => the compile sequence never starts "
-            "swap-ON, gate is between validation-accept and the orchestrator."));
+            "KI-0028 watcher armed. R: validation ACCEPTS (proven). R2: the "
+            "_PrecacheShaderList shaderlist path runs on NEITHER path (exonerated). "
+            "R3 (the O4 discriminator): pso_gfx_calls>0 swap-OFF but ==0 swap-ON => "
+            "the runtime PSO-precache (PipelineStateCacheManager) is THE missing "
+            "trigger — find what gates it. pso_gfx_calls>0 swap-ON too => it runs "
+            "but precaches 0 / the gate is downstream (the job-deferred PSO create)."));
     for (int reads = 0; reads < 40; ++reads) {  // ~2 min
         Sleep(kSummaryMs);
         LOG_INFO_KV(kCat, "summary",
@@ -185,7 +231,9 @@ DWORD WINAPI SummaryMain(LPVOID) {
             KV("driver_calls",  g_driverCalls.load()),
             KV("orch_calls",    g_orchCalls.load()),
             KV("loadlist_calls",g_loadListCalls.load()),
-            KV("precache_calls",g_precacheCalls.load()));
+            KV("precache_calls",g_precacheCalls.load()),
+            KV("pso_gfx_calls", g_psoGfxCalls.load()),
+            KV("pso_comp_calls",g_psoCompCalls.load()));
     }
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the watcher."));
@@ -249,6 +297,15 @@ void DispatchProbeStart() {
                    reinterpret_cast<void*>(&HookedPrecache),
                    reinterpret_cast<void**>(&g_origPrecache),
                    "PrecacheShaderList_FUN_1825091e0");
+    // PROBE R3 — the RUNTIME PSO-precache (the actual menu pipeline build path).
+    any |= HookRva(whgame, kRvaPsoPrecacheGfx,
+                   reinterpret_cast<void*>(&HookedPsoGfx),
+                   reinterpret_cast<void**>(&g_origPsoGfx),
+                   "PSOPrecacheGfx_FUN_180bb2ad8");
+    any |= HookRva(whgame, kRvaPsoPrecacheComp,
+                   reinterpret_cast<void*>(&HookedPsoComp),
+                   reinterpret_cast<void**>(&g_origPsoComp),
+                   "PSOPrecacheComp_FUN_180bb23c0");
 
     LOG_INFO_KV(kCat, "dispatch_hooks_armed", KV("ok", any ? 1 : 0),
         KV::BareStr("detail",
