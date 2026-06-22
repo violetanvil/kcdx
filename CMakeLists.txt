@@ -319,6 +319,7 @@ add_library(kcdx SHARED
     src/fs_takeover/seating_hook.cpp
     src/fs_takeover/boot_watch.cpp
     src/fs_takeover/present_probe.cpp
+    src/fs_takeover/pso_probe.cpp
     src/fs_takeover/pak_reader.cpp
     src/fs_takeover/asset_index.cpp
     src/fs_takeover/file_handle.cpp

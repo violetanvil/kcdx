@@ -31,6 +31,22 @@ commit_at_filing: 4befc07
 > frame (Reframe 6) — NOT the differentiator. The swap IS the differentiator (P-F holds), but the
 > divergence is **not** in this loop's state. STOP chasing frames on the wedged stack. Full A/B + the
 > reframe: `_research/ki0028-fsr2-poll-loop-recon/FINDING-real-rva-window-mode-loop.md` §"PROBE M RESULT".
+>
+> **CORRECTION 3 (2026-06-22) — NOT a hang; re-localized to "render-build stalls before pipeline
+> creation."** The whole "deadlock / hang / no-present" framing is dead by direct measurement: PROBE W
+> showed the game TICKS ~35/s, PROBE K showed it PRESENTS at 120fps with GPU scanout → frames are
+> presented BLACK (a render-CONTENT failure, not a hang). A real defect was found + FIXED (`e88a9eb`: the
+> `data/gameshaders/` shader alias was not folded to the indexed `shaders/` key — 21 shaders incl. the
+> Scaleform UI shader never loaded); still black after. The swap-off baseline reaches the menu (the swap is
+> the differentiator). PROBE P then hooked `ID3D12Device::CreateGraphicsPipelineState` (the consumption
+> side, identical swap-on/off) and found the engine creates **exactly ONE graphics PSO** the whole run (a
+> ~700-byte present-blit shader) and **zero compute PSOs** — vs the dozens-to-hundreds a rendering
+> CryEngine builds. So the render pipeline gets present up but **never builds the scene/material/UI
+> pipelines**: the shader-SYSTEM init stalls UPSTREAM of PSO creation (consistent with the swap-on-only 36
+> phantom `data/gameshaders/*.ext` probes + heavy `lookupdata.bin` re-reads). Served shader BYTES are proven
+> correct (cap-109 DEFLATE + want==got), so it is NOT corrupt content — it is the engine's shader-system
+> init not completing under the swap. Status stays OPEN; root cause (the precise stall mechanism, AP17)
+> still owed. Full trail: the FINDING §"PROBE P RESULT".
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**

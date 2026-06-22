@@ -639,8 +639,67 @@ theories (1)-(3) are accumulating on one symptom → the next step is a fresh-fr
 shader-variant/cache-validation path (which exact bytes/metadata the engine rejects), NOT fix #2 on a
 guess. This is a deeper render-subsystem investigation than the alias fold — a natural phase boundary.
 
+## PROBE P RESULT (RAN 2026-06-22, swap-ON) — O5 CONFIRMED: the engine builds ONE trivial PSO, never the scene/UI pipelines
+
+PROBE P (`src/fs_takeover/pso_probe.{h,cpp}`) hooked the CONSUMPTION side —
+`ID3D12Device::CreateGraphicsPipelineState` (slot 10) + `CreateComputePipelineState` (slot 11), captured
+via a one-shot `d3d12!D3D12CreateDevice` detour — which runs IDENTICALLY swap-on/off, escaping the trace
+blind spot. It logs per PSO call: HRESULT, null-PSO, and each shader blob's len + DXBC magic. Ground truth,
+swap-ON (user-confirmed black screen):
+
+- **device captured, hooks armed (`ok=1`)** — no P* miss; the instrument worked.
+- **`gfx_calls=1` for the ENTIRE run. `comp_calls=0`.** The engine created exactly ONE graphics pipeline
+  and ZERO compute pipelines.
+- **The one PSO is a trivial blit/present shader:** `vs_len=704 ps_len=752`, both `dxbc=1` (valid DXBC
+  magic `0x43425844`), `hr=0`, non-null. A ~700-byte VS/PS pair is the swapchain's final copy-to-backbuffer
+  pass — NOT a scene or material or UI pipeline.
+- Present is the same as PROBE K: `d_present=35 d_refresh=120` (presenting the empty backbuffer at the
+  display rate). Suite reached 320.
+
+**O5 CONFIRMED, O1/O2/O3 ALL FALSIFIED by one measurement:**
+- O1 (malformed served bytes) — FALSIFIED: the one blob seen is well-formed (`dxbc=1`).
+- O2 (bytes fine, PSO assembly fails) — FALSIFIED: `gfx_failed=0`; the one PSO created SUCCEEDED. (O2 also
+  requires MANY PSO calls to fail — there is only one, and it passed.)
+- O3 (PSOs fine, black downstream of PSO) — FALSIFIED in its premise: O3 assumes the engine builds its
+  normal pipeline set and the failure is after. It does NOT build them — `gfx_calls=1` is not "PSOs fine,"
+  it is "the engine never asks for the scene/UI pipelines at all."
+
+**The re-localized mechanism (a strong NEGATIVE, observed not inferred):** a CryEngine game rendering a
+scene + menu creates DOZENS-to-HUNDREDS of graphics PSOs (one per shader permutation / material / pass).
+The engine here creates exactly ONE — the present blit. So the render pipeline gets present up (the blit
+PSO + the swapchain) but **never proceeds to build the pipelines that draw content.** The black frame is
+NOT a broken shader, a bad PSO, or a downstream-of-PSO draw bug — it is that the render-content build
+**stalls UPSTREAM of PSO creation**, so the engine never requests the scene/material/UI pipelines. This is
+exactly O5: kcdx's FS serving diverts the engine off the render-build path before PSO creation.
+
+**This reconciles the swap-on-only tells already captured:** the 36 phantom `data/gameshaders/*.ext`
+probes + the heavy `%user%`/`%engine%` shader-cache dance (1256+1030 `lookupdata.bin` reads) are the engine
+**stuck in shader-SYSTEM initialization** — trying to resolve/enumerate/compile the shader set and never
+completing — so it never reaches material/scene PSO creation. Swap-off, that init completes (it reaches the
+menu = many PSOs), so the differentiator is something kcdx's serving does to the shader-system init/enum
+path, BEFORE any single PSO is built.
+
+**Next probe target (the shader-system init stall, theory-independent):** the question moves from "are the
+shader BYTES/PSOs right" (answered: the pipeline never gets there) to "WHERE does the engine's shader-system
+initialization stall under the swap, and what file operation does it loop/block on." The 36 phantom `.ext`
+probes + the `lookupdata.bin` re-reads are the lead — instrument what the engine does AFTER reading
+`lookupdata.bin` / a `gameshaders/*.ext` miss, swap-on: does it retry, enumerate a directory, or wait? The
+`got=-1` on `%user%/shaders/cache/globals.txt` (114×) is a concrete candidate — the engine reading an empty
+globals.txt and re-deriving the shader globals each time. NOT a fix on theory — a probe that observes the
+shader-init control flow's stall point. (Candidate seam: the shader-cache enumeration / globals-parse path,
+or a FindFirst/FindNext enumeration over `shaders/` that kcdx's find-slots serve differently — KI-0027 was
+exactly a find-slot mask divergence; the find slots are a prime suspect for an enumeration that returns the
+wrong set and stalls shader-system init.)
+
+**Status:** the bug is re-localized from "render content" to "shader-system INIT stalls before pipeline
+build." O5 confirmed by direct measurement (1 PSO, not hundreds). KI-0028 OPEN; root cause still owes the
+precise stall mechanism (AP17) — which file op the shader-system init loops/blocks on under the swap.
+
 ## Reuse pointers
 
+- PROBE P: `src/fs_takeover/pso_probe.{h,cpp}` — D3D12 device + PSO-creation hook; the consumption-side
+  instrument that runs identically swap-on/off (escapes the FS-trace blind spot). `gfx_calls` count is the
+  ground-truth signal: ~1 = render-build stalls before pipelines; dozens+ = pipelines built.
 - Script: `disasm_36eb39_outer_loop.py` (this dir) — targets the REAL RVAs; the offset base
   is `EXPORT_FFX = 0x4fb100`.
 - Wedge stack: `cdb_pl_probeL_wedge.txt` lines 270–287.

@@ -11,6 +11,7 @@
 #include "vtable_swap.h"
 #include "boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 boot-progress watcher
 #include "present_probe.h"  // === DIAGNOSTIC (PROBE K) === KI-0028 present-count delta
+#include "pso_probe.h"  // === DIAGNOSTIC (PROBE P) === KI-0028 shader-blob -> PSO
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -130,6 +131,20 @@ void __fastcall HookedConstructStore(void* csystem) {
     // NO-RESIDUE: remove with PROBE K on retirement.
     kcdx::fs_takeover::PresentProbeStart();
     // === END PROBE K arm ===
+
+    // === DIAGNOSTIC (PROBE P) — KI-0028 shader-blob -> PSO consumption =========
+    // PROBE K re-localized the wedge to BLACK FRAMES PRESENTED (120fps, GPU
+    // scanout); the shader-alias fix served the 21 real shaders, yet the screen
+    // is STILL black, and the served shader BYTES are proven complete + correct
+    // (cap-109 DEFLATE + want==got reads). PROBE P instruments the CONSUMPTION
+    // side — ID3D12Device::CreateGraphicsPipelineState (slot 10) — which runs
+    // IDENTICALLY swap-on AND swap-off, escaping kcdx's swap-off trace blind spot.
+    // It logs per PSO-creation: HRESULT, null-PSO, and each VS/PS blob's len +
+    // DXBC magic. Armed beside K, before the PROBE F noswap return, so the O4
+    // parity check (identical blobs/hr swap-on vs swap-off) is possible.
+    // NO-RESIDUE: remove with PROBE P on retirement.
+    kcdx::fs_takeover::PsoProbeStart();
+    // === END PROBE P arm ===
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
