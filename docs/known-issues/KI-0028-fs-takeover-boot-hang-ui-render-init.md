@@ -66,6 +66,24 @@ commit_at_filing: 4befc07
 > on (the H4-class P-F only killed for kcdx's added THREADS, never for the swap's effect on engine init
 > order/state). OPEN; next probe targets the kcdx-perturbed state the indexed-geometry build reads, not a
 > served file. Full trail: `_research/ki0028-cshaderman-pso-consumer-recon/FINDINGS.md` + `HANDLE-STRADDLE-LEAD.md` §"PROBE T RESULT".
+>
+> **CORRECTION 5 (2026-06-22) — a REAL FS-resolution gate was found + FIXED (`83a9279`); black persists, REINFORCING
+> CORRECTION 4.** The vanilla-vs-kcdx end-to-end FS map (`_research/ki0028-vanilla-init-fs-map/`) found a genuine
+> defect the prior render-axis probes were downstream of: the asset index keyed every pak entry by the BARE
+> central-directory name, dropping each pak's BIND-ROOT (the mount-point prefix vanilla's OpenPack slot-7
+> auto-derives from the pak's dir). A nested level pak (`Data/Levels/<lvl>/level.pak`) stores `leveldata.xml`
+> bare, but the engine requests it as `Levels/<lvl>/leveldata.xml` (body-read pathbuilder `0x4dd384`/`0x4dcbb3`);
+> kcdx stored it bare → every level-resource request MISSED. `BindRootOf` + the `<bind-root>/<name>` keying fixes
+> it (collision-safe: cross-pak collisions DROP 448→182; cap-112 (c) is the permanent regression). **Live verify:
+> the documented abort is CLEARED** — index built (77 paks, 516k entries), FS served 4435 pak reads with ZERO
+> level-resource misses, and an invasive capture shows the main thread in a healthy `PeekMessageW` pump with
+> `C_Game::CreateInstance` running on workers and NO `RaiseException`. **Black screen STILL persists** — exactly
+> CORRECTION 4's verdict: every kcdx-SERVED OUTPUT is now correct (the FS gate is closed) yet the frame
+> composites black, so the wedge is a kcdx-perturbed STATE/init-ORDER the geometry build depends on, NOT a served
+> file. The FS-resolution axis is now EXONERATED end-to-end (served bytes correct AND every requested path now
+> hits). OPEN; the next probe targets the perturbed state/order (CORRECTION 4's lead), with a fresh invasive
+> capture (use `qd`, not `q`). Full trail: `_research/ki0028-vanilla-init-fs-map/POST-FIX-LIVE-CAPTURE.md` +
+> `ROOT-CAUSE-bind-root-prefix.md`.
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
