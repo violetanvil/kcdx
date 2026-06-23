@@ -15,6 +15,7 @@
 #include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
 #include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
 #include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
+#include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -170,6 +171,12 @@ void __fastcall HookedConstructStore(void* csystem) {
     // A/B. NO-RESIDUE: remove with PROBE S on retirement.
     kcdx::fs_takeover::DrawcallProbeStart();
     // === END PROBE S arm ===
+
+    // === DIAGNOSTIC (PROBE W) — resolve WHGame's module bounds ONCE here, at the
+    // seat (single-threaded, before any FS slot fires), into lock-free atoms used
+    // by the vanilla-differential's caller attribution. NOT a function-local static
+    // on the hot path (that guard serialized worker threads + pegged the CPU). ===
+    kcdx::fs_takeover::BootTraceResolveWhBounds();
 
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",

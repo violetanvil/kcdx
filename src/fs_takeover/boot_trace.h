@@ -1,5 +1,7 @@
 #pragma once
 
+#include <windows.h>  // === DIAGNOSTIC (PROBE W) === GetModuleHandleW + IMAGE_* for BootTraceCallerRva
+#include <atomic>   // === DIAGNOSTIC (PROBE W) === lock-free WHGame bounds + once-per-caller gate
 #include <cstdint>  // uintptr_t (PROBE L object-member snapshot)
 #include <cstring>  // std::memcpy (PROBE L unaligned member read)
 #include <string>   // VpathForHandle resolution (FS-op trace contract)
@@ -114,22 +116,133 @@ inline void TraceMeta(const char* slot, const char* vpath, const char* how,
 // returns kcdx's answer UNCHANGED — the original's answer is compared + discarded,
 // so kcdx's behavior + the screen are identical (the log is the only delta).
 // NO-RESIDUE: remove with PROBE W on retirement.
+// === DIAGNOSTIC (PROBE W) — once-per-distinct-caller gate. The vanilla-
+// differential's COST is the engine-original call it makes ALONGSIDE kcdx's answer
+// (a pak-dir + disk query) on every HIT — during the boot storm the FS slots fire
+// thousands of times/sec on worker threads, so doing the doubled original-call
+// per-call pegs the CPU. The DIAGNOSTIC VALUE, though, is per-CALLER: once we know
+// "caller X gets a divergent answer for SOME path," the 100th identical divergence
+// from X adds nothing. So the differential runs only the FIRST time each distinct
+// caller_rva is seen (a tiny bounded lock-free set) — full attribution coverage,
+// near-zero steady cost. A caller of 0 (non-WHGame) is never gated in (skipped).
+// NO-RESIDUE: remove with PROBE W. ===
+// `kind` distinguishes the differential family (existence vs enum vs size) so the
+// SAME caller is reported once PER family — an IsFileExist3 first-seen does not
+// gate out that caller's later FindFirst differential. Mixed into the key.
+inline bool BootTraceCallerFirstSeen(uintptr_t caller, uint32_t kind = 0) {
+    if (caller == 0) return false;  // unattributable frame — do not run the cost.
+    const uintptr_t key = caller ^ (static_cast<uintptr_t>(kind) * 0x9E3779B97F4A7C15ull);
+    constexpr int kCap = 256;       // far more than the distinct FS callers at boot
+    static std::atomic<uintptr_t> seen[kCap]{};
+    const size_t h = (key >> 4) % kCap;  // cheap hash; collisions just under-report
+    // Linear-probe a few slots: claim the first empty one for `key`, or report
+    // already-seen if found. Lock-free CAS; bounded probe so the hot path is O(1).
+    for (int i = 0; i < 8; ++i) {
+        const size_t idx = (h + i) % kCap;
+        uintptr_t cur = seen[idx].load(std::memory_order_relaxed);
+        if (cur == key) return false;             // already ran for this caller+kind
+        if (cur == 0) {
+            uintptr_t expected = 0;
+            if (seen[idx].compare_exchange_strong(expected, key,
+                                                  std::memory_order_relaxed))
+                return true;                       // first time — run the differential
+            if (seen[idx].load(std::memory_order_relaxed) == key) return false;
+        }
+    }
+    return false;  // set full / probe exhausted — stop running (fail-safe to cheap)
+}
+
 inline void TraceVanillaDiff(const char* slot, const char* vpath,
-                             long long kcdxAnswer, long long vanillaAnswer) {
+                             long long kcdxAnswer, long long vanillaAnswer,
+                             uintptr_t caller = 0) {
     if (!BootWindowActive()) return;  // predicted-skip after boot
     if (kcdxAnswer == vanillaAnswer) return;  // MATCH — silent (the common case)
+    // PROBE W caller attribution: the engine return address, module-relative
+    // (subtract WHGame's base) so a divergence is tied to the engine SUBSYSTEM
+    // that asked — the geometry/UI loader vs a harmless shader-include check. 0
+    // when not captured (the older call sites). The caller resolves to an RVA the
+    // disassembly maps to a function.
     LOG_WARN_KV("VANILLA_DIFF", "diverge",
         kcdx::log::KV::BareStr("slot", slot),
         kcdx::log::KV("vpath", vpath ? vpath : "<null>"),
         kcdx::log::KV("kcdx", kcdxAnswer),
         kcdx::log::KV("vanilla", vanillaAnswer),
+        kcdx::log::KV("caller_rva", static_cast<long long>(caller)),
         kcdx::log::KV::BareStr("detail",
             "kcdx's index-HIT answer DIFFERS from what the engine original would "
             "return for this name — a correct-but-different-from-vanilla serve "
             "that can steer an engine loader down a different branch (load/skip/"
             "pick-a-different-source). This is the KI-0028 observability signal: "
-            "kcdx did not FAIL, it answered DIFFERENTLY. The vpath names what; the "
-            "engine decision it steers is downstream."));
+            "kcdx did not FAIL, it answered DIFFERENTLY. The vpath names what; "
+            "caller_rva names which engine subsystem asked; the decision it steers "
+            "is downstream."));
+}
+
+// === DIAGNOSTIC (PROBE W) — WHGame module bounds, resolved ONCE at seat into
+// plain atomics (NOT a function-local static — MSVC's thread-safe-init guard on a
+// local static is a hidden lock checked on EVERY call, and these helpers run on
+// the HOT multi-threaded FS path during boot; the guard serialized worker threads
+// and pegged the CPU machine-wide). BootTraceResolveWhBounds() is called once at
+// the seat (single-threaded, before any FS slot fires); the hot path only does
+// two relaxed atomic LOADS + a range compare — no lock, no PEB walk. ===
+inline std::atomic<uintptr_t> g_btWhBase{0};
+inline std::atomic<uintptr_t> g_btWhEnd{0};
+
+inline void BootTraceResolveWhBounds() {
+    HMODULE m = GetModuleHandleW(L"WHGame.dll");
+    if (!m) return;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(m);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(m);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    g_btWhEnd.store(base + nt->OptionalHeader.SizeOfImage, std::memory_order_relaxed);
+    g_btWhBase.store(base, std::memory_order_release);  // publish base LAST
+}
+
+// Caller return-address → WHGame-relative RVA. Returns 0 when the caller is NOT
+// in WHGame (kcdx-internal/thunk frame) or the bounds were not yet resolved. Hot
+// path: two relaxed loads + a compare, lock-free.
+inline uintptr_t BootTraceCallerRva(uintptr_t callerAddr) {
+    const uintptr_t s_whBase = g_btWhBase.load(std::memory_order_acquire);
+    const uintptr_t s_whEnd = g_btWhEnd.load(std::memory_order_relaxed);
+    if (s_whBase && callerAddr >= s_whBase && callerAddr < s_whEnd) {
+        return callerAddr - s_whBase;  // an RVA the WHGame disassembly maps.
+    }
+    return 0;  // caller not in WHGame — not an engine subsystem to attribute.
+}
+
+// === DIAGNOSTIC (PROBE W enum half) — the ENUM vanilla-differential. The
+// metadata-existence differential (above) answers "does kcdx give a different
+// EXISTENCE answer"; this answers the design's STRONGEST suspect — "does kcdx
+// hand the caller a different directory LISTING than vanilla." kcdx's ForEachFile/
+// FindFirst enumerates the UNIFIED set (the engine's on-disk entries PLUS the
+// index's pak-resident vpaths under the same prefix). Vanilla's enum returns ONLY
+// the disk/engine entries. So `count_pak_added` (the index-only pak entries kcdx
+// adds) IS the unified-set delta over vanilla. Logged ONLY when the delta is
+// non-zero (kcdx returned MORE than vanilla would), with the count split + caller.
+// A geometry/UI-loader caller getting extra pak-virtual entries it would not see
+// in vanilla can make it load/skip/iterate differently → the draw_indexed=0 lead.
+// Read-only: the walk already computed both halves; this only logs the split.
+// NO-RESIDUE: remove with PROBE W on retirement.
+inline void TraceVanillaEnumDiff(const char* slot, const char* pattern,
+                                 long long countDisk, long long countPakAdded,
+                                 uintptr_t caller = 0) {
+    if (!BootWindowActive()) return;  // predicted-skip after boot
+    if (countPakAdded == 0) return;   // kcdx returned the SAME set as vanilla — silent
+    if (!BootTraceCallerFirstSeen(caller, /*kind=enum*/3)) return;  // once per caller (log economy)
+    LOG_WARN_KV("VANILLA_DIFF", "enum_diverge",
+        kcdx::log::KV::BareStr("slot", slot),
+        kcdx::log::KV("pattern", pattern ? pattern : "<null>"),
+        kcdx::log::KV("count_vanilla", countDisk),
+        kcdx::log::KV("count_kcdx", countDisk + countPakAdded),
+        kcdx::log::KV("pak_added", countPakAdded),
+        kcdx::log::KV("caller_rva", static_cast<long long>(caller)),
+        kcdx::log::KV::BareStr("detail",
+            "kcdx's enumeration returned MORE entries than the engine original "
+            "would for this pattern — the unified-set delta (pak-resident vpaths "
+            "the engine's own disk/pak walk would not list at this point). A "
+            "loader that enumerates to decide what to load/iterate may behave "
+            "differently with the extra entries. caller_rva names the subsystem; "
+            "a geometry/UI-loader caller here is the KI-0028 lead."));
 }
 
 // Trace an open-family slot call (FOpen / AdjustFileName). `vpath` is the

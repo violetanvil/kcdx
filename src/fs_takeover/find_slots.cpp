@@ -1,6 +1,7 @@
 #include "find_slots.h"
 
 #include <windows.h>  // MultiByteToWideChar / WideCharToMultiByte (path widen/narrow)
+#include <intrin.h>   // === DIAGNOSTIC (PROBE W) === _ReturnAddress (caller attribution)
 
 #include <atomic>
 #include <cstring>
@@ -314,6 +315,21 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
     const AssetIndex& index = GetBuiltIndex();
     std::vector<FindEntry> entries =
         BuildUnifiedFindEntries(diskNames, diskIsDir, index, normPrefix, nameMask);
+
+    // PROBE W enum-differential: kcdx's unified set vs vanilla's disk-only set.
+    // diskNames.size() == what the engine original FindFirst would return;
+    // entries.size() - diskNames.size() == the kcdx-added delta (pak vpaths +
+    // PROBE Q synthetic subdirs). Logged iff non-zero, attributed to the engine
+    // caller — does kcdx hand THIS caller a different listing than vanilla?
+    {
+        const uintptr_t caller =
+            BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));
+        const long long countDisk = static_cast<long long>(diskNames.size());
+        const long long countAdded =
+            static_cast<long long>(entries.size()) - countDisk;
+        TraceVanillaEnumDiff("FindFirst", pattern, countDisk,
+                             countAdded > 0 ? countAdded : 0, caller);
+    }
 
     if (entries.empty()) {
         // No unified-set entry — the engine's no-match contract (-1). The
