@@ -1,0 +1,84 @@
+
+--- join_0x183ec85 @0x0183ec85 ---
+0x0183ec85: lea     rcx, [rsp + 0x50]
+0x0183ec8a: call    0x1804fc884
+0x0183ec8f: mov     rbx, qword ptr [rsp + 0x40]
+0x0183ec94: mov     eax, r14d
+0x0183ec97: mov     rsi, qword ptr [rsp + 0x48]
+0x0183ec9c: mov     rdi, qword ptr [rsp + 0x58]
+0x0183eca1: add     rsp, 0x20
+0x0183eca5: pop     r15
+0x0183eca7: pop     r14
+0x0183eca9: pop     r13
+0x0183ecab: ret     
+0x0183ecac: push    rbx
+0x0183ecae: sub     rsp, 0x20
+0x0183ecb2: mov     rbx, rdx
+
+--- tramp_0x183eb87 @0x0183eb87 ---
+0x0183eb87: mov     rdx, rax
+0x0183eb8a: lea     rcx, [rsp + 0x50]
+0x0183eb8f: call    0x1804fd468
+0x0183eb94: test    esi, esi
+0x0183eb96: jne     0x1823ac9ae
+0x0183eb9c: test    ebx, ebx
+0x0183eb9e: je      0x18183ebaa
+0x0183eba0: lea     rcx, [rsp + 0x20]
+0x0183eba5: call    0x1804fc884
+0x0183ebaa: mov     rbx, qword ptr [rsp + 0x50]
+0x0183ebaf: cmp     dword ptr [rbx - 8], 0
+0x0183ebb3: je      0x18183ebc7
+0x0183ebb5: .byte   0x80
+0x0183ebb6: .byte   0x3d
+
+--- tramp_0x183ea7f @0x0183ea7f ---
+0x0183ea7f: mov     al, 1
+0x0183ea81: mov     rcx, qword ptr [rbp + 8]
+0x0183ea85: xor     rcx, rsp
+0x0183ea88: call    0x181c1e8c0
+0x0183ea8d: lea     r11, [rsp + 0x110]
+0x0183ea95: mov     rbx, qword ptr [r11 + 0x20]
+0x0183ea99: mov     rsi, qword ptr [r11 + 0x30]
+0x0183ea9d: mov     rdi, qword ptr [r11 + 0x38]
+0x0183eaa1: mov     rsp, r11
+0x0183eaa4: pop     r15
+0x0183eaa6: pop     r14
+0x0183eaa8: pop     rbp
+0x0183eaa9: ret     
+0x0183eaaa: mov     qword ptr [rbx], rsi
+0x0183eaad: jmp     0x18183ea7f
+
+--- tramp_0x183ea81 @0x0183ea81 ---
+0x0183ea81: mov     rcx, qword ptr [rbp + 8]
+0x0183ea85: xor     rcx, rsp
+0x0183ea88: call    0x181c1e8c0
+0x0183ea8d: lea     r11, [rsp + 0x110]
+0x0183ea95: mov     rbx, qword ptr [r11 + 0x20]
+0x0183ea99: mov     rsi, qword ptr [r11 + 0x30]
+0x0183ea9d: mov     rdi, qword ptr [r11 + 0x38]
+0x0183eaa1: mov     rsp, r11
+0x0183eaa4: pop     r15
+0x0183eaa6: pop     r14
+0x0183eaa8: pop     rbp
+0x0183eaa9: ret     
+0x0183eaaa: mov     qword ptr [rbx], rsi
+0x0183eaad: jmp     0x18183ea7f
+0x0183eaaf: int3    
+0x0183eab0: .byte   0x48
+
+--- tramp_0x183ebc2 @0x0183ebc2 ---
+0x0183ebc2: mov     edi, 1
+0x0183ebc7: lea     rcx, [rsp + 0x50]
+0x0183ebcc: call    0x1804fc884
+0x0183ebd1: mov     rbx, qword ptr [rsp + 0x40]
+0x0183ebd6: mov     eax, edi
+0x0183ebd8: mov     rsi, qword ptr [rsp + 0x48]
+0x0183ebdd: add     rsp, 0x30
+0x0183ebe1: pop     rdi
+0x0183ebe2: ret     
+0x0183ebe3: int3    
+0x0183ebe4: mov     qword ptr [rsp + 8], rbx
+0x0183ebe9: mov     qword ptr [rsp + 0x10], rsi
+0x0183ebee: .byte   0x48
+0x0183ebef: .byte   0x89
+0x0183ebf0: jl      0x18183ec16

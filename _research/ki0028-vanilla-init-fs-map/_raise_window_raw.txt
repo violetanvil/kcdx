@@ -1,0 +1,82 @@
+RaiseException thunk RVA=0x03a02740 (VA 0x183a02740)
+
+===== raise_site_around_0x23acaca: window 0x023ac98a..0x023acada =====
+0x023ac98a: and      dword ptr [rcx - 1], ecx
+0x023ac98d: xor      al, al
+0x023ac98f: jmp      0x18183eb1d
+0x023ac994: lea      rdx, [rip + 0x168f845]
+0x023ac99b: lea      rcx, [rsp + 0x58]
+0x023ac9a0: call     0x1804f692c
+0x023ac9a5: xor      ebx, ebx
+0x023ac9a7: mov      esi, edi
+0x023ac9a9: jmp      0x18183eb87
+0x023ac9ae: lea      rcx, [rsp + 0x58]
+0x023ac9b3: call     0x1804fc884
+0x023ac9b8: nop      
+0x023ac9b9: jmp      0x18183eb9c
+0x023ac9be: cmp      byte ptr [rip + 0x257f20c], 0
+0x023ac9c5: je       0x18183ebc2
+0x023ac9cb: mov      r9, rbx
+0x023ac9ce: lea      r8, [rip + 0x23e52ab]
+0x023ac9d5: mov      edx, 0x22
+0x023ac9da: lea      rcx, [rip + 0x23e523f]
+0x023ac9e1: call     0x1804d4510
+0x023ac9e6: mov      rcx, qword ptr [rip + 0x257eed3]
+0x023ac9ed: mov      rax, qword ptr [rcx]
+0x023ac9f0: call     qword ptr [rax + 0x2a0]
+0x023ac9f6: xor      r9d, r9d
+0x023ac9f9: xor      r8d, r8d
+0x023ac9fc: mov      rcx, qword ptr [rax]
+0x023ac9ff: lea      edx, [r9 + 0x12]
+0x023aca03: mov      r10, qword ptr [rcx + 0x18]
+0x023aca07: mov      rcx, rax
+0x023aca0a: call     r10
+0x023aca0d: mov      rcx, qword ptr [rip + 0x30e968c]
+0x023aca14: mov      rax, qword ptr [rcx]
+0x023aca17: call     qword ptr [rax + 0xc0]
+0x023aca1d: mov      rdx, rbx
+0x023aca20: mov      rcx, qword ptr [rax]
+0x023aca23: mov      r8, qword ptr [rcx + 0xb0]
+0x023aca2a: mov      rcx, rax
+0x023aca2d: call     r8
+0x023aca30: nop      
+0x023aca31: jmp      0x18183ebc2
+0x023aca36: lea      rcx, [rip + 0x23e52bb]
+0x023aca3d: call     0x180a61d00
+0x023aca42: nop      
+0x023aca43: jmp      0x18183ec85
+0x023aca48: mov      rdx, rbx
+0x023aca4b: lea      rcx, [rip + 0x23e52be]
+0x023aca52: call     0x180a61d00
+0x023aca57: mov      rax, qword ptr [r15]
+0x023aca5a: mov      rcx, r15
+0x023aca5d: call     qword ptr [rax + 0xa8]
+0x023aca63: test     al, al
+0x023aca65: je       0x1823aca7f
+0x023aca67: mov      rcx, qword ptr [rip + 0x257ee52]
+0x023aca6e: mov      rax, qword ptr [rcx]
+0x023aca71: call     qword ptr [rax + 0x660]
+0x023aca77: test     al, al
+0x023aca79: je       0x18183ec85
+0x023aca7f: mov      rcx, qword ptr [rip + 0x257ee5a]
+0x023aca86: test     rcx, rcx
+0x023aca89: je       0x1823aca94
+0x023aca8b: mov      rax, qword ptr [rcx]
+0x023aca8e: call     qword ptr [rax + 0x110]
+0x023aca94: mov      rcx, qword ptr [rip + 0x257ee25]
+0x023aca9b: mov      rax, qword ptr [rcx]
+0x023aca9e: call     qword ptr [rax + 0x660]
+0x023acaa4: test     al, al
+0x023acaa6: jne      0x1823acac0
+0x023acaa8: mov      r9d, 0x2010
+0x023acaae: lea      r8, [rip + 0x23e521b]
+0x023acab5: mov      rdx, rbx
+0x023acab8: xor      ecx, ecx
+0x023acaba: call     qword ptr [rip + 0x1656888]
+0x023acac0: mov      ecx, 0xd2
+0x023acac5: call     0x1823dc960
+0x023acaca: nop      
+0x023acacb: jmp      0x18183ec85
+0x023acad0: mov      eax, dword ptr [rcx + 0x6d8]
+0x023acad6: test     eax, eax
+0x023acad8: je       0x1823acaea

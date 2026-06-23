@@ -1,0 +1,121 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.110 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.26100.8249 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\kcdx-engine\logs\kcdx_2026-06-22_18-21-45.dmp]
+User Mini Dump File: Only registers, stack and portions of memory are available
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Version 26200 MP (32 procs) Free x64
+Product: WinNt, suite: SingleUserTS Personal
+Edition build lab: 26100.1.amd64fre.ge_release.240331-1435
+Debug session time: Mon Jun 22 18:23:40.000 2026 (UTC - 7:00)
+System Uptime: 0 days 9:14:26.810
+Process Uptime: 0 days 0:01:55.000
+................................................................
+................................................................
+................................................................
+...........................
+Loading unloaded module list
+........................................
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr.
+(c588.9db0): Unknown exception - code 000000d2 (first/second chance not available)
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+For analysis of this file, run !analyze -v
+ntdll!NtGetContextThread+0x14:
+00007ff9`48521fc4 c3              ret
+0:000> cdb: Reading initial command '.lines -d; lmDvm WHGame; .ecxr; r rip,rcx,rdx,r8,r9; kn 30; q'
+Line number information will not be loaded
+Browse full module list
+start             end                 module name
+00007ff8`31e90000 00007ff8`379bb000   WHGame     (deferred)             
+    Mapped memory image file: E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.dll
+    Image path: E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\WHGame.dll
+    Image name: WHGame.dll
+    Browse all global symbols  functions  data
+    Timestamp:        Thu Apr 16 02:38:57 2026 (69E0AE31)
+    CheckSum:         00000000
+    ImageSize:        05B2B000
+    Translations:     0000.04b0 0000.04e4 0409.04b0 0409.04e4
+    Information from resource tables:
+rax=0000000000000000 rbx=0000000000000000 rcx=0000000000000000
+rdx=0000000000000000 rsi=0000000000000001 rdi=00000000000000d2
+rip=00007ff945921b6a rsp=000000adab4fd470 rbp=0000000000000000
+ r8=0000000000000000  r9=0000000000000000 r10=0000000000000000
+r11=0000000000000000 r12=000002161bc506a0 r13=000002158d6fe110
+r14=0000000000000000 r15=0000021589034940
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000206
+KERNELBASE!RaiseException+0x8a:
+00007ff9`45921b6a 0f1f440000      nop     dword ptr [rax+rax]
+Last set context:
+rip=00007ff945921b6a rcx=0000000000000000 rdx=0000000000000000 r8=0000000000000000 r9=0000000000000000
+*** WARNING: Unable to verify checksum for WHGame.dll
+ # Child-SP          RetAddr               Call Site
+00 000000ad`ab4fd470 00007ff8`3423caca     KERNELBASE!RaiseException+0x8a
+01 000000ad`ab4fd570 00007ff8`324fba9c     WHGame!NVSDK_NGX_UpdateFeature+0x7c4bda
+02 000000ad`ab4fd5b0 00007ff8`324fb6e0     WHGame!ffxFsr2ResourceIsNull+0x17099c
+03 000000ad`ab4fd630 00007ff8`324f9ad5     WHGame!ffxFsr2ResourceIsNull+0x1705e0
+04 000000ad`ab4fd660 00007ff8`324f9779     WHGame!ffxFsr2ResourceIsNull+0x16e9d5
+05 000000ad`ab4fd690 00007ff8`324f9360     WHGame!ffxFsr2ResourceIsNull+0x16e679
+06 000000ad`ab4fd700 00007ff8`3363e371     WHGame!ffxFsr2ResourceIsNull+0x16e260
+07 000000ad`ab4fd760 00007ff8`32a25f2e     WHGame!wh::game::C_Game::CreateInstance+0xa07d8d
+08 000000ad`ab4fd7a0 00007ff8`32a04ebf     WHGame!ffxFsr2ResourceIsNull+0x69ae2e
+09 000000ad`ab4fd830 00007ff8`32a26b38     WHGame!ffxFsr2ResourceIsNull+0x679dbf
+0a 000000ad`ab4fd860 00007ff8`32636131     WHGame!ffxFsr2ResourceIsNull+0x69ba38
+0b 000000ad`ab4fda60 00007ff8`32635bc4     WHGame!ffxFsr2ResourceIsNull+0x2ab031
+0c 000000ad`ab4fdb30 00007ff8`32635856     WHGame!ffxFsr2ResourceIsNull+0x2aaac4
+0d 000000ad`ab4fdbf0 00007ff8`32e4edb9     WHGame!ffxFsr2ResourceIsNull+0x2aa756
+0e 000000ad`ab4fdc40 00007ff8`323c2f69     WHGame!wh::game::C_Game::CreateInstance+0x2187d5
+0f 000000ad`ab4fdce0 00007ff8`326f9c39     WHGame!ffxFsr2ResourceIsNull+0x37e69
+10 000000ad`ab4fdd50 00007ff8`326fb017     WHGame!ffxFsr2ResourceIsNull+0x36eb39
+*** WARNING: Unable to verify checksum for KingdomCome.exe
+11 000000ad`ab4fdda0 00007ff7`e2ff36db     WHGame!ffxFsr2ResourceIsNull+0x36ff17
+12 000000ad`ab4fdf80 00007ff7`e2ff4ad5     KingdomCome+0x36db
+13 000000ad`ab4ff6a0 00007ff7`e2ff898a     KingdomCome+0x4ad5
+14 000000ad`ab4ff790 00007ff9`47e6e957     KingdomCome+0x898a
+15 000000ad`ab4ff7d0 00007ff9`48447c1c     kernel32!BaseThreadInitThunk+0x17
+16 000000ad`ab4ff800 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
