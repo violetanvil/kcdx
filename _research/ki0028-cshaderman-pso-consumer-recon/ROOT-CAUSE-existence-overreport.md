@@ -70,3 +70,13 @@ With the level loading, the render state CHANGED from the prior runs:
 - The `main_menu_kutnohorsko3.bk2` menu-background-video shows a `VANILLA_DIFF` (kcdx=1/vanilla=0) — a candidate next thread (does the menu video / Scaleform UI geometry path diverge?).
 
 **Note (user steer):** the window not being foreground is JUST alt-tab (the user reading logs) — NOT the cause; a CryEngine game renders in background (throttled), it does not go black. Focus is ruled out. The remaining bug is the indexed-geometry/draw layer with present now live — the same `draw_indexed=0` thread PROBE S found, now with the level actually loaded and present pumping.
+
+## FS LAYER NOW FULLY EXONERATED (2026-06-22, post-fix log mine) — the remaining black is RENDER, not filesystem
+
+Mined the post-fix run for any remaining FS gap on the menu's assets. Result: **kcdx serves the ENTIRE menu correctly end-to-end.**
+- Menu UI Scaleform: `Libs/UI//hud.gfx` (the `//` is harmless — kcdx's AdjustFileName normalizes it to `libs/ui/hud.gfx`) → `FOpen how=index-pak result=17`, reads succeed (`want==got`, FTell/FSeek ok). Same for `menu.gfx`, `overlay.gfx`, `buttons.gfx`, `gfxfontlib_glyphs.gfx` — all `how=index-pak`/`index-pak-serve`, served.
+- Menu background video `main_menu_kutnohorsko3.bk2` → `FOpen how=index-pak result=17`, served.
+- The remaining `result=0` misses are all benign: enumeration PATTERNS (`*.*`, `*.xml`, `*`), bare-dir existence probes (`data`, `data/`), genuinely-absent config files (`user.cfg`, `developer.cfg`, `autoexec.cfg` — vanilla misses too), and bare-pak existence-probes-served-elsewhere. No real asset fails.
+- The `VANILLA_DIFF kcdx=1/vanilla=0` on the `.gfx`/`.bk2` is the SAME harmless existence-disagreement already proven a red herring (kcdx says exists from index, then SERVES the file fine — exactly as the shaders did).
+
+**∴ the filesystem takeover is now serving correctly end-to-end** (level paks + UI + video + shaders all delivered). KI-0028's FS-serve chain (KI-0026 alias → KI-0027 enum → this level-pak coverage gap) is CLOSED. The remaining black screen — present advancing, `draw_indexed=0`, menu geometry not drawn — is downstream of file serving, in the engine's RENDER/geometry pipeline, NOT a kcdx FS gap. This is a genuinely different layer than everything KI-0028 has been. Open question: is the remaining render issue even kcdx-caused (the swap is still the differentiator per P-F, but the FS-serve mechanism by which it caused failures is now closed — so the swap may perturb render STATE in a non-FS way), or is it a deeper render-pipeline interaction. The next probe targets the draw/geometry layer with a clean FS beneath it (PROBE S's thread, advanced).
