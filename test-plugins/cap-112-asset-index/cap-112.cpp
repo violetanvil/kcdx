@@ -21,11 +21,20 @@
 //   (b) OVERLAY-WINS-VANILLA: inject a synthetic loose override keyed to that
 //       SAME vanilla vpath, rebuild, assert ResolveVPath now returns the Loose
 //       source (the override won), NOT the Pak source.
+//   (c) BIND-ROOT KEYING (KI-0028 regression): a NESTED level-pak file
+//       (Data/Levels/kutnohorsko/level.pak's `leveldata.xml`, stored BARE in the
+//       pak CD) resolves under its engine-requested bind-root-PREFIXED key
+//       `Levels/kutnohorsko/leveldata.xml` AND does NOT resolve under the bare
+//       name `leveldata.xml`. Proves the index keys each nested pak by the mount
+//       point vanilla's OpenPack derives — the prefix kcdx dropped, causing the
+//       level-load abort (black screen).
 //
-// (b) is the load-bearing FALSIFIABLE claim: a correct index resolves a vanilla
-// vpath to its pak source UNLESS a loose override exists, in which case the
-// override wins. A broken precedence (pak overwrites loose, or loose never
-// inserted) yields the WRONG ByteSource KIND -> FAIL. PASS requires BOTH.
+// (b) and (c) are the load-bearing FALSIFIABLE claims: (b) a correct index
+// resolves a vanilla vpath to its pak source UNLESS a loose override exists, in
+// which case the override wins (a broken precedence yields the WRONG ByteSource
+// KIND -> FAIL); (c) a nested pak's file resolves ONLY under its bind-root-
+// prefixed key (a regression to bare keying makes the prefixed lookup miss OR the
+// bare lookup hit -> FAIL). PASS requires ALL THREE.
 //
 // === The fixture (how it was derived — regenerate/verify) =================
 //
@@ -86,6 +95,18 @@ const char*    kVanillaVPath = "Objects/manmade/common_decorations/flags/flag.ca
 const uint64_t kExpectOffset = 0;        // local_header_offset
 const uint64_t kExpectSize   = 352571;   // uncompressed_size
 const uint16_t kExpectMethod = 0;        // STORED
+
+// (c) BIND-ROOT KEYING (KI-0028 regression). A NESTED-pak file — level.pak under
+// <game>/Data/Levels/kutnohorsko/ stores `leveldata.xml` BARE in its central
+// directory, but the engine requests it by the pak's mount point
+// `Levels/kutnohorsko/leveldata.xml` (the bind-root vanilla's OpenPack auto-
+// derives from the pak's dir). The index MUST key it under the bind-root-prefixed
+// form, or every level-resource request misses and the engine aborts the level
+// load (black screen). The falsifiable claim: the PREFIXED key resolves AND the
+// BARE key does NOT — proving the prefix is required, not merely present. If the
+// bind-root keying regresses to bare pe.name, the prefixed lookup misses → FAIL.
+const char* kNestedPrefixedVPath = "Levels/kutnohorsko/leveldata.xml";  // engine's request form
+const char* kNestedBareVPath     = "leveldata.xml";                     // the bare CDR name (must NOT resolve)
 
 namespace fst = kcdx::fs_takeover;
 namespace ao  = kcdx::asset_overlay;
@@ -189,16 +210,62 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
-    // Both (a) and (b) passed.
+    // --- (c) BIND-ROOT KEYING (KI-0028 regression). -----------------------
+    // Build over <game>/Data with no overlay (the (a) index already does, but
+    // rebuild clean so (b)'s injected overlay does not leak into (c)). Assert the
+    // nested level-pak file resolves under its bind-root-PREFIXED key and does NOT
+    // resolve under its bare CDR name — the prefix is required, not incidental.
+    ao::SetTestOverlayMap(ao::OverlayMap{});  // empty overlay for (c).
+    fst::AssetIndex idxBindRoot = fst::BuildAssetIndex(kGameDataDir);
+
+    const fst::ByteSource* nested = fst::ResolveVPath(idxBindRoot, kNestedPrefixedVPath);
+    if (nested == nullptr) {
+        std::snprintf(reason, sizeof(reason),
+            "(c) BIND-ROOT MISS (KI-0028): nested level-pak file '%s' did NOT "
+            "resolve — the engine requests it by this bind-root-prefixed path, but "
+            "the index has no key for it. This is the level-load-abort cause: a "
+            "nested pak keyed by bare pe.name (dropping the Levels/<lvl>/ mount "
+            "prefix) misses every level request. Fixture level.pak expected under "
+            "<game>/Data/Levels/kutnohorsko/ — if absent on this machine there was "
+            "nothing to index; FAIL, not a skip", kNestedPrefixedVPath);
+        Report(false, reason);
+        return true;
+    }
+    if (nested->kind != fst::ByteSource::Kind::Pak) {
+        std::snprintf(reason, sizeof(reason),
+            "(c) nested level-pak file '%s' resolved to a NON-Pak source (kind=%d) "
+            "with no overlay — expected Pak", kNestedPrefixedVPath, (int)nested->kind);
+        Report(false, reason);
+        return true;
+    }
+    // The bare CDR name must NOT resolve — if it does, the index kept bare keys
+    // (the regression), the prefix above was incidental, and the falsifiable half
+    // of the claim is broken.
+    const fst::ByteSource* bare = fst::ResolveVPath(idxBindRoot, kNestedBareVPath);
+    if (bare != nullptr) {
+        std::snprintf(reason, sizeof(reason),
+            "(c) BIND-ROOT KEYING REGRESSED: the bare CDR name '%s' RESOLVED "
+            "(kind=%d) — the index kept bare keys instead of bind-root-prefixed "
+            "ones. The engine never requests the bare name; a bare-keyed entry is "
+            "the KI-0028 miss waiting to happen. The prefixed key must be the ONLY "
+            "key", kNestedBareVPath, (int)bare->kind);
+        Report(false, reason);
+        return true;
+    }
+
+    // All of (a), (b), (c) passed.
     std::snprintf(reason, sizeof(reason),
         "kcdx unified asset index PASS — (a) vanilla vpath '%s' resolves O(1) to "
         "its Pak ByteSource {offset=%llu,size=%llu,method=%u (STORED)}; (b) a "
-        "synthetic loose override of the SAME vpath WINS — ResolveVPath flips to "
-        "the Loose source (diskPath='%s'). Proves the index composes the overlay "
-        "map (loose) over the discovered vanilla paks, overlay-wins-vanilla "
-        "decided once at build, one O(1) lookup per open",
+        "synthetic loose override of the SAME vpath WINS (Loose, diskPath='%s'); "
+        "(c) BIND-ROOT (KI-0028): nested '%s' resolves under its mount-prefixed key "
+        "while bare '%s' does NOT — the Levels/<lvl>/ prefix is required, proving "
+        "the engine-requested form keys correctly. Proves the index composes the "
+        "overlay over the discovered vanilla paks AND keys each nested pak by its "
+        "bind-root, one O(1) lookup per open",
         kVanillaVPath, (unsigned long long)kExpectOffset,
-        (unsigned long long)kExpectSize, kExpectMethod, fakeDisk.c_str());
+        (unsigned long long)kExpectSize, kExpectMethod, fakeDisk.c_str(),
+        kNestedPrefixedVPath, kNestedBareVPath);
     Report(true, reason);
     return true;
 }

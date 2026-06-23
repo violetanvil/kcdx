@@ -1,0 +1,52 @@
+total bare keys     : 574894  bare cross-pak collisions    : 448
+total bindroot keys : 581895  bindroot cross-pak collisions: 182
+
+--- bare cross-pak collisions (what LAST-pak-wins silently masks TODAY) ---
+   rc_cachestate.txt -> ['Engine.pak', 'hlod.pak', 'hlod_prefab.pak']
+   terrain/svo/0128_0128_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_0384_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_0640_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_0896_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_1152_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_1408_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_1664_0128_0256.idx -> ['IPL_svo.pak', 'svo-part0.pak', 'svo.pak']
+   terrain/svo/0128_1920_0128_0256.idx -> ['IPL_svo.pak', 'svo.pak']
+   terrain/svo/0384_0128_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_0384_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_0640_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_0896_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_1152_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_1408_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_1664_0128_0256.idx -> ['IPL_svo.pak', 'svo-part0.pak', 'svo.pak']
+   terrain/svo/0384_1920_0128_0256.idx -> ['IPL_svo.pak', 'svo.pak']
+   terrain/svo/0640_0128_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0640_0384_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+   terrain/svo/0640_0640_0128_0256.idx -> ['svo-part0.pak', 'svo.pak']
+  ...(448 total)
+
+--- bindroot cross-pak collisions (the FIX) ---
+   rc_cachestate.txt -> ['Engine.pak', 'hlod_prefab.pak']
+   shaders/cache/d3d12/agcbuiltin.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/agcbuiltin.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/auxgeom.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/binkvideo.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/bitonicsort.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/bitonicsort.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/clouds.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/colorspaceutils.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/common.cfib -> ['ShaderCache.pak', 'ShaderCacheStartup.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/common.cfxb -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commoncolortransforms.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commondebugpass.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commondebugpasstess.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commoneffectlayerpass.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commonmath.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commonmotionblurpass.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commonmotionblurpasstess.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commonshadowgenpass.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+   shaders/cache/d3d12/commonshadowgenpasstess.cfib -> ['ShaderCache.pak', 'ShadersBin.pak']
+  ...(182 total)
+
+leveldata bindroot keys : ['levels/klaster/leveldata.xml', 'levels/kutnohorsko/leveldata.xml', 'levels/trosecko/leveldata.xml']
+engine config keys      : ['config/aiclearpoolsonlevelunload.cfg', 'config/autotestchain.cfg', 'config/config.dat', 'config/cvargroups/sys_spec_characters.cfg', 'config/cvargroups/sys_spec_full.cfg', 'config/cvargroups/sys_spec_globalillumination.cfg']
+shaders keys (sample)   : ['shaders/cache/d3d12/agcbuiltin.cfib', 'shaders/cache/d3d12/agcbuiltin.cfxb', 'shaders/cache/d3d12/auxgeom.cfxb', 'shaders/cache/d3d12/binkvideo.cfxb']

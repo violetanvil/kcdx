@@ -65,11 +65,42 @@ Open design questions (surface to user):
 - Whether existing bare-keyed hits (the engine paks under `%engine%/`, the `data/gameshaders/` fold) must keep
   their current keys → the bind-root rule must reproduce them, not regress them.
 
-## Still-unverified (carried forward)
+## Confirmed this pass — bind-root rule pinned + collision-safety proven (2026-06-22)
 
-- The exact `OpenPack` auto-root rule (`FUN_18193cb14` body) — whether the bind-root is the full relative dir
-  for all paks, or only nested ones, or whether some paks bind at root. PIN THIS before building the fix
-  (it decides the key-construction rule for EVERY pak, not just level paks).
-- That `leveldata.xml` (vs another read) is the specific file populating the record — narrowed but not
-  body-proven (LOADER-TRACE edge). Does NOT block the fix: every level-resource read fails the same bind-root
-  gap, so fixing the key construction fixes whichever file the record reads.
+Three ground-truth checks closed the open questions and confirmed the fix is correct + safe.
+
+1. **The bind-root IS the pak's directory relative to the Data/Engine root** (`%engine%`-style data-root NOT
+   part of the key). From `front2-open-mount-archive.md:70-78`: slot 7 `FUN_18193cb14` auto-derives the
+   bind-root as `strrchr(path,'\\')` = the pak's directory path; the data-root (`this[0x31]`/`+0x188`) is a
+   *recognized root* the leaf normalizer (`FUN_1804621bc`, FRONT-4 Stage 2) leaves un-prefixed. So a top-level
+   `Data/*.pak` / `Engine/*.pak` binds at an EMPTY bind-root (bare keys, unchanged) and a nested
+   `Data/Levels/<lvl>/*.pak` binds at `levels/<lvl>/`.
+
+2. **The engine requests level-pak files WITH the `Levels/<lvl>/` prefix** (body-read, `_bodies.txt:18-115`):
+   `CResourceList::Load` @ `0x4dcb60` builds `"Levels/" + <lvl>` (`0x4dcbb3`+`0x4628a0`), and the pathbuilder
+   `0x4dd384` prepends that root to `auto_resourcelist.txt`/`resourcelist.txt` (`0x4dcd2e`/`0x4dcd54`). The
+   engine asks for `Levels/<lvl>/<file>`; kcdx stored it bare → MISS. (`resourcelist.txt` itself is the benign
+   red herring — it exists in NO pak, so its miss is benign in vanilla too; the file that MATTERS,
+   `leveldata.xml`, IS in `level.pak` keyed bare, and is requested via the same `Levels/<lvl>/` path family.)
+
+3. **The bind-root fix REDUCES cross-pak collisions and is collision-safe** (`_collision_check.txt`, full
+   vanilla pak set — `collision_check.py`): keying by `<bind-root>/<name>` drops cross-pak collisions
+   **448 → 182**. Bare keying TODAY silently masks 448 collisions via LAST-pak-wins (e.g. every level's
+   `terrain/svo/*.idx` collides with the global `svo.pak`); the bind-root disambiguates 266 of them by mount
+   point. The 182 residual are genuine vanilla duplicates (`ShaderCache.pak` ≡ `ShadersBin.pak` shader-cache
+   entries) — vanilla resolves those by mount order too, so LAST-pak-wins stays the correct deterministic
+   fallback. Engine paks keep their content-rooted keys (`config/…`, `shaders/cache/…`) because their
+   top-level paks bind at the EMPTY root, so `%engine%/`/`data/gameshaders/` folds still land. `leveldata.xml`
+   now keys as `levels/<lvl>/leveldata.xml` — exactly what the engine requests.
+
+**Fix decision (user-approved 2026-06-22):** key each pak entry by `<pak-dir relative to its root>/<pe.name>`,
+NormalizeVPath-folded. The data/gameshaders fold's `"This IS KI-0028"` comment in `asset_index.cpp` is a
+PARTIAL prior finding (it fixed the shader-alias miss, a real but separate sub-case) — it is not the
+level-load-abort cause; the bind-root gap is. Reconcile that comment when the fix lands.
+
+## Still-unverified (does NOT block the fix)
+
+- That `leveldata.xml` (vs another level-metadata read) is the specific file populating
+  `[ILevelSystem+0x58]`/the name — narrowed but not body-proven (LOADER-TRACE §4). Does NOT block: every
+  level-resource read fails the same bind-root gap, so fixing key construction fixes whichever file the record
+  reads. The live boot is the falsifier — menu→level-load success confirms the record populates.
