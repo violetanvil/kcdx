@@ -164,22 +164,31 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     std::vector<FindEntry> set =
         BuildUnifiedFindEntries(diskNames, diskIsDir, idx, prefix, /*nameMask=*/"");
 
-    // (a) UNION + de-dup — exactly {a.dds, b.dds}; no second a.dds, no sub/c.dds,
-    //     no other/d.dds.
-    const bool aOnce   = CountEntry(set, "a.dds") == 1;
-    const bool hasB    = HasEntry(set, "b.dds");
-    const bool noDeep  = !HasEntry(set, "c.dds") && !HasEntry(set, "sub/c.dds");
-    const bool noSib   = !HasEntry(set, "d.dds");
-    if (set.size() != 2 || !aOnce || !hasB || !noDeep || !noSib) {
+    // (a) UNION + de-dup — under an EMPTY (match-all) mask the set is
+    //     {a.dds (disk), b.dds (index pak), sub (synthetic DIR for ui/sub/c.dds)}.
+    //     The empty mask is a match-all glob (== "*.*"/"*"), so PROBE Q's synthetic
+    //     directory entry for the immediate-child subdir 'sub' IS emitted (the
+    //     engine's own dir walk returns subdirs for a match-all glob — KI-0028
+    //     MaskMatchesDirectories). The deeper FILE 'sub/c.dds' is NOT emitted as a
+    //     file (single-level); it is surfaced as the 'sub' DIRECTORY the engine
+    //     recurses into. (g) below verifies the mask gate: a specific-ext mask
+    //     '*.xml' does NOT emit 'sub'.
+    const bool aOnce    = CountEntry(set, "a.dds") == 1;
+    const bool hasB     = HasEntry(set, "b.dds");
+    const bool hasSubDir = HasEntry(set, "sub");           // synthetic dir (match-all mask)
+    const bool noDeepFile = !HasEntry(set, "c.dds") && !HasEntry(set, "sub/c.dds");
+    const bool noSib    = !HasEntry(set, "d.dds");
+    if (set.size() != 3 || !aOnce || !hasB || !hasSubDir || !noDeepFile || !noSib) {
         std::snprintf(reason, sizeof(reason),
-            "(a) unified set wrong — size=%zu (expected 2), a.dds count=%zu "
+            "(a) unified set wrong — size=%zu (expected 3), a.dds count=%zu "
             "(expected 1, the loose-skip de-dup), has b.dds=%d (expected 1), "
-            "no deeper=%d, no sibling=%d. The union of the disk walk + the index "
-            "pak-vpaths under 'ui/' must be exactly {a.dds (disk), b.dds (index "
-            "pak)} — a wrong count means the union/de-dup/single-level select is "
-            "broken (the table-glob would enumerate the wrong entries)",
-            set.size(), CountEntry(set, "a.dds"), (int)hasB, (int)noDeep,
-            (int)noSib);
+            "has 'sub' synthetic dir=%d (expected 1 — empty mask is match-all, so "
+            "the immediate-child subdir IS emitted), no deeper FILE=%d, no "
+            "sibling=%d. Under a match-all mask the set is {a.dds (disk), b.dds "
+            "(index pak), sub (synthetic dir for ui/sub/c.dds)} — a wrong count "
+            "means the union/de-dup/single-level/synthetic-dir select is broken",
+            set.size(), CountEntry(set, "a.dds"), (int)hasB, (int)hasSubDir,
+            (int)noDeepFile, (int)noSib);
         Report(false, reason);
         return true;
     }
@@ -302,19 +311,69 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         }
     }
 
+    // (g) SYNTHETIC-DIR MASK GATE — the KI-0028 regression. PROBE Q emits a
+    //     synthetic DIRECTORY entry for an immediate-child subdir so a single-level
+    //     FindFirst surfaces the subdir the engine recurses into. But that emission
+    //     must honor the engine's _wfindfirst64 dir-vs-file glob semantics: a
+    //     specific-extension mask ("*.xml") returns FILES ONLY (a directory has no
+    //     extension, so it does not match), while a match-all mask ("*.*"/"*"/"")
+    //     returns subdirs too. The bug: PROBE Q emitted the subdir IGNORING the
+    //     mask, so FindFirst("prefabs/*.xml") returned the 66 'prefabs/<subdir>'
+    //     directory entries (vanilla returns only the 3 real .xml files) — bogus
+    //     dir entries on the content/geometry enum path. FAILS if a "*.xml" mask
+    //     emits the subdir, OR a "*.*" mask drops it.
+    {
+        AssetIndex didx;
+        InsertPak(didx, "prefabs/chest.xml");        // a real top-level .xml file
+        InsertPak(didx, "prefabs/animal/cow.xml");   // under a subdir → 'animal' is the synthetic dir
+        const std::string dprefix = Key("prefabs/");
+
+        // *.xml (specific ext) → FILES ONLY: must return {chest.xml}, NO 'animal' dir.
+        std::vector<FindEntry> xmlSet =
+            BuildUnifiedFindEntries(/*diskNames=*/{}, /*diskIsDir=*/{}, didx,
+                                    dprefix, Key("*.xml"));
+        const bool xmlNoDir = !HasEntry(xmlSet, "animal");
+        const bool xmlHasFile = HasEntry(xmlSet, "chest.xml");
+
+        // *.* (match-all) → INCLUDES the subdir: must return 'animal' as a dir.
+        std::vector<FindEntry> allSet =
+            BuildUnifiedFindEntries(/*diskNames=*/{}, /*diskIsDir=*/{}, didx,
+                                    dprefix, Key("*.*"));
+        const bool allHasDir = HasEntry(allSet, "animal");
+
+        if (!xmlNoDir || !xmlHasFile || !allHasDir) {
+            std::snprintf(reason, sizeof(reason),
+                "(g) synthetic-dir mask gate wrong — '*.xml' has 'animal' dir=%d "
+                "(MUST be 0 — a specific-ext glob excludes directories, like "
+                "_wfindfirst64), '*.xml' has chest.xml=%d (expected 1), '*.*' has "
+                "'animal' dir=%d (MUST be 1 — a match-all glob includes subdirs). "
+                "The bug (KI-0028): PROBE Q emitted the subdir IGNORING the mask, so "
+                "FindFirst('prefabs/*.xml') returned bogus directory entries the "
+                "engine never asked for on the content-enum path",
+                (int)HasEntry(xmlSet, "animal"), (int)xmlHasFile,
+                (int)allHasDir);
+            Report(false, reason);
+            return true;
+        }
+    }
+
     std::snprintf(reason, sizeof(reason),
         "kcdx FindFirst/FindNext/FindClose unified-enumeration core PASS — "
-        "(a) the union of the disk walk + the index pak-vpaths under 'ui/' is "
-        "exactly {a.dds (disk), b.dds (index pak)}: the loose override 'a.dds' "
-        "appears once (loose-skip de-dup), the deeper 'ui/sub/c.dds' and sibling "
-        "'other/d.dds' excluded (single-level); (b) the pak-only 'b.dds' the disk "
+        "(a) the union of the disk walk + the index pak-vpaths under 'ui/' (empty "
+        "match-all mask) is {a.dds (disk), b.dds (index pak), sub (synthetic dir "
+        "for ui/sub/c.dds)}: the loose override 'a.dds' appears once (loose-skip "
+        "de-dup), the deeper FILE 'ui/sub/c.dds' surfaces as the 'sub' DIRECTORY "
+        "(not a file), the sibling 'other/d.dds' excluded; (b) the pak-only 'b.dds' the disk "
         "walk cannot see IS surfaced (the KI-0027 fix); (c) a file's find-data "
         "clears attr bit 0x10 @0x00 and writes the base name NUL-terminated @0x24; "
         "(d) a directory SETS bit 0x10; (e) a long name is bounded + terminated "
         "within the caller buffer; (f) a restrictive 'gender__*.xml' mask returns "
         "ONLY the matching pak vpath (gender__patch.xml), excluding gender.xml / "
         "soul_ability__x.xml / other.xml — the index arm honors the filename glob, "
-        "not the directory only (the KI-0027 mask-blind over-match regression). "
+        "not the directory only (the KI-0027 mask-blind over-match regression); "
+        "(g) a '*.xml' specific-ext mask excludes the synthetic subdir entry while "
+        "'*.*' includes it (the KI-0028 PROBE Q mask-bypass fix — _wfindfirst64 "
+        "dir-vs-file glob semantics, so a content enum never gets bogus dirs). "
         "Proves the unified-enumeration + find-data ABI "
         "the slots 63/64/65 rest on. LIVE-LAUNCH-ONLY (NOT asserted here): the "
         "_wfindfirst64 disk walk, the find-handle pool mint, the per-call buffer "

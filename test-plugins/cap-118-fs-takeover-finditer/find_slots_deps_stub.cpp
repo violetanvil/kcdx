@@ -78,6 +78,18 @@ const AssetIndex& GetBuiltIndex() {
     return kEmpty;
 }
 
+// FoldEngineAliasToIndexKey — reached by IndexDirPrefix (the slot impls' prefix
+// fold). The test's index keys carry no engine alias (%engine%/data/gameshaders),
+// so an identity stub is correct for the pure core under test.
+void FoldEngineAliasToIndexKey(std::string& /*key*/) {}
+
+// BootWatchTickCount — reached only through boot_trace.h's BootWindowActive (the
+// PROBE I extended-window check). A 0 tick count keeps the extended window
+// inactive; paired with init::Current()==AfterGameApply, BootWindowActive() is
+// false, so the slot impls' trace calls (incl. the PROBE W differential) are
+// no-ops in the test build.
+uint64_t BootWatchTickCount() { return 0; }
+
 }  // namespace kcdx::fs_takeover
 
 // === init::Current — post-boot phase so BootWindowActive() is false. =========

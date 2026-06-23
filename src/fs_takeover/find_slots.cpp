@@ -111,6 +111,21 @@ bool WildcardMatch(const std::string& name, const std::string& mask) {
     return m == mask.size();
 }
 
+// Does this filename mask match a DIRECTORY entry? Mirrors Windows _wfindfirst64:
+// a "match-all" glob (`*`, `*.*`, or an empty/no-filename mask) returns subdirs;
+// a specific-extension glob (`*.xml`, `*.ent`) returns only files of that ext —
+// a directory name has no extension, so it does not match `*.<ext>`. (KI-0028:
+// PROBE Q emitted synthetic subdir entries IGNORING the mask, so
+// `FindFirst("Prefabs/*.xml")` returned 66 bogus directory entries vanilla never
+// returns — a content-enum serve-incorrectness. This restores the engine's own
+// dir-vs-file glob semantics.) `*.*` is the Windows special case that matches
+// everything including extensionless/dir names, so it is treated as match-all.
+bool MaskMatchesDirectories(const std::string& mask) {
+    if (mask.empty()) return true;            // no filename filter → all entries
+    if (mask == "*" || mask == "*.*") return true;  // Windows match-all forms
+    return false;  // a specific-extension glob (*.xml/*.ent/…) excludes directories
+}
+
 // Run the engine on-disk walk for `resolvedPattern` (the slot-1-resolved disk
 // pattern "<dir>/<glob>") on kcdx's OWN CRT (_wfindfirst64/_wfindnext64), pushing
 // each entry's BASE NAME + its directory flag into the parallel out-vectors. The
@@ -213,11 +228,20 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
         const size_t sep = vpath.find('/', normPrefix.size());
         if (sep != std::string::npos) {
             // A deeper subdir. PROBE Q: emit the IMMEDIATE child subdir name as a
-            // synthetic DIRECTORY entry (deduped), instead of silently skipping —
-            // so a single-level FindFirst surfaces the subdir the engine recurses
-            // into. The subdir name = the path segment between normPrefix and the
-            // next '/'. The mask filter does NOT apply to a directory (the engine's
-            // own dir walk returns subdirs regardless of a "*.<ext>" file glob).
+            // synthetic DIRECTORY entry (deduped), so a single-level FindFirst
+            // surfaces the subdir the engine recurses into. The subdir name = the
+            // path segment between normPrefix and the next '/'.
+            //
+            // KI-0028 FIX: emit the synthetic dir ONLY when the caller's mask
+            // would match a directory — a `*.*`/`*` glob (the engine's own dir
+            // walk returns subdirs for it), NOT a specific-extension glob like
+            // `*.xml`/`*.ent` (vanilla's _wfindfirst64 returns files only there).
+            // Without this gate, `FindFirst("Prefabs/*.xml")` returned 66 bogus
+            // subdir entries (3 real .xml + 66 dirs) vanilla never returns — a
+            // content-enum serve-incorrectness on the geometry/prefab path. The
+            // shader-recursion case (`Shaders/HWScripts/*.*` → the CryFX subdir)
+            // still works: `*.*` matches directories.
+            if (!MaskMatchesDirectories(nameMask)) continue;
             std::string subdir = vpath.substr(normPrefix.size(),
                                               sep - normPrefix.size());
             if (subdir.empty()) continue;
