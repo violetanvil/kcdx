@@ -29,6 +29,16 @@ constexpr int kCmdSlot_DrawIndexedInstanced = 13;
 // (the prior 47 was ClearDepthStencilView — its by-value DSV handle was deref'd as
 // an RT-handle array → the AV at HookedOMSetRT+0x11 in dump kcdx_2026-06-22_16-35-19).
 constexpr int kCmdSlot_OMSetRenderTargets   = 46;
+// === DIAGNOSTIC (PROBE X) — IA-setup slots (SDK header-verified 0-based, same
+// d3d12.h source as the slots above; the count cross-checks DrawInstanced=12 +
+// OMSetRenderTargets=46). The discriminator: is ANY index buffer ever BOUND
+// swap-ON? ia_set_ib==0 (vs >0 swap-OFF) => the indexed-geometry path is
+// abandoned UPSTREAM of command-list recording (never bound); ia_set_ib>0 with
+// draw_indexed==0 => bound but the draw is skipped (falsifies "geometry never
+// created"). ===
+constexpr int kCmdSlot_IASetPrimitiveTopology = 20;
+constexpr int kCmdSlot_IASetIndexBuffer       = 43;
+constexpr int kCmdSlot_IASetVertexBuffers     = 44;
 
 std::atomic<bool> g_armed{false};
 std::atomic<bool> g_cmdVtablePatched{false};  // patch the shared cmd-list vtable once
@@ -39,6 +49,15 @@ std::atomic<uint64_t> g_drawInstanced{0};
 std::atomic<uint64_t> g_drawIndexed{0};
 std::atomic<uint64_t> g_omSetRT{0};
 std::atomic<uint64_t> g_omSetRT_nullRT{0};   // OMSetRenderTargets with 0 RTs / null handle
+// === PROBE X counters — IA index/vertex/topology binds ===
+std::atomic<uint64_t> g_iaSetIB{0};   // IASetIndexBuffer calls (index buffer BOUND)
+std::atomic<uint64_t> g_iaSetVB{0};   // IASetVertexBuffers calls
+std::atomic<uint64_t> g_iaSetTopo{0}; // IASetPrimitiveTopology calls
+// First-IB-view one-shot capture (the IB actually bound: GPU VA / format / size).
+std::atomic<bool>     g_firstIBCaptured{false};
+std::atomic<uint64_t> g_firstIB_va{0};
+std::atomic<uint64_t> g_firstIB_size{0};
+std::atomic<uint64_t> g_firstIB_fmt{0};
 
 void** VtableOf(void* obj) { return *reinterpret_cast<void***>(obj); }
 
@@ -101,6 +120,49 @@ void STDMETHODCALLTYPE HookedOMSetRT(
     g_origOMSetRT(self, numRTs, rtHandles, singleHandle, dsHandle);
 }
 
+// --- PROBE X: ID3D12GraphicsCommandList::IASetIndexBuffer (slot 43) ---
+// The decisive discriminator. Pass-through + count; capture the first bound IB
+// view once (no per-call logging/alloc — hot path). A null pView is a valid call
+// (unbind) — counted, but it carries no view to capture.
+using IASetIB_t = void(STDMETHODCALLTYPE*)(void* self,
+                                           const D3D12_INDEX_BUFFER_VIEW* pView);
+IASetIB_t g_origIASetIB = nullptr;
+void STDMETHODCALLTYPE HookedIASetIB(void* self,
+                                     const D3D12_INDEX_BUFFER_VIEW* pView) {
+    g_iaSetIB.fetch_add(1);
+    if (pView) {
+        bool expected = false;
+        if (g_firstIBCaptured.compare_exchange_strong(expected, true,
+                                                       std::memory_order_acq_rel)) {
+            g_firstIB_va.store(pView->BufferLocation, std::memory_order_relaxed);
+            g_firstIB_size.store(pView->SizeInBytes, std::memory_order_relaxed);
+            g_firstIB_fmt.store(static_cast<uint64_t>(pView->Format),
+                                std::memory_order_relaxed);
+        }
+    }
+    g_origIASetIB(self, pView);
+}
+
+// --- PROBE X: ID3D12GraphicsCommandList::IASetVertexBuffers (slot 44) ---
+using IASetVB_t = void(STDMETHODCALLTYPE*)(
+    void* self, UINT startSlot, UINT numViews,
+    const D3D12_VERTEX_BUFFER_VIEW* pViews);
+IASetVB_t g_origIASetVB = nullptr;
+void STDMETHODCALLTYPE HookedIASetVB(void* self, UINT startSlot, UINT numViews,
+                                     const D3D12_VERTEX_BUFFER_VIEW* pViews) {
+    g_iaSetVB.fetch_add(1);
+    g_origIASetVB(self, startSlot, numViews, pViews);
+}
+
+// --- PROBE X: ID3D12GraphicsCommandList::IASetPrimitiveTopology (slot 20) ---
+using IASetTopo_t = void(STDMETHODCALLTYPE*)(void* self,
+                                             D3D12_PRIMITIVE_TOPOLOGY topo);
+IASetTopo_t g_origIASetTopo = nullptr;
+void STDMETHODCALLTYPE HookedIASetTopo(void* self, D3D12_PRIMITIVE_TOPOLOGY topo) {
+    g_iaSetTopo.fetch_add(1);
+    g_origIASetTopo(self, topo);
+}
+
 void PatchCommandListVtableOnce(void* cmdList) {
     bool expected = false;
     if (!g_cmdVtablePatched.compare_exchange_strong(expected, true,
@@ -120,6 +182,20 @@ void PatchCommandListVtableOnce(void* cmdList) {
                           reinterpret_cast<void*>(&HookedOMSetRT),
                           reinterpret_cast<void**>(&g_origOMSetRT),
                           "OMSetRenderTargets");
+    // === PROBE X — the IA-bind discriminator (is any index buffer ever bound?) ===
+    any |= HookVtableSlot(cmdList, kCmdSlot_IASetIndexBuffer,
+                          reinterpret_cast<void*>(&HookedIASetIB),
+                          reinterpret_cast<void**>(&g_origIASetIB),
+                          "IASetIndexBuffer");
+    any |= HookVtableSlot(cmdList, kCmdSlot_IASetVertexBuffers,
+                          reinterpret_cast<void*>(&HookedIASetVB),
+                          reinterpret_cast<void**>(&g_origIASetVB),
+                          "IASetVertexBuffers");
+    any |= HookVtableSlot(cmdList, kCmdSlot_IASetPrimitiveTopology,
+                          reinterpret_cast<void*>(&HookedIASetTopo),
+                          reinterpret_cast<void**>(&g_origIASetTopo),
+                          "IASetPrimitiveTopology");
+    // === END PROBE X arm ===
     LOG_INFO_KV(kCat, "cmdlist_hooks_armed", KV("ok", any ? 1 : 0),
         KV::BareStr("detail",
             "patched the shared ID3D12GraphicsCommandList vtable: DrawInstanced "
@@ -170,7 +246,17 @@ DWORD WINAPI SummaryMain(LPVOID) {
             KV("draw_instanced",  g_drawInstanced.load()),
             KV("draw_indexed",    g_drawIndexed.load()),
             KV("om_set_rt",       g_omSetRT.load()),
-            KV("om_null_rt",      g_omSetRT_nullRT.load()));
+            KV("om_null_rt",      g_omSetRT_nullRT.load()),
+            // === PROBE X — the IA-bind discriminator. ia_set_ib==0 (vs >0
+            // swap-OFF) => indexed path abandoned upstream of recording (never
+            // bound); ia_set_ib>0 + draw_indexed==0 => bound but draw skipped;
+            // first_ib_va==0 with ib>0 => bound to a null/invalid IB. ===
+            KV("ia_set_ib",       g_iaSetIB.load()),
+            KV("ia_set_vb",       g_iaSetVB.load()),
+            KV("ia_set_topo",     g_iaSetTopo.load()),
+            KV("first_ib_va",     g_firstIB_va.load()),
+            KV("first_ib_size",   g_firstIB_size.load()),
+            KV("first_ib_fmt",    g_firstIB_fmt.load()));
     }
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the draw watcher."));

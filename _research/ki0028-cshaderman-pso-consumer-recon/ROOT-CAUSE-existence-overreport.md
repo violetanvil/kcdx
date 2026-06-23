@@ -80,3 +80,18 @@ Mined the post-fix run for any remaining FS gap on the menu's assets. Result: **
 - The `VANILLA_DIFF kcdx=1/vanilla=0` on the `.gfx`/`.bk2` is the SAME harmless existence-disagreement already proven a red herring (kcdx says exists from index, then SERVES the file fine — exactly as the shaders did).
 
 **∴ the filesystem takeover is now serving correctly end-to-end** (level paks + UI + video + shaders all delivered). KI-0028's FS-serve chain (KI-0026 alias → KI-0027 enum → this level-pak coverage gap) is CLOSED. The remaining black screen — present advancing, `draw_indexed=0`, menu geometry not drawn — is downstream of file serving, in the engine's RENDER/geometry pipeline, NOT a kcdx FS gap. This is a genuinely different layer than everything KI-0028 has been. Open question: is the remaining render issue even kcdx-caused (the swap is still the differentiator per P-F, but the FS-serve mechanism by which it caused failures is now closed — so the swap may perturb render STATE in a non-FS way), or is it a deeper render-pipeline interaction. The next probe targets the draw/geometry layer with a clean FS beneath it (PROBE S's thread, advanced).
+
+## ⚠ PROBE X RESULT (RAN 2026-06-22 19:10, swap-ON) — the indexed-draw path is ABANDONED UPSTREAM of recording (never bound), NOT skipped-at-draw
+
+PROBE X (`drawcall_probe.cpp` + IA-setup slots 43/44/20, SDK-header-verified) hooked `IASetIndexBuffer`/`IASetVertexBuffers`/`IASetPrimitiveTopology` as pass-through counters. Live swap-ON, black (`kcdx-dev_2026-06-22_19-10-46.log`, DRAW_PROBE summary):
+
+```
+draw_indexed=0   ia_set_ib=0      first_ib_va=0  first_ib_size=0  first_ib_fmt=0
+draw_instanced=13649   ia_set_vb=13649   ia_set_topo=13649   om_set_rt=3326  om_null_rt=0
+```
+
+**VERDICT — outcome A: `ia_set_ib=0` (no index buffer EVER bound swap-ON).** But `ia_set_vb` and `ia_set_topo` BOTH == `draw_instanced` (13649) — the engine does FULL IA setup (vertex buffer + topology + DrawInstanced) for the non-indexed fullscreen passes, but **never once calls IASetIndexBuffer**. So the indexed-geometry mesh-draw path is **abandoned UPSTREAM of command-list recording** — it is NOT "buffers bound but the draw skipped" (that would show ia_set_ib>0); the render pass / submission that issues indexed mesh draws never reaches the command list at all.
+
+**This FALSIFIES "the geometry is created+bound but the draw is skipped per-draw."** The next probe goes UPSTREAM of the draw: either (a) the index buffers are never CREATED (hook the device's CreateCommittedResource / CreatePlacedResource — are index-buffer resources made swap-ON?), or (b) the scene/UI mesh render PASS that would issue indexed draws is never entered (a higher-level engine decision — visibility/scene-graph/render-list-population — drops all real geometry before it reaches D3D12). The 13649 non-indexed draws are the frame scaffolding (fullscreen post/clear/sky passes — vertex+topology+DrawInstanced, no index); the real content geometry path never runs.
+
+**Still a clean read regardless of the black screen** — the verdict is entirely from the counters vs the known swap-OFF baseline (draw_indexed=96). The probe is read-only pass-through; the screen stayed black as expected. The discriminator did its job: upstream-abandonment, not per-draw skip. KI-0028 OPEN.
