@@ -101,3 +101,24 @@ A fresh-frame subagent (leading theory WITHHELD) designed the next probe. Reuse-
 **Cleanliness:** the first launch (passive trace) carries ZERO "still-black-but-broke-differently" risk — it changes no byte/handle/return, the log is the deliverable. Only the B follow-up is behavioral; keep it caller-scoped (one prefix) + assert in-log that table-DB prefixes still get the unified set, so a table-DB regression shows as a distinct signal, never silently conflated with "still black."
 
 **NOTE — this reframes the takeover question if B fires:** the unified-set enumeration (the totalizing-invariant design §5.1) returning pak-resident entries the engine's loose walk wouldn't list could make the geometry loader load/skip/iterate differently. The fix (per total-ownership) would be to make kcdx's enum impl return the RIGHT set for the geometry caller from inside its own ownership — not thunk back.
+
+---
+
+## PROBE W — the vanilla-DIFFERENTIAL self-validation pass (user-chosen 2026-06-22; supersedes PROBE V as the build target)
+
+**Why (the user's question, answered):** our logging catches kcdx FAILURES, but kcdx never fails here — it serves CORRECTLY while the engine silently makes a different (successful) decision. The logging gap is that it flags "correct serve", never "correct serve that DIFFERS FROM VANILLA". PROBE W closes that gap — and it is the standing tracked want (`feedback_debug_reset_frame_after_two_same_axis`: "a takeover self-validation pass to close the observability gap"). If kept, it is permanent observability infrastructure, not a throwaway probe.
+
+**The design — surgical, reuses already-captured machinery (`metadata_slots.cpp` read this session):**
+- The 8 metadata-slot originals are ALREADY captured (`g_origIsFolder`/`g_origIsFileExist3`/`g_origGetFileAttributes`/`g_origGetFileStat`/`g_origGetFileSize`/… via `SetMetadataOriginals`) and ALREADY called on the index-MISS arm.
+- The answer model is: index-HIT → kcdx's index answer; index-MISS → call the original. **On a MISS kcdx already returns the original's answer → no divergence possible. The unmeasured divergence is in the HIT case** — where kcdx answers from its index INSTEAD of asking the original, and may answer DIFFERENTLY.
+- **PROBE W: on an index HIT, ALSO call the captured original (read-only metadata — idempotent, no handle, no cursor, no mutation — SAFE) and log iff the two answers DIFFER**, with caller return address. Tag `VANILLA_DIFF`. One line ONLY on a divergence (existence verdict differs, attr/folder-flag differs, size differs) → the log is silent when kcdx matches vanilla and SHOUTS the exact op + caller + both answers when it doesn't.
+
+**Op safety (the load-bearing constraint — which ops may call the original alongside):**
+- **SAFE (call original alongside, differential):** existence (`IsFileExist` 67/70), `IsFolder` (13), `GetFileAttributes` (68), `GetFileStat` (69), `GetFileSize`-by-name (45/92/93), and the ENUM SET (`ForEachFile` 14 / `FindFirst` 63 — compare the returned set vs the original's set). All idempotent read-only.
+- **NEVER call original alongside (side-effecting):** open (mints a handle), read (advances a cursor), write/mutate. kcdx's content for these is already proven correct (`diffs=0`); they need no differential.
+
+**Enum differential (the strongest suspect, per PROBE V outcome B):** for `ForEachFile`/`FindFirst` on a HIT, also run the original enumeration and log `count_kcdx` vs `count_original` + the SET DIFFERENCE (entries kcdx returns that the original wouldn't, and vice versa) with the caller. This catches the unified-set divergence (the design §5.1 totalizing invariant) AS IT HAPPENS, attributed to the caller — directly answering "does kcdx hand the geometry loader a different directory listing than vanilla."
+
+**Outcome:** one swap-ON launch yields the FULL map of every op where kcdx's answer diverges from vanilla, with the caller. A divergence on a geometry/UI-loader caller = the mechanism, named. ZERO divergences logged = the entire "kcdx answers differently" class is falsified by direct measurement (the strongest kill — pivots OFF the filesystem to a non-CCryPak engine-state side-effect).
+
+**Cleanliness:** the differential is read-only (safe ops only) and logs only on divergence — it changes NO answer kcdx returns (it calls the original, compares, discards the original's answer, returns kcdx's exactly as before). So "still black" stays clean and the screen behaves identically; the `VANILLA_DIFF` log is the deliverable. The ONE risk: calling the original metadata body must use the SAME intact object (it reads the engine's pak vector/search-path/alias members — all preserved by the vtable-only swap, same §-safety as the existing miss thunk). NOT YET BUILT.
