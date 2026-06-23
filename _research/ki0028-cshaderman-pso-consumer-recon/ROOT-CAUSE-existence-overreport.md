@@ -62,6 +62,53 @@ Under what key the nested paks are indexed must match the engine's request shape
 
 So the level-pak coverage gap WAS a real chain-blocker and the recursive walk fixes it. One layer of KI-0028 resolved.
 
+## ⚠ CORRECTION (2026-06-22 20:49, live invasive cdb + log) — the "VERIFIED fix" above is OVERTURNED
+
+The "abort is GONE / no regression" claim above was PREMATURE. On a clean FULL swap
+(PROBE Z2 `kFamAll`, build 07eb837+) the **"level can't be loaded — kutnohorsko" abort
+is BACK** (`kcdx-dev_2026-06-22_20-49-13.log`), and a live invasive cdb attach (PID 20724,
+detached `qd`) shows the main thread in `MessageBoxA` under `WHGame!C_Game::CreateInstance`
+(the level-load-failure dialog) — ZERO kcdx frames on any of 194 threads.
+
+### What is CERTAIN now (live-confirmed)
+
+- The main thread is in `MessageBoxA` under `WHGame!C_Game::CreateInstance` — the engine's
+  level-load-FAILURE dialog. ZERO kcdx frames on any of 194 threads. The boot ran ~2.5 min,
+  reached the LEVEL load (kutnohorsko), and the engine itself aborted the load.
+- kcdx returns `result=0` / `how=miss-original` for level resource files the level load needs:
+  `loose_open_failed vpath="levels/kutnohorsko/auto_resourcelist.txt" errno=2` (kcdx tried a
+  LOOSE disk open `data\levels\kutnohorsko\auto_resourcelist.txt`, file-not-found), then
+  `how=miss-original result=0` — the original ALSO returns 0. Same for `resourcelist.txt`.
+  These files live INSIDE the level paks (whose CONTENTS were indexed) yet do not resolve.
+- The full swap engaged correctly: `kcdx_owned=31 probe_z_live_mask=15` (kFamAll).
+
+### What I got WRONG / must NOT over-claim
+
+- The "level MOUNT opens the .pak FILE and kcdx misses it" was too specific — the `.pak`-file
+  lines I first read were AdjustFileName RESOLVES, not FOpens; no `FOpen .pak ... result=` line
+  was found. The mount mechanism is NOT yet pinned.
+- **The PROBE Z (no-op swap) "MENU" is NOT a clean control.** That run requested `level.pak`
+  ZERO times — it reached the MAIN MENU, which does NOT load the kutnohorsko LEVEL (the menu
+  background is a video, not the playable level). So no-op-swap and full-swap failed at
+  DIFFERENT stages: no-op never reached the level load; full-swap reached it and aborted. The
+  "no-op renders / full-swap black" comparison does NOT cleanly isolate kcdx slot logic — they
+  did not run the same code path.
+- Therefore this session's "FS fully exonerated" and "swap mechanism innocent → render layer"
+  conclusions are UNSAFE — built partly on the non-equivalent no-op-vs-full comparison.
+
+### The open question (needs a clean probe, not another guess)
+
+What is certain: kcdx fails to serve some level resource files (`*resourcelist.txt`,
+plausibly more) the level load needs — they are inside the indexed level paks yet resolve to
+miss. WHY they miss (a key-normalization gap on `levels/` vs `data/levels/`, a pak-content
+indexing gap for these specific files, or the engine reading them via a path kcdx mis-resolves)
+is NOT yet pinned and must be probed, not assumed. The `data/levels/` prefix / key-normalization
+gap (the original KI-0028 hypothesis) is the LEADING but UNVERIFIED candidate.
+
+The recursive-walk "VERIFIED fix" above is at minimum INCOMPLETE (the abort is back on a full
+swap); whether 18-37 was a real fix later regressed or never reached the level load is
+unreconciled.
+
 ## NEXT LAYER EXPOSED — present now PUMPS but indexed-geometry draws still absent (the original no-present black, advanced)
 
 With the level loading, the render state CHANGED from the prior runs:
