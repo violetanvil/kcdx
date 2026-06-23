@@ -93,7 +93,7 @@ void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
     return kcdx_FOpen(self, pName, szMode, nFlags);
 }
 
-bool SwapVtableOnObject(void* pCryPak) {
+bool SwapVtableOnObject(void* pCryPak, bool forceAllThunk) {
     if (!pCryPak) {
         LOG_ERROR_KV(kCat, "swap_null_object",
             kcdx::log::KV::BareStr("detail",
@@ -131,7 +131,10 @@ bool SwapVtableOnObject(void* pCryPak) {
         size_t kcdxOwned = 0;
         for (size_t i = 0; i < count; ++i) {
             const SlotRow& row = table[i];
-            if (row.impl == Impl::Kcdx) {
+            // === DIAGNOSTIC (PROBE Z) — a no-op swap forces EVERY slot to thunk
+            // to the engine original, so no kcdx FS slot logic runs (the swap
+            // mechanism still happens). NO-RESIDUE: revert with PROBE Z. ===
+            if (row.impl == Impl::Kcdx && !forceAllThunk) {
                 g_kcdxVtable[i] = row.kcdx_fn;
                 ++kcdxOwned;
                 // Capture the ORIGINAL AdjustFileName body (slot 1) for the
@@ -163,6 +166,9 @@ bool SwapVtableOnObject(void* pCryPak) {
         LOG_INFO_KV(kCat, "kcdx_vtable_built",
             kcdx::log::KV("slots", static_cast<uint64_t>(count)),
             kcdx::log::KV("kcdx_owned", static_cast<uint64_t>(kcdxOwned)),
+            // PROBE Z witness: forceAllThunk → kcdx_owned=0 (no kcdx slot logic;
+            // the swap mechanism happened, every slot thunks to the original).
+            kcdx::log::KV("probe_z_force_all_thunk", forceAllThunk ? 1 : 0),
             kcdx::log::KV::BareStr("detail",
                 "built the kcdx CCryPak vtable from the per-slot table — every "
                 "THUNK slot points at the engine's original body (captured from "

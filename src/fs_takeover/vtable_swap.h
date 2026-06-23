@@ -30,7 +30,15 @@ namespace kcdx::fs_takeover {
 // Returns true on a completed swap; false (logged loud) if pCryPak is null or
 // its current vtable pointer is null — in which case the object is left
 // untouched (the engine keeps its own vtable; no kcdx ownership this boot).
-bool SwapVtableOnObject(void* pCryPak);
+//
+// === DIAGNOSTIC (PROBE Z) — forceAllThunk: a NO-OP swap. When true, the kcdx
+// vtable is built with EVERY slot forced to the THUNK path (pointing at the
+// engine original), so the swap MECHANISM happens identically (same object, the
+// [obj+0x00] overwrite, the seat timing) but ZERO kcdx FS slot logic runs. The
+// one variable that isolates "the swap mechanism" from "kcdx's slot behavior":
+// if a no-op swap still goes black, the mechanism is the differentiator, not the
+// FS logic. NO-RESIDUE: the param + its build-loop branch revert with PROBE Z.
+bool SwapVtableOnObject(void* pCryPak, bool forceAllThunk = false);
 
 // === DIAGNOSTIC (PROBE U) — the kcdx vtable buffer address kcdx wrote into the
 // CCryPak object at the swap, for the post-seat reswap watcher. NO-RESIDUE. ===

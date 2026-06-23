@@ -209,7 +209,37 @@ void __fastcall HookedConstructStore(void* csystem) {
     }
     // === END PROBE F ===
 
-    if (!SwapVtableOnObject(pCryPak)) {
+    // === DIAGNOSTIC (PROBE Z) — a `<kcdx-engine>/kcdx-thunkswap` marker makes the
+    // swap a NO-OP: kcdx installs its OWN vtable on the object (same mechanism —
+    // the [obj+0x00] overwrite, object identity, seat timing, the index still
+    // builds) but EVERY slot thunks to the engine original, so ZERO kcdx FS slot
+    // logic runs. The one variable that isolates the swap MECHANISM from kcdx's
+    // slot BEHAVIOR. Outcome map (KI-0028 P-Z):
+    //   still BLACK → the swap mechanism (object layout/overwrite/timing/a touched
+    //     member) is the differentiator, NOT kcdx's FS logic → bisect the mechanism.
+    //   boots to MENU → the mechanism is innocent; kcdx's actual slot logic causes
+    //     it → re-enable slot families one at a time to find which.
+    // Composes with noswap (noswap = no swap at all; thunkswap = swap, no logic).
+    // NO-RESIDUE: removed with PROBE Z. Scratch.
+    bool forceAllThunk = false;
+    {
+        std::wstring thunkMarker =
+            (kcdx::paths::EngineDataDirPath() / L"kcdx-thunkswap").wstring();
+        if (GetFileAttributesW(thunkMarker.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            forceAllThunk = true;
+            LOG_INFO_KV(kCat, "probe_z_thunkswap_active",
+                kcdx::log::KV::BareStr("detail",
+                    "PROBE Z: kcdx-thunkswap marker present — the swap installs "
+                    "kcdx's vtable with EVERY slot thunking to the engine original "
+                    "(no kcdx FS slot logic runs; the swap mechanism + index build "
+                    "happen identically). If boot still goes black, the swap "
+                    "mechanism is the differentiator; if it reaches the menu, "
+                    "kcdx's slot logic is."));
+        }
+    }
+    // === END PROBE Z (marker read; threaded into SwapVtableOnObject below) ===
+
+    if (!SwapVtableOnObject(pCryPak, forceAllThunk)) {
         // SwapVtableOnObject already logged the specific reason. Leave g_swapped
         // set: a null/failed object will not become valid on a re-fire of this
         // single-call helper, and re-attempting per call would spam. The engine
