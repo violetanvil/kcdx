@@ -32,8 +32,22 @@ kcdx IS the filesystem; the engine asks it "serve `data/levels/kutnohorsko/hlod.
 
 "level can't be loaded" (`cant_load=1`) is in BOTH prior black runs (17-34, 16-39) with NO differential. The black screen WAS this level-load failure all along — the engine reached the menu's background level load, missed the level paks, and aborted (silent only because prior runs were killed before/around the popup). PROBE W's read-only differential made the investigation finally read the FS trace at the failure point; it did not cause it.
 
-## The fix probe / read owed (AP17 — confirm before fixing)
+## PINNED (2026-06-22, code + disk read) — it is a COVERAGE GAP: the index build never walks the per-level subdir paks
 
-- Read kcdx's index build (`asset_index` / the pak walk at seat) + `ResolveVPath`: does it index `Data/Levels/<level>/*.pak` at all, and under what key (`levels/...` vs `data/levels/...`)? The enum finding `levels/*.*` but the component-pak open missing `data/levels/...` says the index has the DIR but resolves the component-pak REQUEST shape (`data/levels/...`) to a miss.
-- Confirm: is it a PREFIX mismatch (`data/` not folded to the index key) or a COVERAGE gap (the per-level component paks under `Data/Levels/<level>/` never indexed)? The fix differs: prefix-fold in `ResolveVPath` vs walk the level dirs at index build.
-- The `how=miss-original result=0` (kcdx missed AND the original missed) is the tell: kcdx's index doesn't carry these, so it falls to the engine original which also can't resolve them at this point — exactly the KI-0026 "kcdx must own the resolution the engine can't do itself" shape.
+CONFIRMED it is a coverage gap, NOT a prefix mismatch:
+
+- **kcdx's index build (`IndexPakRoot`, `asset_index.cpp:37`) enumerates only `<root>/*.pak` via `std::filesystem::directory_iterator` — SINGLE-LEVEL, non-recursive** (`asset_index.cpp:47`). It walks the 42 top-level `Data/*.pak` files and the `Engine/*.pak` files. It NEVER descends into subdirectories.
+- **The level component paks live one level deeper: `Data/Levels/kutnohorsko/*.pak`** — 10 paks on disk (`cestool.pak`, `hlod.pak`, `hlod_vegetation.pak`, `level.pak`, `svo-part0..2.pak`, `terrain.pak`, `recast.pak`, `IPL_svo.pak`). These are exactly the paks the engine requested under `data/levels/kutnohorsko/` and kcdx missed.
+- So the per-level component paks are **never indexed** → kcdx returns `how=miss-original result=0` for every `data/levels/<level>/<component>.pak` request → falls to the engine original (which also can't resolve them at this point) → the engine finds the level pak set nowhere → `RaiseException(0xD2)` level-load-fail exit.
+
+**AP17 mechanism (falsifiable):** the wrong value = the un-indexed `Data/Levels/<level>/*.pak` component paks (absent from kcdx's index); who wrote it = `IndexPakRoot`'s single-level `directory_iterator` glob (`asset_index.cpp:37-69`); why inevitable = `directory_iterator` does not recurse, so any pak nested below `<root>/` (level paks, and potentially other nested vanilla pak trees) is structurally invisible to the index — kcdx then misses every request for them, and the takeover (which removed the engine's own ability to find them via the swapped vtable) has no fallback that resolves them.
+
+The `data/gameshaders/` alias (`asset_index.cpp:227`) is a SEPARATE KI-0026 fix (a prefix REPLACE for shaders) — NOT this bug. The level paks need COVERAGE (walk the nested level dirs), not a prefix fold.
+
+## The fix (kcdx owns the serve — the user's principle)
+
+kcdx must index the level component paks so it serves them when the engine asks. The fix shape is a design decision (surfaced):
+- **Recurse the pak walk** (`recursive_directory_iterator`) so ALL nested vanilla paks (level paks + any other nested pak tree) are indexed — broadest, most total-ownership-faithful, but picks up every nested pak everywhere (verify no unwanted/duplicate ingestion).
+- **OR specifically walk `Data/Levels/<level>/*.pak`** (a targeted second pass over the known level-pak location) — narrower, but a named special-case rather than a general "index everything nested".
+
+Under what key the nested paks are indexed must match the engine's request shape (`data/levels/<level>/<component>.pak` — the engine requests with the `data/` prefix here, per the trace), so the resolve path covers the exact request. KI-0028 OPEN; fix pending the design choice.
