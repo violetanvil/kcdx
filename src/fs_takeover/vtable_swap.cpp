@@ -6,6 +6,7 @@
 #include "vtable_table.h"
 #include "open_slots.h"      // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
 #include "metadata_slots.h"  // SetMetadataOriginals (the 8 metadata-slot originals captured for the miss thunk)
+#include "enum_diff_probe.h"  // === DIAGNOSTIC (PROBE Y) — SetEnumOriginalsForDiff (enumeration vanilla-differential capture)
 #include "boot_trace.h"      // === DIAGNOSTIC (PROBE L) === pak-handle-vector snapshot around the open
 #include "../log.h"
 #include "../test.h"
@@ -159,6 +160,13 @@ bool SwapVtableOnObject(void* pCryPak) {
         // capture above). The KCDX metadata rows above already wired the kcdx
         // impls into g_kcdxVtable; this captures the originals those impls thunk.
         SetMetadataOriginals(
+            reinterpret_cast<const void* const*>(originalVtable));
+        // === DIAGNOSTIC (PROBE Y) — capture the engine ORIGINAL enumeration
+        // slots (14/63/64/65) from the SAME live original vtable, for the
+        // boot-window enumeration vanilla-differential (enum_diff_probe.h). The
+        // ONLY FS surface kcdx synthesizes with no captured original; this gives
+        // it one for the read-only replay-and-diff. NO-RESIDUE: remove with PROBE Y.
+        SetEnumOriginalsForDiff(
             reinterpret_cast<const void* const*>(originalVtable));
         LOG_INFO_KV(kCat, "kcdx_vtable_built",
             kcdx::log::KV("slots", static_cast<uint64_t>(count)),

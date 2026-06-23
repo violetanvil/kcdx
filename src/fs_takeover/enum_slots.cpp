@@ -10,6 +10,7 @@
 
 #include "asset_index.h"
 #include "boot_trace.h"        // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
+#include "enum_diff_probe.h"   // === DIAGNOSTIC (PROBE Y) — ReplayAndDiffForEach (enumeration vanilla-differential)
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
 #include "../log.h"
@@ -125,6 +126,12 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
     bool any = false;
     long long matched = 0;  // FS_BOOT_TRACE (F.3): entries the unified walk fired
 
+    // === DIAGNOSTIC (PROBE Y) — collect the base names kcdx EMITS this walk, to
+    // diff against the engine original's ForEachFile set (enum_diff_probe.h).
+    // Boot-window gated downstream; the accumulate is a cold-path vector push.
+    // NO-RESIDUE: remove with PROBE Y. ===
+    std::vector<std::string> kcdxEmitted;
+
     // ---- (1) Engine on-disk walk (the original _findfirst64 loop, on kcdx's
     //          CRT) over the resolved disk pattern. Resolve pPathPattern via
     //          slot 1 (kcdx_AdjustFileName) exactly as the original body does. --
@@ -158,6 +165,7 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
                         perFile(self, cbCtx, full, userData);
                         any = true;
                         ++matched;
+                        kcdxEmitted.emplace_back(nameUtf8);  // PROBE Y: base name
                     }
                 } while (_wfindnext64(h, &fd) == 0);
                 _findclose(h);
@@ -198,6 +206,10 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
         perFile(self, cbCtx, vpath.c_str(), userData);
         any = true;
         ++matched;
+        // PROBE Y: the index arm emits the full vpath; record its base name
+        // (past the prefix's last separator) on the SAME footing as the disk
+        // arm + the vanilla collector (which both extract base names).
+        kcdxEmitted.emplace_back(vpath.substr(prefix.size()));
     }
 
     if (any) {
@@ -221,6 +233,11 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
     // pPathPattern is a borrowed inbound pointer (no allocation on the traced
     // path). Predicted-skip after AfterGameApply.
     TraceEnum("ForEachFile", pPathPattern, matched);
+
+    // === DIAGNOSTIC (PROBE Y) — replay the SAME pattern through the captured
+    // engine ORIGINAL ForEachFile and log ENUM_DIFF iff the emitted entry SETS
+    // differ. Read-only; boot-window gated. NO-RESIDUE: remove with PROBE Y. ===
+    ReplayAndDiffForEach(self, pPathPattern, kcdxEmitted);
 
     return any ? 1 : 0;
 }
