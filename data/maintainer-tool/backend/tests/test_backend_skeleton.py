@@ -1,11 +1,11 @@
-"""test_backend_skeleton.py -- the maintainer-tool backend skeleton (Phase 2 step 1).
+"""test_backend_skeleton.py -- the maintainer-tool backend skeleton.
 
 WHAT THIS PROVES
 ----------------
 The backend boots and its skeleton works END-TO-END over the REAL app + the REAL
-data-core import seam (no mock of the app, no stubbed data-core -- the duplication
-AP / R3 self-check: the test drives FastAPI's TestClient against the real /health
-route, which imports the real seeds_shared in-process). Cases:
+data-core import seam (no mock of the app, no stubbed data-core -- the no-duplication
+self-check: the test drives FastAPI's TestClient against the real /health route,
+which imports the real seeds_shared in-process). Cases:
 
   1. APP BOOTS + the import seam resolves: TestClient constructs the real app, and
      a /health call returns 200 with the documented response shape.
@@ -13,37 +13,36 @@ route, which imports the real seeds_shared in-process). Cases:
   2. RESOLVED checkout: pointed at a checkout that HAS the reference DB + the three
      seed CSVs (built from the mini-dump fixture the data-core tests use), /health
      reports state="resolved", every artifact present, and the known version tag
-     listed (US-1 the happy path; the dropdown source D10/US-10).
+     listed (the happy path; the version-dropdown source).
 
   3. EMPTY checkout: pointed at an empty dir (no DB, no seeds), /health reports
-     state="empty" and NAMES the missing artifacts (US-1 acceptance / S7 "Empty --
-     no DB/seeds resolved (names where the backend looked)"). This is the s01 empty
-     state the frontend renders.
+     state="empty" and NAMES the missing artifacts ("Empty -- no DB/seeds resolved,
+     names where the backend looked"). This is the empty state the frontend renders.
 
   4. The version-tag ADAPTER maps a KNOWN tag -> the (tag, ordinal) the data-core
      would have produced from a DLL of that version, and REJECTS an unknown tag
-     (VersionTagError) -- the "resolved version another way, no DLL read" the design
-     names (S5). Asserted against the REAL adapter over the resolved checkout +
-     against the data-core's own baseline constant.
+     (VersionTagError) -- the "resolved version another way, no DLL read" path.
+     Asserted against the REAL adapter over the resolved checkout + against the
+     data-core's own baseline constant.
 
   5. The adapter resolves ONLY a VersionContext (no dll_path fabrication): the
-     tag -> (tag, ordinal) resolution IS the data-core's `version=` param (the 1b
-     seam -- no DLL server-side). A save endpoint passes that VersionContext as
-     `version=` (step 4b's test_save_endpoints asserts the write side); the adapter
-     exposes the context and nothing else.
+     tag -> (tag, ordinal) resolution IS the data-core's `version=` param (no DLL
+     server-side). A save endpoint passes that VersionContext as `version=`
+     (test_save_endpoints asserts the write side); the adapter exposes the context
+     and nothing else.
 
 SEED/BASELINE FIXTURE
 ---------------------
 Reuses the data-core's apply-oracle mechanism (the same one test_db_editor_*.py
 use): a module-scoped baseline DB rebuilt ONCE from the committed seeds off the
 mini-dump excerpt, copied into a temp "checkout" laid out as the backend's config
-expects (data/db-export/ holding the curated CSVs + data/ holding the two reference DBs --
-D38; data/seeds/ is retired). No real WHGame.dll is read -- the backend never reads a DLL
-(D14/D18); the rebuild path uses the dump excerpt only.
+expects (data/db-export/ holding the curated CSVs + data/ holding the two reference
+DBs). No real WHGame.dll is read -- the backend never reads a DLL; the rebuild path
+uses the dump excerpt only.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import os
 import shutil
@@ -57,7 +56,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -84,19 +83,19 @@ GVO = imp.GAME_VERSION_ORDINAL      # 1164953
 
 # ----------------------------------------------------------------------------
 # Build a "resolved" checkout: data/db-export/ with the curated CSVs + the two
-# reference DBs at data/, laid out exactly as app.config derives them (D38).
+# reference DBs at data/, laid out exactly as app.config derives them.
 # ----------------------------------------------------------------------------
 def _build_resolved_checkout():
     """A temp dir laid out as a real checkout: <root>/data/db-export/ holds the three
-    curated CSVs (the rebuild genesis the load endpoint checks -- D38; data/seeds/ is
-    retired), and <root>/data/ (config.out_dir) holds the rebuilt reference.sqlite +
-    reference-dev.sqlite. Returns the checkout root. Skips (not fails) if the data-core
-    fixture inputs are absent."""
+    curated CSVs (the rebuild genesis the load endpoint checks), and <root>/data/
+    (config.out_dir) holds the rebuilt reference.sqlite + reference-dev.sqlite.
+    Returns the checkout root. Skips (not fails) if the data-core fixture inputs are
+    absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_checkout_")
-    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir -- the curated CSV export dir
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
@@ -141,7 +140,7 @@ def test_app_boots_and_health_responds():
     resp = client.get("/health")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    # The documented response shape (the keys s01 feeds the frontend).
+    # The documented response shape (the keys the load endpoint feeds the frontend).
     for key in ("state", "detail", "checkout_path", "checkout_source",
                 "seed_dir", "out_dir", "artifacts", "known_version_tags"):
         assert key in body, f"/health response missing {key!r}: {body}"
@@ -160,19 +159,19 @@ def test_resolved_checkout_reports_resolved(resolved_checkout):
     assert status["artifacts"]["user_db"] is True
     assert status["artifacts"]["dev_db"] is True
     assert all(status["artifacts"]["seed_files"].values()), status["artifacts"]
-    # The known version tag is listed (the dropdown source, D10/US-10).
+    # The known version tag is listed (the version-dropdown source).
     assert GVT in status["known_version_tags"], status["known_version_tags"]
 
 
 # ----------------------------------------------------------------------------
-# Case 3: an EMPTY checkout -> state="empty", missing artifacts NAMED (US-1/S7).
+# Case 3: an EMPTY checkout -> state="empty", missing artifacts NAMED.
 # ----------------------------------------------------------------------------
 def test_empty_checkout_reports_empty_and_names_missing(empty_checkout):
     status = _checkout_status(load_config(checkout_override=empty_checkout))
     assert status["state"] == "empty", status["detail"]
     assert status["artifacts"]["user_db"] is False
     assert not all(status["artifacts"]["seed_files"].values())
-    # The empty-state copy NAMES where the backend looked + what is missing (S7).
+    # The empty-state copy NAMES where the backend looked + what is missing.
     assert empty_checkout in status["checkout_path"]
     assert "missing:" in status["detail"], status["detail"]
     assert "reference.sqlite" in status["detail"], status["detail"]
@@ -208,7 +207,7 @@ def test_version_tags_ordered_newest_first_by_ordinal():
 
 # ----------------------------------------------------------------------------
 # Case 4: the version-tag ADAPTER maps a known tag -> (tag, ordinal); rejects
-# an unknown tag (the "resolved version, no DLL read" the design names, S5).
+# an unknown tag (the "resolved version, no DLL read" path).
 # ----------------------------------------------------------------------------
 def test_adapter_resolves_known_tag(resolved_checkout):
     config = load_config(checkout_override=resolved_checkout)
@@ -235,9 +234,8 @@ def test_adapter_known_versions_floor_without_db(empty_checkout):
 
 # ----------------------------------------------------------------------------
 # Case 5: the adapter resolves ONLY a VersionContext -- the (tag, ordinal) the
-# data-core's `version=` param wants (the 1b seam, no DLL server-side). The fork
-# the placeholder once named is settled: there is no dll_path to fabricate. The
-# save endpoint passes this context as version= (test_save_endpoints, step 4b).
+# data-core's `version=` param wants (no DLL server-side). There is no dll_path to
+# fabricate. The save endpoint passes this context as version= (test_save_endpoints).
 # ----------------------------------------------------------------------------
 def test_adapter_resolves_version_context_no_dll(resolved_checkout):
     config = load_config(checkout_override=resolved_checkout)

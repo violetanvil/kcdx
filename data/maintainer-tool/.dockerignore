@@ -1,6 +1,6 @@
-# kcdx maintainer-tool -- Docker build-context exclusions (step 16b).
+# kcdx maintainer-tool -- Docker build-context exclusions.
 #
-# The build context is data/maintainer-tool/. The two stages COPY only:
+# The build context is this repo root. The two stages COPY only:
 #   stage 1 -- frontend/package.json + frontend/package-lock.json, then frontend/
 #   stage 2 -- backend/requirements.txt, then backend/
 # Everything excluded here is host build/cache cruft, a secret, or a stale artifact
@@ -12,7 +12,7 @@ frontend/node_modules
 # stage 1 rebuilds dist/ from source -- a host-built dist/ would be a silent
 # stale-bundle foot-gun (the rejected pre-built-COPY fork, step-16 doc).
 frontend/dist
-# the nested repo's git dir (frontend/ is a separate gitignored repo, D23).
+# the frontend's own git metadata, if present (the image rebuilds the SPA from source).
 frontend/.git
 
 # --- backend: build/cache cruft + the local virtualenv + the test suite ---
@@ -25,7 +25,7 @@ backend/.pytest_cache
 # pytest is dev-only). Excluding it keeps the runtime image lean.
 backend/tests
 
-# --- secrets / env files: never enter the build context (security-invariants.md) ---
+# --- secrets / env files: never enter the build context ---
 # the push credential is env-injected at RUN, never read from a context file.
 **/.env
 **/.env.*

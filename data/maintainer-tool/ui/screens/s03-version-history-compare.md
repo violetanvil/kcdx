@@ -15,8 +15,8 @@ The detail region's version area (below the s02 header/lifecycle). History is an
 version table (`Table`); compare replaces the single-row s04 editor with an N-column
 `Table`. The region scrolls vertically; the compare table scrolls **horizontally** within a
 `ScrollArea` when the column count × content width exceeds the available width (dynamic —
-fits until it doesn't; law 1 keeps non-compare elements fixed). On phone the compare table's
-horizontal scroll is the primary way 2–3 version columns fit a narrow viewport.
+fits until it doesn't; the stable layout keeps non-compare elements fixed). On phone the
+compare table's horizontal scroll is the primary way 2–3 version columns fit a narrow viewport.
 
 ## Contents
 
@@ -40,14 +40,14 @@ horizontal scroll is the primary way 2–3 version columns fit a narrow viewport
 
 **Diff marking:** every field is listed for every compared version (full records visible);
 a field whose values DIFFER across the set gets a marker glyph + a `diff_band` row band;
-identical fields render plain (`../design.md` law 9 — band is a token, marker is the
-non-color signal, law 7). The full record stays visible so the eye jumps to changes
-without losing context.
+identical fields render plain (band is a semantic token, marker is the non-color signal —
+the diff is conveyed by more than color). The full record stays visible so the eye jumps to
+changes without losing context.
 
 **Edit from compare:** a column's `[Edit]` opens that version in the s04 editor. Because
 it is an EXISTING decided version, s04 raises its **edit-existing confirmation** ("You are
 editing an existing version `<v>`, not creating a new one") before fields become editable
-(law 5's confirm discipline applies on the edit boundary, not only at save).
+(the confirm discipline applies on the edit boundary, not only at save).
 
 ## States & variants
 - **Populated (history)** — the full version list, newest first, current row marked.
@@ -61,22 +61,23 @@ editing an existing version `<v>`, not creating a new one") before fields become
   others still render.
 - **Disabled** — `[Compare]` disabled until ≥2 rows are selected; copy names why.
 - **Edge content** — many versions → horizontal scroll engages dynamically; a long
-  `signature` wraps within its cell, the column width holds (law 1); 3+ compared columns
-  scroll rather than shrinking below legibility.
+  `signature` wraps within its cell, the column width holds (stable layout); 3+ compared
+  columns scroll rather than shrinking below legibility.
 
 ## Links in / out
 - **In:** s02 `toggle_history` / `open_compare`.
 - **Out:** `select_version` / `edit_version` → s04; an edit → s06 (save-confirm);
   `[+ New version]` (carried from s02) → s05.
 
-## Applicable laws
-- **Law 1** — entering compare expands the version area in place; non-compare sections
+## Applicable interaction laws
+- **Stable layout** — entering compare expands the version area in place; non-compare sections
   don't move; horizontal scroll, never column collapse that reflows.
-- **Law 3** — entering history/compare and selecting columns are user actions.
-- **Law 5** — editing an existing version from compare crosses the confirm boundary.
-- **Law 7** — diff marker is a glyph, not color-alone; read-only identity columns hold the
-  read-only treatment.
-- **Law 9** — `diff_band` + all dims via tokens.
+- **User-driven navigation** — entering history/compare and selecting columns are user actions.
+- **Confirmed edit boundary** — editing an existing version from compare crosses the confirm
+  boundary.
+- **Non-color affordance** — diff marker is a glyph, not color-alone; read-only identity columns
+  hold the read-only treatment.
+- **Semantic tokens only** — `diff_band` + all dims via tokens.
 
 ## Responsive behavior
 - **Wide:** the compare table fits 2–3 columns inline; more scroll horizontally within the

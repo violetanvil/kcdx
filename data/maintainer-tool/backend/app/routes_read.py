@@ -1,26 +1,26 @@
-"""app.routes_read -- the read-for-display endpoints (US-1 / US-2 / US-9, design D13).
+"""app.routes_read -- the read-for-display endpoints.
 
-The browse/view API the frontend's s01 (navigator), s02 (entity detail), and s03
-(version history / compare) bind. Each endpoint is a THIN CALLER of the data-core
-read seam (seeds_shared.read_api, landed step 2a): it resolves the configured
-checkout via app.config, calls the 2a function with config.out_dir, and returns
+The browse/view API the frontend's navigator, entity-detail, and version
+history/compare screens bind. Each endpoint is a THIN CALLER of the data-core
+read seam (seeds_shared.read_api): it resolves the configured
+checkout via app.config, calls the read function with config.out_dir, and returns
 what that function returns -- FastAPI serializes the dict/list to JSON.
 
-The backend computes NOTHING here (D13 / R3 / design S5 law 6): no status
-derivation, no SQL, no rule logic. The derived `status` on each row arrives
+The backend computes NOTHING here: no status
+derivation, no SQL, no rule logic (the data-core owns all of it). The derived `status` on each row arrives
 already computed from the data-core; this module only surfaces it. A read router
 sits in its own module (not main.py) per structure-by-responsibility -- main.py is
 the app + health coordinator; the read routes are one responsibility-unit.
 
-THE NO-DB SIGNAL (design §7 / s01 §States "Empty -- no DB/seeds resolved")
---------------------------------------------------------------------------
+THE NO-DB SIGNAL
+----------------
 read_api raises DbReadError when the configured checkout resolves no curated DB.
-The s01 empty-state is a SYSTEM-CAUSED app STATE the frontend renders with a
+The navigator empty-state is a SYSTEM-CAUSED app STATE the frontend renders with a
 named-cause copy -- NOT an HTTP error page. So the endpoint mirrors /health's
 contract exactly: HTTP 200 with the {state, detail} signal (state="empty"), the
-same machine signal s01 already binds for /health. The frontend renders the copy;
+same machine signal the navigator already binds for /health. The frontend renders the copy;
 the endpoint provides the state token + the named cause. (A genuine not-found --
-an unknown kcdx_id -- IS a real HTTP error: 404, per the 2a None contract.)
+an unknown kcdx_id -- IS a real HTTP error: 404, per the read seam's None contract.)
 """
 import logging
 
@@ -36,8 +36,8 @@ def _json_safe(value):
     the data-core's plain dicts/lists of JSON-native scalars (int / str / None), so
     this only walks the nested structure and passes every scalar through unchanged.
     Its job is the boundary contract, not a transform: it marks (and the endpoint
-    tests assert) that the backend reshapes nothing the data-core returned (D13/R3 --
-    the backend computes nothing). The recursion is the structural guarantee; a
+    tests assert) that the backend reshapes nothing the data-core returned (the
+    backend computes nothing). The recursion is the structural guarantee; a
     scalar is returned as-is."""
     if isinstance(value, dict):
         return {k: _json_safe(v) for k, v in value.items()}
@@ -46,19 +46,19 @@ def _json_safe(value):
     return value
 
 # One module logger, event-driven: a log fires on the DB-read failure branch, never
-# per request (logging.md -- every failure logged, no per-request spam).
+# per request (every failure logged, no per-request spam).
 log = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
 def _no_db_signal(exc, config):
-    """The s01 "no DB resolved" empty-state signal -- the read-path counterpart to
-    /health's {state, detail}. Logs the data-core read failure (logging.md: the
+    """The navigator "no DB resolved" empty-state signal -- the read-path counterpart to
+    /health's {state, detail}. Logs the data-core read failure (the
     failure branch logs before it returns, naming the seam failure + the checkout
     path it looked at) THEN returns the state the frontend binds. Returned as a 200
-    body (not an HTTP error) because the empty state is a normal app state s01
-    renders with named-cause copy, not an error page (design §7 / s01 §States)."""
+    body (not an HTTP error) because the empty state is a normal app state the navigator
+    renders with named-cause copy, not an error page."""
     log.warning(
         "data-core read failed: no curated DB at the configured checkout "
         "(checkout_path=%s, out_dir=%s): %s",
@@ -66,7 +66,7 @@ def _no_db_signal(exc, config):
     return {
         "state": "empty",                      # "empty" -- mirrors /health's state token
         "detail": ("no reference DB resolved at the configured checkout path; "
-                   f"{exc}"),                   # the named cause s01 surfaces
+                   f"{exc}"),                   # the named cause the navigator surfaces
         "checkout_path": config.checkout_path,
         "out_dir": config.out_dir,
     }
@@ -74,12 +74,12 @@ def _no_db_signal(exc, config):
 
 @router.get("/entities")
 def list_entities():
-    """The curated entity set for s01 (the navigator list + status/kind filters).
+    """The curated entity set for the navigator (the list + status/kind filters).
 
     Returns [{kcdx_id, name, status, kind}] -- exactly what read_curated_set
     returns; `status` and `kind` arrive already derived/decoded from the data-core
     (the backend derives nothing). The frontend filters/searches client-side over
-    the full set (s01 §Contents "local, no write")."""
+    the full set (local, no write)."""
     config = load_config()
     try:
         return _json_safe(data_core.read_curated_set(config.out_dir))
@@ -89,10 +89,10 @@ def list_entities():
 
 @router.get("/entities/{kcdx_id}")
 def get_entity(kcdx_id: int):
-    """An entity's identity + lifecycle fields for s02 (the detail header).
+    """An entity's identity + lifecycle fields for the detail header.
 
     Returns read_entity_detail's dict verbatim. read_entity_detail returns None for
-    an unknown id (the 2a no-matching-row contract) -> HTTP 404 here (a genuine
+    an unknown id (the no-matching-row contract) -> HTTP 404 here (a genuine
     not-found is a real HTTP error, distinct from the no-DB empty-state which is a
     200 {state} body). kcdx_id is the curated id (a path int)."""
     config = load_config()
@@ -112,13 +112,13 @@ def get_entity(kcdx_id: int):
 
 @router.get("/modules")
 def list_modules():
-    """The module registry for s04's `module` field (a Select over the real module
+    """The module registry for the add-version `module` field (a Select over the real module
     list).
 
     Returns [{id, name, path}] -- exactly what read_modules returns; the backend
-    derives nothing (D13/R3), it surfaces the data-core's `modules` table read. A
+    derives nothing, it surfaces the data-core's `modules` table read. A
     missing curated DB yields the same 200 {state, detail} empty signal the other
-    read endpoints use (state="empty"), NOT an HTTP error -- the s01 empty state the
+    read endpoints use (state="empty"), NOT an HTTP error -- the navigator empty state the
     frontend already binds."""
     config = load_config()
     try:
@@ -129,26 +129,26 @@ def list_modules():
 
 @router.get("/needs-action")
 def get_needs_action():
-    """The needs-action set for s09 (the lifecycle-completeness surface) + the s01
+    """The needs-action set for the lifecycle-completeness surface + the navigator's
     `[Needs action ▸ N]` count badge.
 
     Returns audit_lifecycle's dict -- {version, version_ordinal, uncovered[],
     never_verified[], broken_refs[]} (the three incomplete-lifecycle kinds at the
-    current game version V, D41 fact 1 / s09 §Contents) -- PLUS a `total_count` (the
-    sum of the three lists' lengths, the s01 badge binding). DETECTION is READ-ONLY
-    (plan-spec §"Cross-step invariants"): the endpoint calls audit_lifecycle (no write,
+    current game version V) -- PLUS a `total_count` (the
+    sum of the three lists' lengths, the navigator badge binding). DETECTION is READ-ONLY:
+    the endpoint calls audit_lifecycle (no write,
     no transaction) and derives only this one count -- the rule logic stays in the
-    data-core (D13/R3). A missing curated DB / an unresolvable audit input yields the
+    data-core. A missing curated DB / an unresolvable audit input yields the
     same 200 {state, detail} empty signal the other read endpoints use (state="empty"),
-    NOT an HTTP error -- the s01 empty state the frontend binds (the s09 error/empty
+    NOT an HTTP error -- the navigator empty state the frontend binds (the lifecycle surface's error/empty
     states route through it)."""
     config = load_config()
     try:
         result = data_core.audit_lifecycle(config.out_dir)
     except (data_core.LifecycleAuditError, data_core.DbReadError) as exc:
         return _no_db_signal(exc, config)
-    # The ONE backend-derived value (D13/R3 -- the backend derives nothing else): the
-    # needs-action total the s01 badge / s09 header bind, the sum of the three kinds'
+    # The ONE backend-derived value (the backend derives nothing else): the
+    # needs-action total the navigator badge / lifecycle-surface header bind, the sum of the three kinds'
     # lengths. The three lists + version come straight from the data-core, surfaced
     # unchanged through the JSON-boundary seam.
     result["total_count"] = (len(result["uncovered"])
@@ -159,16 +159,16 @@ def get_needs_action():
 
 @router.get("/entities/{kcdx_id}/versions")
 def get_entity_versions(kcdx_id: int):
-    """The entity's version rows, NEWEST-first, each with its derived status (s02
-    version table, s03 history/compare).
+    """The entity's version rows, NEWEST-first, each with its derived status (entity-detail
+    version table, history/compare).
 
     Returns read_version_rows' list verbatim -- the curated display columns (the
     data-core's _VERSION_DISPLAY_COLUMNS allowlist; the dev-only columns never cross
     the wire), the per-row `status` already derived and `kind`/`evidence_kind` already
-    decoded by the data-core, PLUS the verify-only `content_hash` (hex or null) the s04
+    decoded by the data-core, PLUS the verify-only `content_hash` (hex or null) the add-version
     function check reads -- a separate field, NOT a display/edit column. The endpoint
     is a thin caller: _json_safe passes the hex string (already a str) through
-    unchanged; it derives nothing. An unknown id yields [] (the 2a no-rows contract),
+    unchanged; it derives nothing. An unknown id yields [] (the no-rows contract),
     distinct from the entity-detail 404; the frontend treats [] as "no versions" for
     that id."""
     config = load_config()

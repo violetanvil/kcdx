@@ -19,13 +19,12 @@ passed. The fixtures encoded the bug; they have been corrected to build the DBs 
 any fixture, so the path can never silently drift again.
 
 The sibling path properties (seed_dir, db_export_dir) point at their OWN correct subdirs
-and are asserted here to stay put (only out_dir was wrong). Under D38, data/seeds/ is
-retired: seed_dir (the rebuild genesis the load endpoint checks) now resolves
-data/db-export/, the SAME location as db_export_dir.
+and are asserted here to stay put (only out_dir was wrong). seed_dir (the rebuild genesis
+the load endpoint checks) resolves data/db-export/, the SAME location as db_export_dir.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import os
 import sys
@@ -66,7 +65,7 @@ def test_out_dir_is_checkout_data_not_csv_subdir():
     assert _norm(cfg.out_dir) == _norm(expected), \
         f"out_dir must be <checkout>/data, got {cfg.out_dir!r}"
     # The exact regression guard: out_dir is NOT one level too deep at the genesis
-    # CSV subdir (data/db-export/ since D38 -- the curated CSVs, no .sqlite there).
+    # CSV subdir (data/db-export/ -- the curated CSVs, no .sqlite there).
     wrong = os.path.join(CHECKOUT, "data", "db-export")
     assert _norm(cfg.out_dir) != _norm(wrong), \
         "out_dir regressed to data/db-export -- the DB does not live under the CSV subdir"
@@ -86,21 +85,21 @@ def test_user_db_and_dev_db_resolve_under_data():
 
 
 # ----------------------------------------------------------------------------
-# D38: data/seeds/ is retired. seed_dir (the rebuild genesis the load endpoint checks)
-# now resolves data/db-export/ -- the SAME location as db_export_dir (the curated CSVs
-# are both the genesis AND the git-tracked diff record). out_dir stays at data/.
+# seed_dir (the rebuild genesis the load endpoint checks) resolves data/db-export/ --
+# the SAME location as db_export_dir (the curated CSVs are both the genesis AND the
+# git-tracked diff record). out_dir stays at data/.
 # ----------------------------------------------------------------------------
 def test_seed_dir_and_db_export_dir_both_resolve_db_export():
     cfg = _cfg()
     db_export = os.path.join(CHECKOUT, "data", "db-export")
     assert _norm(cfg.seed_dir) == _norm(db_export), \
-        "seed_dir must resolve data/db-export (D38 retired data/seeds/; the curated " \
-        "CSV export is the rebuild genesis)"
+        "seed_dir must resolve data/db-export (the curated CSV export is the rebuild " \
+        "genesis)"
     assert _norm(cfg.db_export_dir) == _norm(db_export), \
-        "db_export_dir must stay at data/db-export (the derived export record, D20)"
-    # Under D38 seed_dir and db_export_dir collapse to one location.
+        "db_export_dir must stay at data/db-export (the derived export record)"
+    # seed_dir and db_export_dir collapse to one location.
     assert _norm(cfg.seed_dir) == _norm(cfg.db_export_dir), \
-        "D38: seed_dir and db_export_dir resolve the same data/db-export/ location"
+        "seed_dir and db_export_dir resolve the same data/db-export/ location"
     # out_dir is the PARENT of the genesis CSV subdir (data/ vs data/db-export/) -- the
     # relationship the out_dir bug violated (it returned the CSV subdir itself).
     assert _norm(cfg.out_dir) == _norm(os.path.dirname(cfg.seed_dir)), \

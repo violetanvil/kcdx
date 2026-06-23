@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# kcdx maintainer-tool — single-image Docker container smoke test (Phase 5, step 16c).
+# kcdx maintainer-tool — single-image Docker container smoke test.
 #
-# WHAT THIS PROVES (one falsifiable claim per assertion, agent reads the ACCEPT-* lines):
-#   The single multi-stage image (D14) builds, runs, and end-to-end:
+# WHAT THIS PROVES (one falsifiable claim per assertion):
+#   The single multi-stage image builds, runs, and end-to-end:
 #     api-serves          — the FastAPI backend answers GET /health 200 with a JSON state.
 #     frontend-serves     — uvicorn serves the built React SPA same-origin (GET / -> HTML).
 #     read-returns-curated— GET /entities returns the curated entity set from the mounted
@@ -10,19 +10,17 @@
 #     save-commits        — a save->confirm (a `notes` re-edit) lands a NEW git commit in
 #                           the mounted checkout (push skipped: hermetic, no real token).
 #
-# THE USER RUNS ONE COMMAND (Docker is required; absent on the authoring machine):
-#     bash data/maintainer-tool/docker/smoke-test.sh
+# THE USER RUNS ONE COMMAND (Docker is required):
+#     bash docker/smoke-test.sh
 # It builds its OWN fixtures (a temp checkout + a throwaway bare remote), builds + runs the
-# image, asserts, and prints the canonical signal to STDOUT. The agent reads the
-# ACCEPT-RESULT / ACCEPT-SUITE lines (`.claude/rules/acceptance-signal.md`); the user pastes
-# back the ACCEPT-SUITE line + any ACCEPT-RESULT FAIL/SKIP.
+# image, asserts, and prints a machine-readable result summary to STDOUT.
 #
-# The signal grammar is FIXED (acceptance-signal.md) — these tokens are emitted verbatim:
+# The result grammar — these tokens are emitted verbatim:
 #     ACCEPT-RESULT: <PASS|FAIL|SKIP> <id> [— <detail>]
 #     ACCEPT-SUITE: <passed>/<total> passing
 #
-# HERMETIC PUSH SEAM (the dev/test posture, design D17): the container runs WITHOUT a real
-# KCDX_PUSH_TOKEN, so git_commit._push_to_private SKIPS the push and the Confirm commit stays
+# HERMETIC PUSH SEAM (the dev/test posture): the container runs WITHOUT a real
+# KCDX_PUSH_TOKEN, so the backend SKIPS the push and the Confirm commit stays
 # LOCAL in the mounted checkout. save-commits asserts that local commit exists — the
 # push-to-real-GitHub path is not hermetically testable and that is correct. A throwaway local
 # bare remote is still wired as `private` so the checkout's remote topology matches production
@@ -41,11 +39,9 @@ HEALTH_SLEEP_SECONDS=1
 MAINTAINER_NAME="Smoke Test"
 MAINTAINER_EMAIL="smoke@kcdx.local"
 
-# Resolve paths relative to THIS script's own dir (never cd-into; shell-cwd-stability.md).
-# This script:           data/maintainer-tool/docker/smoke-test.sh
-# Build context:         data/maintainer-tool/                (../  from here)
-# Repo's curated export: data/db-export/                      (../../../data/db-export from here)
-# Repo's reference DB:   data/reference.sqlite                (../../../data/reference.sqlite)
+# Resolve paths relative to THIS script's own dir (never cd-into the tree).
+# This script:           docker/smoke-test.sh
+# Build context:         the repo root                        (../  from here)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 BUILD_CONTEXT="$(cd "${SCRIPT_DIR}/.." >/dev/null 2>&1 && pwd)"
 REPO_DB_EXPORT="$(cd "${SCRIPT_DIR}/../../.." >/dev/null 2>&1 && pwd)/data/db-export"
@@ -67,7 +63,7 @@ SKIP_COUNT=0
 TOTAL_COUNT=0
 
 # ---------------------------------------------------------------------------
-# Signal emitters — the canonical grammar, verbatim to STDOUT (acceptance-signal.md).
+# Result emitters — the result grammar, verbatim to STDOUT.
 # ---------------------------------------------------------------------------
 emit_pass() {  # emit_pass <id>
     PASS_COUNT=$((PASS_COUNT + 1)); TOTAL_COUNT=$((TOTAL_COUNT + 1))
@@ -269,11 +265,10 @@ done
 
 # 1b. The reference DB. PREFER copying the real one (data/reference.sqlite, gitignored locally
 #     — present on a maintainer's checkout). The documented rebuild
-#     (import_to_sqlite.py --rebuild) is NOT hermetically runnable here: it lives in the
-#     private data/refdata-extractor/ tree (not in the container nor this temp checkout) and
-#     needs the bulk corpus under Git LFS (data/db-export-bulk/) which this fixture does not
-#     provision. So: copy the real DB if present; ELSE SKIP the DB-read assertion (a missing
-#     local DB is an ENVIRONMENT gap, not a test failure — build+serve+commit still run).
+#     (import_to_sqlite.py --rebuild) is NOT hermetically runnable here: it needs the bulk
+#     corpus under Git LFS (data/db-export-bulk/) which this fixture does not provision. So:
+#     copy the real DB if present; ELSE SKIP the DB-read assertion (a missing local DB is an
+#     ENVIRONMENT gap, not a test failure — build+serve+commit still run).
 if [ -f "${REPO_REFERENCE_DB}" ]; then
     cp "${REPO_REFERENCE_DB}" "${TMP_CHECKOUT}/data/reference.sqlite"
     DB_PROVISIONED=1
@@ -283,17 +278,17 @@ else
 fi
 
 # 1c. git init the checkout, configure a LOCAL user, add + commit the fixtures so the
-#     container's commit path has a HEAD to build on. -C targets the dir; never cd
-#     (shell-cwd-stability.md). The DB is gitignored in production, but in this throwaway
+#     container's commit path has a HEAD to build on. -C targets the dir; never cd.
+#     The DB is gitignored in production, but in this throwaway
 #     fixture we DO commit it (it is part of the fixture state, not the real repo) — except
 #     we keep the production posture of committing only the db-export CSVs as the tracked
-#     record, mirroring git_commit._staged_rel_paths. We git-ignore the .sqlite so the
+#     record, mirroring what the backend stages. We git-ignore the .sqlite so the
 #     fixture's first commit matches what the backend will later stage (the 3 CSVs).
 git -C "${TMP_CHECKOUT}" init -q
 git -C "${TMP_CHECKOUT}" config user.name "${MAINTAINER_NAME}"
 git -C "${TMP_CHECKOUT}" config user.email "${MAINTAINER_EMAIL}"
 git -C "${TMP_CHECKOUT}" config commit.gpgsign false
-# Match production: the .sqlite is the local originator, never git-tracked (D1/D20).
+# Match production: the .sqlite is the local originator, never git-tracked.
 printf 'data/reference.sqlite\ndata/reference-dev.sqlite\n' > "${TMP_CHECKOUT}/.gitignore"
 git -C "${TMP_CHECKOUT}" add -- .gitignore data/db-export/module_seed.csv \
     data/db-export/address_names_seed.csv data/db-export/address_versions_seed.csv
@@ -311,7 +306,7 @@ FIXTURE_HEAD="$(git -C "${TMP_CHECKOUT}" rev-parse HEAD)"
 # ===========================================================================
 # 2. BUILD + RUN THE IMAGE
 # ===========================================================================
-# 2a. Build the single multi-stage image from the build context (data/maintainer-tool/).
+# 2a. Build the single multi-stage image from the build context (the repo root).
 docker build -t "${IMAGE_TAG}" "${BUILD_CONTEXT}" >&2 \
     || die_prereq "docker build failed (see the build output above)"
 
@@ -330,10 +325,9 @@ CONTAINER_ID="$(docker run -d --name "${CONTAINER_NAME}" \
 BASE_URL="http://127.0.0.1:${HOST_PORT}"
 
 # 2c. READINESS WAIT — poll /health until the server answers, bounded by HEALTH_MAX_ATTEMPTS.
-#     This is a TEST HARNESS readiness check (waiting for a freshly-started server to come up),
-#     NOT production polling (`.claude/rules/polling.md`): it is bounded (max attempts), fails
-#     loudly on timeout, and exists only because the container start is async with no readiness
-#     signal a test can subscribe to. It is NOT a sleep-loop over backgrounded agent work.
+#     This is a test-harness readiness check (waiting for a freshly-started server to come up):
+#     it is bounded (max attempts), fails loudly on timeout, and exists only because the
+#     container start is async with no readiness signal a test can subscribe to.
 ready=0
 for _ in $(seq 1 "${HEALTH_MAX_ATTEMPTS}"); do
     http_get "${BASE_URL}/health"

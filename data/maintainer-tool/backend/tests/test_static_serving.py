@@ -1,9 +1,9 @@
-"""test_static_serving.py -- the backend serves the built React SPA alongside the API (D14).
+"""test_static_serving.py -- the backend serves the built React SPA alongside the API.
 
 WHAT THIS PROVES
 ----------------
-D14 settled the SINGLE IMAGE: one uvicorn process serves the JSON API AND the built
-frontend `dist/` static files, same-origin. This test is the headless gate for that:
+The SINGLE IMAGE: one uvicorn process serves the JSON API AND the built frontend
+`dist/` static files, same-origin. This test is the headless gate for that:
 it builds the real app with KCDX_STATIC_DIR pointed at a temp dir laid out like a Vite
 `dist/` (an index.html + an assets/app.js) and drives FastAPI's TestClient against it.
 Every assertion is FALSIFIABLE -- each case names what makes it FAIL. Cases:
@@ -46,8 +46,8 @@ the whole app construction so the static mount is unambiguous.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/test_static_serving.py -v
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/test_static_serving.py -v
+    python -m pytest backend/tests/ -q
 """
 import importlib
 import os

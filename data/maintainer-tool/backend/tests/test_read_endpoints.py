@@ -1,14 +1,14 @@
-"""test_read_endpoints.py -- the backend read endpoints (Phase 2 step 2b).
+"""test_read_endpoints.py -- the backend read endpoints.
 
 WHAT THIS PROVES
 ----------------
 The read endpoints SURFACE the data-core's read-for-display values end-to-end over
-the REAL app + the REAL data-core (no mock of either -- the duplication/R3 self-check:
+the REAL app + the REAL data-core (no mock of either -- the no-duplication self-check:
 TestClient drives FastAPI against the real /entities routes, which call the real
 seeds_shared.read_api in-process). The backend is a THIN CALLER: each case asserts
-the endpoint passes through what 2a returns (status/kind present, count matches,
-newest-first ordering, the 404 / no-DB signal) -- NOT the status DERIVATION, which is
-2a's own oracle (test_read_api_*.py). Cases:
+the endpoint passes through what the data-core returns (status/kind present, count
+matches, newest-first ordering, the 404 / no-DB signal) -- NOT the status DERIVATION,
+which is the data-core's own oracle (test_read_api_*.py). Cases:
 
   1. GET /entities over a resolved mini-dump checkout -> the curated set: each row has
      name/kcdx_id/status/kind; the count matches read_curated_set's; a known row's
@@ -16,13 +16,13 @@ newest-first ordering, the 404 / no-DB signal) -- NOT the status DERIVATION, whi
 
   2. GET /entities/{id} for a known id -> identity + the six lifecycle fields.
 
-  3. GET /entities/{unknown_id} -> HTTP 404 (the 2a None contract; a genuine
+  3. GET /entities/{unknown_id} -> HTTP 404 (the data-core's None contract; a genuine
      not-found is a real HTTP error, distinct from the no-DB empty-state).
 
   4. GET /entities/{id}/versions -> the rows NEWEST-first, each carrying a status.
 
   5. A no-DB checkout (an empty dir that resolves no curated DB) -> every read
-     endpoint returns the empty/error SIGNAL (HTTP 200, state="empty" -- the s01
+     endpoint returns the empty/error SIGNAL (HTTP 200, state="empty" -- the
      empty-state the frontend binds, mirroring /health), NOT a 500 crash, and the
      failure is LOGGED (asserted via caplog).
 
@@ -31,13 +31,13 @@ CHECKOUT WIRING
 The endpoints call load_config() with no override -> they resolve the checkout via
 KCDX_CHECKOUT (config priority 1). So each request points the endpoints at the
 fixture checkout by setting KCDX_CHECKOUT for the duration (an env-var monkeypatch),
-exactly how an operator wires the mounted volume (D18). Reuses the skeleton test's
+exactly how an operator wires the mounted volume. Reuses the skeleton test's
 _build_resolved_checkout (the real mini-dump rebuild); skips gracefully if the
 mini-dump fixture is absent.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import hashlib
 import logging
@@ -53,7 +53,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -72,20 +72,20 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
               "address_versions_seed.csv")
 
 # The four valid derived-status tokens (read_api's STATUS_*). The endpoint surfaces
-# one of these per row; the DERIVATION is 2a's oracle, not re-tested here.
+# one of these per row; the DERIVATION is the data-core's oracle, not re-tested here.
 VALID_STATUS = {"DEPRECATED", "SUPERSEDED", "VERIFIED", "UNVERIFIED"}
 
 
 def _build_resolved_checkout():
     """A temp checkout laid out as app.config derives it -- <root>/data/db-export/ holds
-    the three curated CSVs (the rebuild genesis -- D38; data/seeds/ is retired), and
-    <root>/data/ (config.out_dir) holds the rebuilt reference DBs (the skeleton test's
-    pattern). Skips (not fails) if the data-core fixture inputs are absent."""
+    the three curated CSVs (the rebuild genesis), and <root>/data/ (config.out_dir)
+    holds the rebuilt reference DBs (the skeleton test's pattern). Skips (not fails) if
+    the data-core fixture inputs are absent."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_read_checkout_")
-    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir -- the curated CSV export dir
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
@@ -125,7 +125,7 @@ def empty_checkout():
 def client_at(monkeypatch):
     """A TestClient whose endpoints resolve a given checkout root: set KCDX_CHECKOUT
     (config priority 1) for the duration, exactly how an operator wires the mounted
-    volume (D18). The endpoints call load_config() per request, so the env var is all
+    volume. The endpoints call load_config() per request, so the env var is all
     that is needed to point them at the fixture."""
     def _make(checkout_root):
         monkeypatch.setenv(CHECKOUT_ENV_VAR, checkout_root)
@@ -159,7 +159,7 @@ def test_list_entities_surfaces_curated_set(resolved_checkout, client_at):
     assert len(body) == len(expected), (len(body), len(expected))
     assert body == expected, "endpoint must pass through read_curated_set verbatim"
 
-    # Each row carries the s01-bound fields; a known row's status is a valid token.
+    # Each row carries the list-screen-bound fields; a known row's status is a valid token.
     for row in body:
         assert set(row) == {"kcdx_id", "name", "status", "kind"}, row
         assert isinstance(row["kcdx_id"], int)
@@ -184,7 +184,7 @@ def test_get_entity_surfaces_identity_and_lifecycle(resolved_checkout, client_at
     expected = _json_safe(
         data_core.read_entity_detail(_out_dir(resolved_checkout), kcdx_id))
     assert body == expected, "endpoint must surface read_entity_detail verbatim"
-    # The s02 identity + lifecycle fields are present.
+    # The detail-screen identity + lifecycle fields are present.
     for key in ("kcdx_id", "name", "superseded_by", "superseded_at_version",
                 "is_deprecated", "deprecated_at_version",
                 "deprecation_replacement", "notes"):
@@ -233,7 +233,7 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
     for row in body:
         assert row.get("status") in VALID_STATUS, row.get("status")
 
-    # The verify-only content_hash crosses the wire (s04 function check): every row
+    # The verify-only content_hash crosses the wire (the function check): every row
     # carries it, as a lowercase-64-hex STRING (a fingerprinted row) or null (a
     # never-fingerprinted row) -- never absent, never a non-string non-null. It is a
     # SEPARATE field from the display columns (the endpoint surfaces it as the data-core
@@ -253,7 +253,7 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
         "expected at least one fingerprinted (function) version row to surface a "
         "non-null verify-only content_hash")
 
-    # THE FIX (the maintainer-tool 422 bug): the version-rows endpoint exposes the
+    # THE FIX (the 422 bug): the version-rows endpoint exposes the
     # version-TAG STRING `valid_from_version` (the write-path identity key the editor
     # sends to save/confirm -- resolve_tag rejects the FK ordinal), ALONGSIDE the
     # `valid_from` ordinal (sort/status). The TAG must be a real server-known game
@@ -272,11 +272,11 @@ def test_get_entity_versions_newest_first_with_status(resolved_checkout, client_
                 f"version {known_tags!r} -- the ordinal must not be surfaced as the tag")
             assert str(row["valid_from_version"]) != str(row["valid_from"]), (
                 f"valid_from_version equals the ordinal {row['valid_from']!r} -- it must "
-                f"be the TAG, not the FK ordinal (the maintainer-tool 422 bug)")
+                f"be the TAG, not the FK ordinal (the 422 bug)")
 
 
 # ----------------------------------------------------------------------------
-# Case 4b: GET /modules surfaces the module registry (s04 `module` Select source).
+# Case 4b: GET /modules surfaces the module registry (the `module` Select source).
 # ----------------------------------------------------------------------------
 def test_list_modules_surfaces_module_registry(resolved_checkout, client_at):
     client = client_at(resolved_checkout)
@@ -288,7 +288,7 @@ def test_list_modules_surfaces_module_registry(resolved_checkout, client_at):
     # Thin caller: the endpoint passes through read_modules verbatim (modulo the
     # JSON-boundary serialization seam -- recurse, reshape nothing). The data-core
     # returns {id, name, path} as JSON-native scalars, so applying the same seam to
-    # its raw return proves the endpoint reshapes NOTHING (D13/R3).
+    # its raw return proves the endpoint reshapes NOTHING.
     expected = _json_safe(data_core.read_modules(_out_dir(resolved_checkout)))
     assert body == expected, "endpoint must surface read_modules verbatim"
 
@@ -301,7 +301,7 @@ def test_list_modules_surfaces_module_registry(resolved_checkout, client_at):
 
 def test_modules_no_db_checkout_returns_empty_signal(empty_checkout, client_at):
     """A no-DB checkout -> GET /modules returns the same empty SIGNAL (200,
-    state="empty") the other read endpoints return, not a 500 -- the s01 empty
+    state="empty") the other read endpoints return, not a 500 -- the empty
     state the frontend binds."""
     client = client_at(empty_checkout)
     resp = client.get("/modules")
@@ -311,7 +311,7 @@ def test_modules_no_db_checkout_returns_empty_signal(empty_checkout, client_at):
 
 # ----------------------------------------------------------------------------
 # Case 5: a no-DB checkout -> the empty/error SIGNAL (200, state="empty"), logged --
-# not a 500 crash. The s01 empty-state the frontend binds (mirrors /health).
+# not a 500 crash. The empty-state the frontend binds (mirrors /health).
 # ----------------------------------------------------------------------------
 def test_no_db_checkout_returns_empty_signal_and_logs(empty_checkout, client_at,
                                                        caplog):
@@ -324,7 +324,7 @@ def test_no_db_checkout_returns_empty_signal_and_logs(empty_checkout, client_at,
     assert body["state"] == "empty", body
     assert empty_checkout in body["checkout_path"], body
     assert body["detail"], "the empty signal names the cause"
-    # The failure is logged (logging.md -- the failure branch logs before returning).
+    # The failure is logged -- the failure branch logs before returning.
     assert any("data-core read failed" in r.message for r in caplog.records), \
         [r.message for r in caplog.records]
 
@@ -346,11 +346,10 @@ def test_no_db_entity_and_versions_also_return_signal(empty_checkout, client_at)
 #
 # WHAT THIS PROVES: the endpoint exposes audit_lifecycle's structured three-kind
 # shape (uncovered / never_verified / broken_refs) + version, derives the ONE
-# total_count the s01 `[Needs action]` badge binds (D41 fact 1 / s09 §Contents),
-# and mutates NOTHING (the curated DB is byte-identical before/after -- DETECTION is
-# read-only, plan-spec §"Cross-step invariants"). The mini-dump checkout is the real
-# curated seed set; whichever kinds are non-empty, the shape + count consistency +
-# byte-identity are the falsifiable bar.
+# total_count the `[Needs action]` badge binds, and mutates NOTHING (the curated DB
+# is byte-identical before/after -- DETECTION is read-only). The mini-dump checkout
+# is the real curated seed set; whichever kinds are non-empty, the shape + count
+# consistency + byte-identity are the falsifiable bar.
 # ----------------------------------------------------------------------------
 NEEDS_ACTION_KINDS = ("uncovered", "never_verified", "broken_refs")
 
@@ -374,14 +373,14 @@ def test_needs_action_surfaces_three_kinds_and_consistent_count(resolved_checkou
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
-    # The three kind lists + total_count + version are present (s09 §Contents bindings).
+    # The three kind lists + total_count + version are present (the badge bindings).
     for kind in NEEDS_ACTION_KINDS:
         assert kind in body, f"needs-action missing kind list {kind!r}: {body}"
         assert isinstance(body[kind], list), (kind, body[kind])
     assert "total_count" in body, f"needs-action missing total_count: {body}"
     assert "version" in body, f"needs-action missing version: {body}"
 
-    # total_count is the consistent sum of the three lists' lengths (the s01 badge).
+    # total_count is the consistent sum of the three lists' lengths (the badge).
     expected_total = sum(len(body[k]) for k in NEEDS_ACTION_KINDS)
     assert body["total_count"] == expected_total, (body["total_count"], expected_total)
 
@@ -396,8 +395,7 @@ def test_needs_action_surfaces_three_kinds_and_consistent_count(resolved_checkou
 
 def test_needs_action_is_read_only(resolved_checkout, client_at):
     """The GET is read-only: the curated DB is byte-identical after the request
-    (DETECTION is read-only -- no write, no transaction; plan-spec §"Cross-step
-    invariants")."""
+    (DETECTION is read-only -- no write, no transaction)."""
     client = client_at(resolved_checkout)
     before = _db_hash(resolved_checkout)
     resp = client.get("/needs-action")
@@ -409,8 +407,8 @@ def test_needs_action_is_read_only(resolved_checkout, client_at):
 def test_needs_action_no_db_checkout_returns_empty_signal(empty_checkout, client_at,
                                                           caplog):
     """A no-DB checkout -> GET /needs-action returns the same empty SIGNAL (200,
-    state="empty") the other read endpoints return, not a 500 -- the s01 empty state
-    the frontend binds (the s09 error/empty states route through it). The detection
+    state="empty") the other read endpoints return, not a 500 -- the empty state
+    the frontend binds (the error/empty states route through it). The detection
     failure (DbReadError from _open_ro) is caught and logged before returning (the
     shared _no_db_signal branch this endpoint reuses)."""
     client = client_at(empty_checkout)
@@ -423,8 +421,8 @@ def test_needs_action_no_db_checkout_returns_empty_signal(empty_checkout, client
 
 
 # ============================================================================
-# The canonical-signal emitter -- maps the load-bearing properties to the ACCEPT
-# grammar (.claude/rules/acceptance-signal.md) so the agent reads ONE verdict line.
+# A compact result emitter -- prints one PASS/FAIL line per load-bearing property +
+# a final summary line, for a quick read of the suite verdict.
 # ============================================================================
 def _emit_signal(results):
     passed = sum(1 for _, ok, _ in results if ok)
@@ -449,7 +447,7 @@ def test_needs_action_acceptance_signal(resolved_checkout, client_at):
     results.append(("needs-action-returns-three-kind-shape", ok1,
                     None if ok1 else f"status={resp.status_code} body={body}"))
 
-    # ACCEPT 2: total_count equals the sum of the three lists' lengths (the s01 badge).
+    # ACCEPT 2: total_count equals the sum of the three lists' lengths (the badge).
     expected_total = sum(len(body.get(k, [])) for k in NEEDS_ACTION_KINDS) if body else -1
     ok2 = bool(body) and body.get("total_count") == expected_total
     results.append(("needs-action-total-count-consistent", ok2,

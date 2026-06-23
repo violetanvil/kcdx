@@ -106,12 +106,13 @@ data/reference-dev.sqlite
 # data/maintainer-tool/requirements.md R12.
 data/maintainer-tool/.maintainer-tool-cache.json
 
-# data/maintainer-tool/frontend/ -- the React maintainer-tool frontend is its
-# OWN git repository (design D23), nested at its design-specified path but NOT
-# part of the kcdx tree: it carries its own MIT LICENSE, pushes to its own
-# remote, and keeps its npm dependency tree + lockfile + source out of kcdx's
-# history, build gate, and publish allowlist. kcdx never tracks it.
-data/maintainer-tool/frontend/
+# data/maintainer-tool/ -- the maintainer tool (FastAPI backend + React
+# frontend + Dockerfile + operator docs) is its OWN git repository, nested at
+# this path but NOT part of the kcdx tree: it pushes to its own remote
+# (kcdx-maintainer-tool), carries its own ignore list + license, and keeps its
+# source/history out of kcdx's history, build gate, and publish allowlist.
+# kcdx never tracks it. (The frontend is a further nested repo inside it.)
+data/maintainer-tool/
 
 # test-plugins/probe-asset-overlay/ -- THROWAWAY step-3a asset-overlay redirect
 # probe. Contains game-asset-derived bytes (the _extracted/ real game files +

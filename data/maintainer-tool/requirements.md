@@ -3,20 +3,19 @@
 The approved requirements for the maintainer tool. This file holds ONLY
 requirements the user has explicitly approved.
 
-> **⚠️ R1 and R6 are SUPERSEDED (2026-06-02) by [`design.md`](design.md).** The
+> **⚠️ R1 and R6 are SUPERSEDED by the settled design.** The
 > settled design inverts the source of truth: the tool edits the reference DB
 > **directly** and **auto-exports** the seed CSVs as a derived, git-tracked diff
 > layer (DB authoritative; CSVs no longer hand-edited). R1's "seed-editor-only /
 > does-not-build-the-DB" framing and R6's "CSV-editor MVP" framing are replaced
 > by that DB-direct architecture. R2–R5 and R7–R12 below remain in force and are
-> built on top of the DB-direct design. See [`design.md`](design.md) §3
-> (source-of-truth inversion) and §10 (decision record).
+> built on top of the DB-direct design.
 
-## R1 — Scope (SUPERSEDED — see design.md §3)
+## R1 — Scope (SUPERSEDED by the DB-direct design)
 
-R1 originally scoped the tool to editing the three seed CSVs under `data/seeds/`
+R1 originally scoped the tool to editing the three exported seed CSVs
 and excluded building the SQLite DBs. **That framing is superseded:** under
-[`design.md`](design.md) the tool edits `reference.sqlite` directly and exports
+the settled design the tool edits `reference.sqlite` directly and exports
 the three CSVs (`module_seed.csv`, `address_names_seed.csv`,
 `address_versions_seed.csv`) as a derived diff layer. The seed CSVs survive as
 the git-tracked export — they are no longer the hand-authored surface.
@@ -32,7 +31,7 @@ does NOT require:
 - A local Ghidra install.
 - A copy of `WHGame.dll`.
 - An analyzed Ghidra project of `WHGame.dll`.
-- Any artifact from the `refdata-extractor` dump pipeline as a prerequisite to
+- Any artifact from the reference-data dump pipeline as a prerequisite to
   launching the tool itself.
 
 Higher-tier verification flows MAY introduce their own additional prerequisites
@@ -44,12 +43,12 @@ specific flow, not to the tool's baseline portability.
 ## R3 — Shared validators (extract, do not duplicate)
 
 The tool's integrity validation reuses the rules currently implemented inside
-`data/refdata-extractor/python/import_to_sqlite.py` (canonical-id checks,
+the reference-data importer (canonical-id checks,
 audit-trio integrity, supersession/deprecation pair integrity, supersession
 acyclicity, module FK resolution, `(kcdx_id, valid_from_version)` uniqueness,
 `evidence_kind` enum, `verified_date` format, etc.).
 
-Those rules are EXTRACTED from `import_to_sqlite.py` into a shared validator
+Those rules are EXTRACTED from the importer into a shared validator
 module. Both the importer and the tool consume the shared module. The rules
 are NOT reimplemented in the tool.
 
@@ -70,7 +69,7 @@ involves richer interactions than a CLI can carry well.
 
 The tool supports verification flows that go beyond record-only audit-trio
 capture. At minimum one evidence tier (from the `evidence_kind` enum in
-`policy.md`) is a DRIVEN flow — the tool surfaces evidence to the
+the seed-authoring policy) is a DRIVEN flow — the tool surfaces evidence to the
 maintainer on the verification screen, not only captures `verified_by` /
 `verified_date` / `evidence_kind`.
 
@@ -80,23 +79,23 @@ to a future approved requirement.
 **Why:** the user said the verification surface needs to do "some more complex
 things" — i.e. record-only across all tiers is insufficient.
 
-## R6 — MVP scope: Job 2 only (re-verify a single entity) — *MVP scope still Job 2; the WRITE TARGET is SUPERSEDED, see design.md*
+## R6 — MVP scope: Job 2 only (re-verify a single entity) — *MVP scope still Job 2; the WRITE TARGET is SUPERSEDED by the DB-direct design*
 
 The first shipping version of the tool covers exactly one workflow end-to-end:
 **Job 2 — re-verify an existing curated entity at the current game version.**
 Nothing else. **(The Job-2 MVP scope still holds; what changed is the surface —
-see the banner below and [`design.md`](design.md) §6.)**
+see the banner below.)**
 
-> **⚠️ SUPERSEDED write path (2026-06-02).** R6 originally wrote the edit to
+> **⚠️ SUPERSEDED write path.** R6 originally wrote the edit to
 > `address_versions_seed.csv` and exited "with seeds the importer accepts on the
-> next `--rebuild`." Under [`design.md`](design.md) §6 the Job-2 MVP edits the
+> next rebuild." Under the settled design the Job-2 MVP edits the
 > reference DB **directly** (validated, atomic), then **auto-exports** the three
 > CSVs (diff-preserved) and commits, with a bidirectional byte-identity
 > round-trip as the oracle. The maintainer sees the exported CSV diff as the
 > acceptance signal. The workflow (re-verify one entity, update the audit trio)
 > is unchanged; the write target (DB-first, CSV-exported) is the supersession.
 
-"End-to-end" (under design.md §6) means: load the curated entity set through the
+"End-to-end" (under the settled design) means: load the curated entity set through the
 shared validator module (R3); browse the curated entity list; pick an entity;
 see its current-version row (+ full version history per R8); enter the audit trio
 (`last_verified_at_version`, `verified_by`, `verified_date`, `evidence_kind`);
@@ -171,9 +170,9 @@ read-only in Job 2:
 
 | Field | Why read-only |
 |---|---|
-| `kcdx_id` | Canonical, append-only handle per `policy.md` §"ID assignment". Changing it = changing entity identity. |
+| `kcdx_id` | Canonical, append-only handle (per the seed-authoring policy's ID-assignment rule). Changing it = changing entity identity. |
 | `name` | Stable resolution key plugins type as `target = "..."`. Renaming is the supersession workflow (Job 4), not an in-place edit. |
-| `valid_from_version` | `policy.md` §"valid_from_version vs. last_verified_at_version": "NEVER changes once authored." A row stays anchored to the version where its `(module, rva, signature)` first became authoritative. |
+| `valid_from_version` | Per the seed-authoring policy, this NEVER changes once authored. A row stays anchored to the version where its `(module, rva, signature)` first became authoritative. |
 
 Every other field is editable in Job 2.
 
@@ -212,30 +211,25 @@ configuration UI.
 
 **Distribution channel.** The `.exe` is a release artifact, NOT a tracked file
 in git. `.gitignore` already excludes `*.exe`. The lead maintainer publishes
-the `.exe` on the private GitHub Releases page of `kcdx-private`; another
+the `.exe` on the project's private releases page; another
 maintainer downloads it from there and drops it into `data/maintainer-tool/`
-in their own clone of the private repo. The repo never holds the binary.
+in their own clone of the maintainer repo. The repo never holds the binary.
 
-## R10 — Private tool: `data/maintainer-tool/` is a private subpath
+## R10 — Private tool: `data/maintainer-tool/` is a maintainer-only subpath
 
-The entire `data/maintainer-tool/` directory is private. It does NOT project
-to the public repo through `publish-public.ps1`. This applies to the
+The entire `data/maintainer-tool/` directory is maintainer-only. It is not part
+of the public-facing surface. This applies to the
 requirements doc, the tool's source, the cache file (R12), the release-build
 configuration, and anything else under the directory.
 
-**Implementation.** `publish-public.ps1`'s `$PrivateSubpaths` array gains the
-entry `'data/maintainer-tool/'` in the same commit that lands this requirement.
-The carve-out behavior matches the existing `data/refdata-extractor/` and
-`data/seeds/` carve-outs: `data/` projects public, the named subpaths under it
-do not.
+**Implementation.** The directory is carved out of the public projection
+alongside the other maintainer-only reference-data directories.
 
-**Why:** the user stated this is a private tool. The tool consumes private
-artifacts (the seed CSVs under `data/seeds/`, the shared validator module
-extracted from `data/refdata-extractor/python/import_to_sqlite.py`) and exposes
+**Why:** this is a maintainer tool. It consumes maintainer-only
+artifacts (the seed CSVs and the shared validator module
+extracted from the reference-data importer) and exposes
 maintainer-only workflows; nothing about it is for mod authors. Keeping it
-private avoids a `public-private-boundary.md` violation by construction (the
-tool can freely import from the private validator module) and matches the
-disposition of its peer dirs.
+maintainer-only matches the disposition of its peer directories.
 
 ## R11 — Atomic transaction across the three CSVs
 
@@ -262,8 +256,8 @@ completes or rolls back. Journal mechanism is reserved, not built in MVP.
 **Diff preservation.** CSV writes preserve everything the importer's policy
 treats as semantic: row order is not changed unless the action explicitly
 adds, removes, or reorders rows; `#`-prefixed comment lines are preserved
-verbatim including position; the file's quoting style (`QUOTE_MINIMAL` per
-`policy.md` §"File-format details") is preserved per cell; trailing newline
+verbatim including position; the file's quoting style (`QUOTE_MINIMAL`, per
+the seed-authoring policy's file-format rules) is preserved per cell; trailing newline
 convention is preserved. A `git diff` of a tool-authored edit MUST show only
 the cells the action changed, not whole-file reformatting churn.
 
@@ -274,7 +268,7 @@ validator is the single source of truth — the tool does not pre-filter or
 re-implement any rule.
 
 **Why:** the user stated the commit must land as if it were a single
-transaction. `policy.md`'s seed-edit commit discipline + the importer's
+transaction. The seed-authoring policy's commit discipline + the importer's
 fail-loud disposition require that a tool-authored change either lands
 cleanly or doesn't land at all. Mid-write crashes silently corrupting a CSV
 is the failure mode this guards against; whole-file reformatting churn is the
@@ -299,9 +293,8 @@ re-browsing.
 **Version resolution from a linked DLL.** Given a linked DLL file, the tool
 resolves its version by scanning the `.rdata` section for the regex
 `release_(\d{1,3})_(\d{1,3})_(\d{4,8})_(\d{1,4})` (matching the
-`release_M_N_BUILD_SUB` form the KCD2 build interns at two `.rdata` addresses
-— verified at va=0x183c3edef and va=0x183dba258 in 1.5.1164953;
-[_research/init-cycle-recon/_version_strings.txt](../../_research/init-cycle-recon/_version_strings.txt)).
+`release_M_N_BUILD_SUB` form the KCD2 build interns at two `.rdata` addresses,
+verified against the 1.5.1164953 binary).
 The resolved tag is `M.N.BUILD`; the resolved ordinal is the integer BUILD.
 
 **Hard intern-agreement check.** The scan finds ALL matches in `.rdata`. At
@@ -339,7 +332,7 @@ on the seeds without any DLL linked.
 
 **Shared resolver lives in R3's module.** The `.rdata` version-scan logic
 is placed in the shared validator module so the importer can adopt it later
-if it chooses. The importer's existing `whdlversions.json` path remains
+if it chooses. The importer's existing version-manifest path remains
 valid; the resolver is an alternative, not a replacement.
 
 **Persistence: sidecar file next to the `.exe`.** The per-module link table
@@ -351,12 +344,12 @@ tool reads it at launch and writes it on every link-table change. If the
 file is missing or unreadable, the tool starts with an empty link table
 (all modules unlinked, degraded mode for every row).
 
-**Why:** the user chose per-module DLL picking with a recent-paths history
-(Q1c), hard intern-agreement on the scan (Q2), per-module independent
-version tracking (Q3b), and an exe-sidecar cache file (no `%APPDATA%`, no env
+**Why:** the user chose per-module DLL picking with a recent-paths history,
+hard intern-agreement on the scan, per-module independent
+version tracking, and an exe-sidecar cache file (no `%APPDATA%`, no env
 var). The `.rdata` scan is the version mechanism the user verified against
 the binary; the disagreement-refuses-the-DLL rule preserves the fail-loud
-posture `policy.md` establishes; the per-module link table is the shape that
+posture the seed-authoring policy establishes; the per-module link table is the shape that
 scales to N modules without re-doing the requirement. The interval-contains-V
-filter rule is the user's correction to my earlier valid_from-equals-V
-framing — the interval semantics match `address_versions`' actual schema.
+filter rule matches `address_versions`' actual schema (a row's
+interval, not a single version).

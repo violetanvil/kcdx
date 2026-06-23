@@ -18,9 +18,8 @@ verification worklist.
   (isolated defects, each on its own row: the old prose spelling `resolves+works`,
   an old 4-token verdict, and a verified-block row carrying a null
   `matched_address_version_id`).
-- **Validator + test:** `data/refdata-extractor/tests/test_report_schema.py`
-  (pytest; the canonical home for this sub-system's Python tests, beside the
-  `seeds_shared` suite). It validates the fixtures against the schema.
+- **Validator + test:** the report-schema validation test in the data-core
+  test suite (pytest). It validates the fixtures against the schema.
 
 ## Where this fits
 

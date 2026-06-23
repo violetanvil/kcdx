@@ -1,14 +1,14 @@
 """app.csv_revert -- the backend half of the Confirm robust rollback: revert the
-data/db-export/ CSVs (design D21 -- the CSV-revert SPLIT).
+data/db-export/ CSVs.
 
 WHY THIS EXISTS (the CSV-revert split -- read this)
 ---------------------------------------------------
-The robust post-commit rollback (D21) is TWO halves at the irreversible DB commit:
-  - the DB ROWS + sqlite_sequence are restored by the DATA-CORE's 4d scoped restore-point
+The robust post-commit rollback is TWO halves at the irreversible DB commit:
+  - the DB ROWS + sqlite_sequence are restored by the DATA-CORE's scoped restore-point
     (data_core.restore(handle)) -- it owns the write semantics (which rows each job
-    touches), so the undo of those rows is its capability (D13/law 6). It restores DB rows
+    touches), so the undo of those rows is its capability. It restores DB rows
     ONLY -- it explicitly does NOT touch the CSVs.
-  - the data/db-export/ CSVs are a backend FILE artifact (D20 -- the derived diff record
+  - the data/db-export/ CSVs are a backend FILE artifact (the derived diff record
     the backend exports + stages + commits). Reverting THEM is the backend's own concern,
     exactly like csv_integrity (the backend owns the safety of the files it commits).
 
@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 
 class CsvRevert:
     """A pre-edit byte copy of the three data/db-export/ CSVs + their revert -- the
-    backend half of the D21 robust rollback (the data-core restores the DB rows; this
+    backend half of the robust rollback (the data-core restores the DB rows; this
     reverts the derived CSV record).
 
     Lifecycle (one per Confirm): capture() before the DB commit, then either
@@ -74,7 +74,7 @@ class CsvRevert:
         """Revert each db-export CSV to its captured pre-edit bytes -- the backend half of
         the robust rollback. Re-copies each captured-present file over the post-commit
         export's bytes and DELETES each captured-absent file. Idempotent-safe: a missing
-        snapshot dir (never captured) is a no-op. Logged (logging.md -- a rollback is a
+        snapshot dir (never captured) is a no-op. Logged (a rollback is a
         lifecycle event)."""
         if self._snap_dir is None:
             return
@@ -87,7 +87,7 @@ class CsvRevert:
                 # Was absent -- the Confirm's export created it; remove it so nothing lands.
                 os.remove(p)
         log.info("Confirm db-export CSVs reverted to their pre-Confirm bytes (the backend "
-                 "half of the robust rollback, D21 -- the data-core restored the DB rows)")
+                 "half of the robust rollback -- the data-core restored the DB rows)")
 
     def discard(self):
         """Drop the pre-edit copy -- a clean Confirm landed, no revert needed. Idempotent

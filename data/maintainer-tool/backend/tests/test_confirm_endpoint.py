@@ -1,18 +1,18 @@
-"""test_confirm_endpoint.py -- the backend Confirm transaction + Cancel (Phase 2 step 5,
-reworked onto the DIRECT-WRITE model: 4c direct write + data/db-export/ target + the
-robust rollback + the event-driven index.lock).
+"""test_confirm_endpoint.py -- the backend Confirm transaction + Cancel (the
+direct-write model: direct DB write + data/db-export/ target + the robust rollback +
+the event-driven index.lock).
 
 WHAT THIS PROVES
 ----------------
 POST /confirm runs the WHOLE atomic save SYNCHRONOUSLY in one request over the REAL app
-+ the REAL data-core (4c apply_direct_edit) + the REAL mini-dump DBs + REAL git (a
++ the REAL data-core (apply_direct_edit) + the REAL mini-dump DBs + REAL git (a
 THROWAWAY LOCAL BARE remote -- NOT real GitHub). The transaction opens AND closes inside
 the one request (no held state). The cases assert the load-bearing properties:
 
   - SUCCESS (an UPDATE + a CREATE-entity): the DB holds the new value AND the 3
     data/db-export/ CSVs are updated AND a git commit landed staging ONLY the 3
     data/db-export/ CSVs BY EXACT PATH -- NO .sqlite (the DB is the local originator,
-    D1/D20, NOT git-tracked) -- (the commit's changed files are a subset of EXACTLY that
+    NOT git-tracked) -- (the commit's changed files are a subset of EXACTLY that
     set, with the edited file present, and neither reference DB present) with the
     request-context identity as author, AND the push reached the throwaway bare remote
     (its HEAD advanced).
@@ -20,8 +20,8 @@ the one request (no held state). The cases assert the load-bearing properties:
     commit git push failure; a live index.lock): NOTHING lands -- the DB + db-export CSVs
     are byte-identical INCLUDING the sqlite_sequence values (the robust-rollback proof),
     NO new commit, the remote did not advance, a FAILED/busy status. The post-commit case
-    exercises the 4d SCOPED restore-point (data_core.restore(handle) -- DB rows + sequence)
-    + the backend db-export CSV revert -- NOT the dropped full-file snapshot.
+    exercises the SCOPED restore-point (data_core.restore(handle) -- DB rows + sequence)
+    + the backend db-export CSV revert -- NOT a dropped full-file snapshot.
   - LIVE index.lock: the git stage fails off git's OWN non-zero exit (event-driven, NO
     poll); the lock is NEVER reaped (it is still present after); the Confirm rolls
     everything back + surfaces busy/retry.
@@ -29,15 +29,15 @@ the one request (no held state). The cases assert the load-bearing properties:
     without the operator's auth.
   - CANCEL: {status: cancelled}, nothing written.
   - NO-DELTA / create-version-at-a-NEW-tag: the create-version at a new tag writes the DB
-    directly (4c) -- it is NO LONGER a no-op (the old seed-rebuild bridge dropped it). The
+    directly -- it is NO LONGER a no-op (an earlier seed-rebuild bridge dropped it). The
     DB gains the new game_versions row + the new av row; the db-export CSVs change; a real
-    git commit lands. (The previously-RED case, fixed under the direct-write model.)
+    git commit lands. (A previously-failing case, fixed under the direct-write model.)
 
 REAL EVERYTHING; skips gracefully if the mini-dump fixture is absent.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import hashlib
 import os
@@ -55,7 +55,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -74,22 +74,21 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
 DB_FILES = ("reference.sqlite", "reference-dev.sqlite")
 
 # The exact paths Confirm stages, relative to the checkout root (must match
-# routes_confirm._staged_rel_paths): ONLY the three derived CSVs at data/db-export/ (D20
-# -- the export target). The two reference DBs are the LOCAL ORIGINATOR (D1) -- amended in
+# routes_confirm._staged_rel_paths): ONLY the three derived CSVs at data/db-export/
+# (the export target). The two reference DBs are the LOCAL ORIGINATOR -- amended in
 # place at config.out_dir (data/) but NOT git-tracked; only the derived CSV export is the
-# git record (D20, whose rejected alternative was DB-tracked-as-binary). A confirm that
-# staged a .sqlite would contradict D1/D20 (and the real checkout gitignores the DB, so
-# `git add` of it is rejected and rolls the transaction back). data/seeds/ is retired
-# (D38) -- the curated CSVs at data/db-export/ are both the export target AND the rebuild
-# genesis.
+# git record (the rejected alternative was DB-tracked-as-binary). A confirm that
+# staged a .sqlite would contradict that model (and the real checkout gitignores the DB,
+# so `git add` of it is rejected and rolls the transaction back). The curated CSVs at
+# data/db-export/ are both the export target AND the rebuild genesis.
 STAGED_REL_PATHS = sorted([
     "data/db-export/module_seed.csv",
     "data/db-export/address_names_seed.csv",
     "data/db-export/address_versions_seed.csv",
 ])
 
-# The reference DBs -- the LOCAL ORIGINATOR (D1), present on disk + amended by the
-# data-core, but NEVER git-tracked (D20). Listed so the robust-rollback state hash can
+# The reference DBs -- the LOCAL ORIGINATOR, present on disk + amended by the
+# data-core, but NEVER git-tracked. Listed so the robust-rollback state hash can
 # read them off disk AND so the "DB is NOT in the commit" regression assertions can name
 # them explicitly. They are deliberately NOT in STAGED_REL_PATHS.
 DB_REL_PATHS = [
@@ -103,10 +102,10 @@ NEW_ROW_TAG = "1.6.2000000"         # a new game tag for a create-version-at-a-n
 AUTHOR_NAME = "Test Maintainer"
 AUTHOR_EMAIL = "test.maintainer@example.invalid"
 
-# LAW 5 (design S7 / ui/screens/s06-save-confirm.md): git is INVISIBLE to the maintainer.
-# A maintainer-FACING failure `detail` (the string the page renders as the write-failure
-# reason) must contain NO git vocabulary. The git stage + raw git stderr are the operator's
-# diagnostic -- they live in the log, never in the rendered detail. This is the law-5 grep.
+# GIT-INVISIBLE CONTRACT: git is INVISIBLE to the maintainer. A maintainer-FACING
+# failure `detail` (the string the page renders as the write-failure reason) must contain
+# NO git vocabulary. The git stage + raw git stderr are the operator's diagnostic -- they
+# live in the log, never in the rendered detail. This regex is the leak check.
 _GIT_VOCAB_RE = re.compile(r"\b(git|index\.lock|push|fetch|stage|remote|commit hash)\b",
                            re.IGNORECASE)
 
@@ -133,20 +132,20 @@ def _build_git_checkout():
     GitHub). Returns (checkout_root, bare_remote_path). Skips if the mini-dump fixture is
     absent.
 
-    Under D38 data/seeds/ is retired: the curated CSVs at data/db-export/ are BOTH the
-    rebuild genesis (config.seed_dir) AND the export target (config.db_export_dir) -- one
-    location. They are SEEDED in the baseline (one export of the rebuilt DB) so they exist
-    pre-Confirm -- the steady-state production posture (the export record already tracks
-    history). This makes the byte-identity / exact-path assertions unambiguous (the Confirm
-    UPDATES existing tracked files, not creates new ones)."""
+    The curated CSVs at data/db-export/ are BOTH the rebuild genesis (config.seed_dir)
+    AND the export target (config.db_export_dir) -- one location. They are SEEDED in the
+    baseline (one export of the rebuilt DB) so they exist pre-Confirm -- the steady-state
+    production posture (the export record already tracks history). This makes the
+    byte-identity / exact-path assertions unambiguous (the Confirm UPDATES existing
+    tracked files, not creates new ones)."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="confirm_checkout_")
     out_dir = os.path.join(root, "data")               # config.out_dir == data/ (the DBs)
-    # D38: the curated CSVs are the rebuild genesis AND the export target -- one dir.
+    # The curated CSVs are the rebuild genesis AND the export target -- one dir.
     export_dir = os.path.join(root, "data", "db-export")
-    seed_dir = export_dir                              # config.seed_dir == db-export (D38)
+    seed_dir = export_dir                              # config.seed_dir == db-export
     os.makedirs(export_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
@@ -217,7 +216,7 @@ def client_at(monkeypatch):
 
 # --- helpers over the checkout's DBs / db-export CSVs / git state -------------------
 def _seed_dir(root):
-    # config.seed_dir == <checkout>/data/db-export (D38 -- data/seeds/ retired).
+    # config.seed_dir == <checkout>/data/db-export.
     return os.path.join(root, "data", "db-export")
 
 
@@ -238,14 +237,14 @@ def _db_rows_hash(db_path):
     """A canonical hash over every table's full ordered rows + sqlite_sequence -- the
     LOGICAL content of one DB, independent of physical page layout.
 
-    WHY logical-rows, not file bytes (the 4d-restore oracle): the 4d scoped restore-point
+    WHY logical-rows, not file bytes (the restore oracle): the scoped restore-point
     (data_core.restore(handle)) undoes a committed edit by a row-level delete-then-reinsert
     + a sqlite_sequence reset on a freshly re-opened connection. That restores the DB rows
-    + sequence byte-identical (the D21 guarantee -- proved row-by-row here, sqlite_sequence
-    is a table so it is INCLUDED), but it rewrites the FILE's physical bytes (page layout /
-    free-list) -- so a raw file SHA would differ on a CORRECT restore. (The dropped full-file
-    snapshot restored exact file bytes; the scoped restore-point restores logical state. The
-    requirement is logical row + sequence identity, not physical file identity.) Hashing the
+    + sequence byte-identical (proved row-by-row here, sqlite_sequence is a table so it is
+    INCLUDED), but it rewrites the FILE's physical bytes (page layout / free-list) -- so a
+    raw file SHA would differ on a CORRECT restore. (A dropped full-file snapshot restored
+    exact file bytes; the scoped restore-point restores logical state. The requirement is
+    logical row + sequence identity, not physical file identity.) Hashing the
     ordered rows of every table -- sqlite_sequence among them -- is the right no-change
     oracle: it proves the rows AND the PK auto-increment counter are back to pre-Confirm."""
     con = sqlite3.connect(db_path)
@@ -356,25 +355,25 @@ def _confirm_body(**kw):
 # _staged_rel_paths -- the staged-set contract, a DIRECTLY-RUNNABLE unit test (no git
 # subprocess, no fixture -- so it is ALWAYS green regardless of the git-env). Confirm
 # stages EXACTLY the 3 data/db-export/ CSVs and NO .sqlite: the DB is the local originator
-# (D1) and is NOT git-tracked; only its derived CSV export is the git record (D20). This
-# is the cleanest regression guard for the staged-the-DB bug -- it pins the exact list.
+# and is NOT git-tracked; only its derived CSV export is the git record. This is the
+# cleanest regression guard for the staged-the-DB bug -- it pins the exact list.
 # ============================================================================
 def test_staged_rel_paths_is_the_three_db_export_csvs_only():
     from app.routes_confirm import _staged_rel_paths
 
     staged = _staged_rel_paths()
-    # EXACTLY the three derived-export CSVs (D20) -- nothing more, nothing less.
+    # EXACTLY the three derived-export CSVs -- nothing more, nothing less.
     assert sorted(staged) == STAGED_REL_PATHS, staged
-    # NO .sqlite -- the DB is the local originator (D1/D20), never staged. The bug this
+    # NO .sqlite -- the DB is the local originator, never staged. The bug this
     # guards: _staged_rel_paths returning the reference DBs alongside the CSVs.
     assert not any(p.endswith(".sqlite") for p in staged), \
         f"a .sqlite was staged -- the DB is the local originator, never committed: {staged}"
     # Neither reference DB by name (the explicit form of the .sqlite check above).
     for db in DB_REL_PATHS:
-        assert db not in staged, f"the DB {db} must not be staged (D1/D20): {staged}"
+        assert db not in staged, f"the DB {db} must not be staged: {staged}"
     # All three db-export CSVs ARE staged (the git-tracked record).
     for csv in STAGED_REL_PATHS:
-        assert csv in staged, f"the db-export CSV {csv} must be staged (D20): {staged}"
+        assert csv in staged, f"the db-export CSV {csv} must be staged: {staged}"
 
 
 # ============================================================================
@@ -408,26 +407,25 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
     changed = _changed_files_in_head(root)
     assert set(changed).issubset(set(STAGED_REL_PATHS)), \
         f"the commit staged files OUTSIDE the exact DB+db-export set: {changed}"
-    # The edit lands in the DB-EXPORT versions CSV (D20 target -- the only CSV record
-    # since D38 retired data/seeds/).
+    # The edit lands in the DB-EXPORT versions CSV (the only CSV record).
     assert "data/db-export/address_versions_seed.csv" in changed, \
         f"the edited db-export CSV must be in the commit: {changed}"
-    # NEITHER reference DB is in the commit -- the DB is the local originator (D1), NOT
-    # git-tracked; only its derived CSV export is the git record (D20). Staging a .sqlite
-    # would contradict D1/D20 (and is rejected in the real gitignored checkout). This is
-    # the regression guard for the staged-the-DB bug.
+    # NEITHER reference DB is in the commit -- the DB is the local originator, NOT
+    # git-tracked; only its derived CSV export is the git record. Staging a .sqlite
+    # would contradict that model (and is rejected in the real gitignored checkout). This
+    # is the regression guard for the staged-the-DB bug.
     for db in DB_REL_PATHS:
         assert db not in changed, \
             f"a reference DB was staged -- the DB is the local originator, never " \
-            f"committed (D1/D20): {changed}"
-    # RETIREMENT GUARD (D38): data/seeds/ is retired -- the Confirm never writes the
-    # old bootstrap path. Falsifiable: a regression re-introducing a data/seeds/ write
+            f"committed: {changed}"
+    # RETIREMENT GUARD: the old data/seeds/ bootstrap path is retired -- the Confirm
+    # never writes it. Falsifiable: a regression re-introducing a data/seeds/ write
     # would surface here (and already break the issubset(STAGED_REL_PATHS) check above,
     # since the seeds path is not in the staged set).
     assert "data/seeds/module_seed.csv" not in changed, \
-        f"a retired data/seeds/ CSV was written -- it must never be (D38): {changed}"
+        f"a retired data/seeds/ CSV was written -- it must never be: {changed}"
 
-    # The request-context identity is the commit author (D17).
+    # The request-context identity is the commit author.
     assert _head_author(root) == (AUTHOR_NAME, AUTHOR_EMAIL), _head_author(root)
 
     # The DB holds the new value.
@@ -440,9 +438,9 @@ def test_confirm_update_commits_dbexport_csvs_and_db_and_pushes(checkout, client
 
 
 # ============================================================================
-# SUCCESS -- an EDIT-NOTES UPDATE (step 14b): the DB names row holds the new notes, the
+# SUCCESS -- an EDIT-NOTES UPDATE: the DB names row holds the new notes, the
 # db-export CSVs update, ONE git commit (exact-path), request-context author, pushed. An
-# UPDATE -- NOT AP18-gated (no approval gate exists server-side; the confirm just transacts).
+# UPDATE -- no approval gate exists server-side; the confirm just transacts.
 # ============================================================================
 def test_confirm_edit_notes_commits_db_and_pushes(checkout, client_at):
     root, bare = checkout
@@ -465,7 +463,7 @@ def test_confirm_edit_notes_commits_db_and_pushes(checkout, client_at):
     # The notes change lands in the db-export NAMES CSV (the names-row column).
     assert "data/db-export/address_names_seed.csv" in changed, changed
 
-    # The request-context identity is the commit author (D17).
+    # The request-context identity is the commit author.
     assert _head_author(root) == (AUTHOR_NAME, AUTHOR_EMAIL), _head_author(root)
 
     # The DB names row holds the new notes (the UPDATE landed).
@@ -477,8 +475,9 @@ def test_confirm_edit_notes_commits_db_and_pushes(checkout, client_at):
 
 
 # ============================================================================
-# SUCCESS -- a CREATE (create-entity, AP18 path): confirmed end-to-end, materializes a new
-# row at the baseline, committed + pushed.
+# SUCCESS -- a CREATE (create-entity, the new-entity-approval path): confirmed end-to-end,
+# materializes a new row at the baseline, committed + pushed. Adding a new entity/version
+# row requires explicit maintainer approval.
 # ============================================================================
 def test_confirm_create_entity_commits_and_pushes(checkout, client_at):
     root, bare = checkout
@@ -755,11 +754,11 @@ def test_confirm_unknown_tag_aborts_before_txn(checkout, client_at):
 
 
 # ============================================================================
-# LAW 5 (git invisible) -- the maintainer-facing write-failure `detail` for a git failure
+# GIT-INVISIBLE -- the maintainer-facing write-failure `detail` for a git failure
 # is GIT-FREE, while the structured `git_stage` field still carries the stage (the operator
 # diagnostic lives in the log + git_stage, NEVER in the rendered detail). A directly-runnable
 # UNIT test of _failed_response (no git subprocess) -- the exact contract the GitCommitError
-# handler now uses (design S7 / ui/screens/s06-save-confirm.md law 5).
+# handler now uses.
 # ============================================================================
 def test_failed_response_detail_is_git_free_on_a_git_failure():
     from app.routes_confirm import _failed_response
@@ -774,10 +773,10 @@ def test_failed_response_detail_is_git_free_on_a_git_failure():
     assert resp["status"] == "failed", resp
     assert resp["committed"] is False, resp
     assert resp["retry"] is False, resp
-    # LAW 5: the maintainer-rendered reason carries NO git vocabulary.
+    # GIT-INVISIBLE: the maintainer-rendered reason carries NO git vocabulary.
     leak = _GIT_VOCAB_RE.search(resp["detail"])
     assert leak is None, \
-        f"law-5 violation: maintainer-facing detail leaks git vocab {leak.group(0)!r}: " \
+        f"git-invisible violation: maintainer-facing detail leaks git vocab {leak.group(0)!r}: " \
         f"{resp['detail']!r}"
     # The structured operator field STILL carries the stage (the frontend uses git_stage for
     # its own logic; it renders `detail`, never git_stage).
@@ -785,18 +784,18 @@ def test_failed_response_detail_is_git_free_on_a_git_failure():
 
 
 # ============================================================================
-# LAW 5 (git invisible) -- the post-commit git-push-failure path: the maintainer-facing
+# GIT-INVISIBLE -- the post-commit git-push-failure path: the maintainer-facing
 # `detail` the page renders is GIT-FREE end-to-end through the real app. (This rides the
 # same real-git fixture as the rollback test; if that fixture's environment cannot run the
 # git subprocess, this skips with it -- the directly-runnable unit test above is the
-# always-green law-5 proof.)
+# always-green proof.)
 # ============================================================================
 def test_confirm_git_push_failure_detail_is_git_free(checkout, client_at):
     root, bare = checkout
     client = client_at(root, push=True)
 
     # Point the `private` remote at a non-existent path so the push fails AFTER the DB
-    # commit -> the GitCommitError write-failure path (the law-5 leak site).
+    # commit -> the GitCommitError write-failure path (the git-vocab leak site).
     dead = os.path.join(tempfile.gettempdir(), "confirm_no_such_remote_law5.git")
     _git(root, "remote", "set-url", PRIVATE_REMOTE, dead)
 
@@ -808,9 +807,9 @@ def test_confirm_git_push_failure_detail_is_git_free(checkout, client_at):
     body = resp.json()
     assert body["status"] == "failed", body
     assert body.get("git_stage") == "push", body          # structured field unchanged
-    # LAW 5: the rendered reason leaks no git vocabulary (the operator's git detail is in
-    # the log + the structured git_stage, NOT in this maintainer-facing string).
+    # GIT-INVISIBLE: the rendered reason leaks no git vocabulary (the operator's git detail
+    # is in the log + the structured git_stage, NOT in this maintainer-facing string).
     leak = _GIT_VOCAB_RE.search(body["detail"])
     assert leak is None, \
-        f"law-5 violation: rendered detail leaks git vocab {leak.group(0)!r}: " \
+        f"git-invisible violation: rendered detail leaks git vocab {leak.group(0)!r}: " \
         f"{body['detail']!r}"

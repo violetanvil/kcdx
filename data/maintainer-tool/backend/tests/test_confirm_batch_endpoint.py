@@ -1,6 +1,5 @@
-"""test_confirm_batch_endpoint.py -- the backend BATCH Confirm transaction (Phase 6
-step 6.2: the D32 / §7 batch save-spine -- N version-row UPDATEs as ONE atomic
-transaction, all-or-nothing).
+"""test_confirm_batch_endpoint.py -- the backend BATCH Confirm transaction (the batch
+save-spine -- N version-row UPDATEs as ONE atomic transaction, all-or-nothing).
 
 WHAT THIS PROVES
 ----------------
@@ -14,7 +13,7 @@ cases assert the load-bearing properties:
     new value in the DB, ONE git commit staging ONLY the 3 data/db-export/ CSVs by exact
     path, the request-context author, the push reached the throwaway bare remote.
 
-  - ALL-OR-NOTHING (the D21/D32 invariant -- the load-bearing case): a batch whose ONE
+  - ALL-OR-NOTHING (the atomicity invariant -- the load-bearing case): a batch whose ONE
     row is invalid (an out-of-enum evidence_kind the validator rejects) returns FAILED
     and rolls EVERYTHING back -- the DB + db-export CSVs are BYTE-IDENTICAL INCLUDING
     sqlite_sequence, NO new commit, the remote did not advance, nothing landed. The
@@ -23,15 +22,14 @@ cases assert the load-bearing properties:
     would DIFFER -> this assertion fails. This is the single canonical guard against a
     commit-per-row impl labeled "batch".
 
-  - AUTHOR: the request-context identity authors the batch commit (D17).
+  - AUTHOR: the request-context identity authors the batch commit.
 
-REAL EVERYTHING; skips gracefully if the mini-dump fixture is absent. Emits the canonical
-acceptance signal (.claude/rules/acceptance-signal.md) to stdout -- the agent greps the
-ACCEPT-RESULT / ACCEPT-SUITE tokens; the user reads nothing.
+REAL EVERYTHING; skips gracefully if the mini-dump fixture is absent. Prints a compact
+per-result + summary line to stdout for a quick read of the suite verdict.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import hashlib
 import os
@@ -48,7 +46,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -67,7 +65,7 @@ SEED_FILES = ("module_seed.csv", "address_names_seed.csv",
 DB_FILES = ("reference.sqlite", "reference-dev.sqlite")
 
 # The exact paths Confirm stages (must match routes_confirm._staged_rel_paths): ONLY the
-# 3 derived CSVs at data/db-export/ (D20). The DB is the local originator (D1) -- not staged.
+# 3 derived CSVs at data/db-export/. The DB is the local originator -- not staged.
 STAGED_REL_PATHS = sorted([
     "data/db-export/module_seed.csv",
     "data/db-export/address_names_seed.csv",
@@ -96,16 +94,16 @@ def _build_git_checkout():
     """A temp checkout that is a REAL git repo (curated CSVs at data/db-export/ + rebuilt
     DBs at data/, the db-export CSVs committed as the baseline) plus a THROWAWAY LOCAL BARE
     remote `private`. Mirrors test_confirm_endpoint._build_git_checkout. Skips if the
-    mini-dump fixture is absent. D38: data/seeds/ is retired -- the curated CSVs at
-    data/db-export/ are BOTH the rebuild genesis (config.seed_dir) AND the export target."""
+    mini-dump fixture is absent. The curated CSVs at data/db-export/ are BOTH the rebuild
+    genesis (config.seed_dir) AND the export target."""
     if not os.path.isdir(DUMP_DIR):
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="batch_confirm_checkout_")
     out_dir = os.path.join(root, "data")
-    # D38: the curated CSVs are the rebuild genesis AND the export target -- one dir.
+    # The curated CSVs are the rebuild genesis AND the export target -- one dir.
     export_dir = os.path.join(root, "data", "db-export")
-    seed_dir = export_dir                              # config.seed_dir == db-export (D38)
+    seed_dir = export_dir                              # config.seed_dir == db-export
     os.makedirs(export_dir, exist_ok=True)
     for f in SEED_FILES:
         shutil.copy2(os.path.join(REAL_SEED_DIR, f), os.path.join(seed_dir, f))
@@ -277,10 +275,10 @@ def _batch_body(rows):
             "version_tag": GVT, "rows": rows}
 
 
-# --- the canonical acceptance signal (.claude/rules/acceptance-signal.md) -----------
+# --- a compact result emitter (one per-result line + a summary line) ----------------
 def _emit_signal(results):
-    """One ACCEPT-RESULT per item, one ACCEPT-SUITE aggregate last. The agent greps the
-    fixed tokens; the user reads nothing."""
+    """One per-result line per item, one aggregate summary line last, for a quick read
+    of the suite verdict."""
     passed = sum(1 for _, ok, _ in results if ok)
     total = len(results)
     for aid, ok, detail in results:
@@ -319,14 +317,14 @@ def test_confirm_batch_commits_all_rows_and_pushes(checkout, client_at):
         f"the batch commit staged files OUTSIDE the exact db-export set: {changed}"
     assert "data/db-export/address_versions_seed.csv" in changed, changed
     assert not any(p.endswith(".sqlite") for p in changed), \
-        f"a .sqlite was staged -- the DB is the local originator (D1/D20): {changed}"
+        f"a .sqlite was staged -- the DB is the local originator: {changed}"
 
     # EVERY row holds its OWN distinct new value (not one value smeared across all).
     for i, (kid, _vby) in enumerate(picked):
         assert _db_verified_by(root, kid) == f"BatchSigner_{i}", \
             f"batch row kid={kid} did not land its value in the DB"
 
-    # The request-context identity authored the batch commit (D17).
+    # The request-context identity authored the batch commit.
     assert _head_author(root) == (AUTHOR_NAME, AUTHOR_EMAIL), _head_author(root)
     # The push reached the throwaway bare remote.
     assert _head_sha(bare) != bare_before, "the batch did not push"
@@ -334,7 +332,7 @@ def test_confirm_batch_commits_all_rows_and_pushes(checkout, client_at):
 
 
 # ============================================================================
-# ALL-OR-NOTHING (the D21/D32 load-bearing case) -- a batch whose ONE row is invalid
+# ALL-OR-NOTHING (the atomicity load-bearing case) -- a batch whose ONE row is invalid
 # returns FAILED and rolls EVERYTHING back: the DB + db-export byte-identical INCLUDING
 # sqlite_sequence, NO new commit, the remote did not advance, the EARLIER valid rows are
 # NOT committed. This FAILS a per-row-commit fake-batch (which would land rows 0..K-1).
@@ -381,9 +379,9 @@ def test_confirm_batch_one_invalid_row_rolls_back_whole_batch(checkout, client_a
 
 
 # ============================================================================
-# The canonical-signal emitter -- runs the two load-bearing assertions over the real app
-# and emits ACCEPT-RESULT / ACCEPT-SUITE so the agent reads ONE verdict line, not a log.
-# (The standalone tests above are the pytest gate; this maps them to the acceptance grammar.)
+# The result emitter -- runs the two load-bearing assertions over the real app and prints
+# a compact per-result + summary line for a quick read of the suite verdict.
+# (The standalone tests above are the pytest gate; this maps them to the result summary.)
 # ============================================================================
 def test_confirm_batch_acceptance_signal(checkout, client_at):
     root, bare = checkout

@@ -1,46 +1,46 @@
-"""app.adapter -- the version-tag -> data-core-params adapter (design S5 / D15 / D18).
+"""app.adapter -- maps a chosen game-version tag to the params the data-core needs
+(no DLL is read server-side).
 
-THE PROBLEM (design S5, the step's load-bearing integration question)
----------------------------------------------------------------------
+THE PROBLEM (the load-bearing integration question)
+---------------------------------------------------
 The data-core write functions (seeds_shared.db_editor.*) take `(out_dir, dll_path,
 ...)`. `dll_path` is a DESKTOP assumption: the data-core's apply path resolves the
 target game version by pefile-scanning a linked WHGame.dll's `.rdata` interns
-(import_to_sqlite.apply_seeds step 1: `tag, ordinal = resolve_version(dll_path)`,
+(import_to_sqlite.apply_seeds first resolves `tag, ordinal = resolve_version(dll_path)`,
 then a gate that REFUSES unless `tag == GAME_VERSION_TAG`). The DLL is used for
 NOTHING ELSE -- its sole product is the `(tag, ordinal)` pair.
 
-The web backend has NO DLL server-side (D14/D18: the image carries only app code;
-the client resolves a DLL in-browser and sends only the version TAG, D15). So the
-adapter maps a maintainer-CHOSEN version TAG to the version-context params the
-data-core needs in place of a DLL scan (S5: "a thin adapter maps a chosen version
-tag -> the data-core's params -- no DLL server-side").
+The web backend has NO DLL server-side: the image carries only app code; the client
+resolves a DLL in-browser and sends only the version TAG. So the adapter maps a
+maintainer-CHOSEN version TAG to the version-context params the data-core needs in
+place of a DLL scan -- a thin adapter, no DLL server-side.
 
-WHAT THIS ADAPTER OWNS (fully design-determined -- built here)
---------------------------------------------------------------
+WHAT THIS ADAPTER OWNS
+----------------------
 Resolving + validating a chosen version tag against the KNOWN versions the server
 holds (the built DB's `game_versions` rows, with the data-core baseline constant
 as the floor when no DB resolves), producing a `VersionContext(tag, ordinal)` --
 the exact pair `resolve_version(dll_path)` would have produced from a DLL of that
-version. This is the "resolved version another way" the step doc names: the tag is
-validated to be a real game version, and resolved to its ordinal, with NO DLL read.
+version. This is the "resolved version another way": the tag is validated to be a
+real game version, and resolved to its ordinal, with NO DLL read.
 
 It holds NO data-core rule logic -- it does not validate seed content, run SQL, or
 touch the write gate. It maps a tag to the version facts; the data-core's gate is
-still the single validator on any write (D13/R3).
+still the single validator on any write.
 
-HOW THE RESOLVED VersionContext REACHES THE DATA-CORE (settled, step 1b)
------------------------------------------------------------------------
-The earlier open fork -- how a chosen tag threads into a data-core call whose
-signature accepted only `dll_path` -- is SETTLED. Step 1b (A2) added an OPTIONAL
-pre-resolved `version=(tag, ordinal)` param to apply_seeds + the five db_editor
-functions: supply `version` and the data-core skips the DLL `.rdata` scan entirely
-(no DLL server-side, D15). So a save endpoint passes `version=(ctx.tag, ctx.ordinal)`
-+ `dll_path=None` -- the adapter's `VersionContext` IS the data-core's param. There is
-no `dll_path` to fabricate; the adapter resolves the context, the endpoint passes it.
-This adapter therefore owns ONLY the tag -> `VersionContext` resolution; how it is
-consumed (the `version=` keyword on a data-core call -- a Save's dry validate
-`validate_only=True`, a Confirm's write) is the endpoint's (app.routes_save /
-the step-5 confirm), not a translation step here.
+HOW THE RESOLVED VersionContext REACHES THE DATA-CORE
+-----------------------------------------------------
+How a chosen tag threads into a data-core call whose signature accepted only
+`dll_path` is settled. The data-core's apply_seeds + the five db_editor functions
+take an OPTIONAL pre-resolved `version=(tag, ordinal)` param: supply `version` and
+the data-core skips the DLL `.rdata` scan entirely (no DLL server-side). So a save
+endpoint passes `version=(ctx.tag, ctx.ordinal)` + `dll_path=None` -- the adapter's
+`VersionContext` IS the data-core's param. There is no `dll_path` to fabricate; the
+adapter resolves the context, the endpoint passes it. This adapter therefore owns
+ONLY the tag -> `VersionContext` resolution; how it is consumed (the `version=`
+keyword on a data-core call -- a Save's dry validate `validate_only=True`, a
+Confirm's write) is the endpoint's (app.routes_save / the confirm path), not a
+translation step here.
 """
 import os
 import sqlite3
@@ -66,8 +66,8 @@ class VersionContext:
 
 
 def known_versions(config):
-    """The version tags the server holds (design D10/US-10: the dropdown is
-    populated from the known game versions). Source order:
+    """The version tags the server holds (the dropdown is populated from the known
+    game versions). Source order:
 
       1. the built USER reference DB's `game_versions` rows, when the configured
          checkout resolves a DB (the authoritative live set -- the same rows the
@@ -98,7 +98,7 @@ def known_versions(config):
         # The data-core baseline constant is the floor (import_to_sqlite carries
         # GAME_VERSION_TAG / GAME_VERSION_ORDINAL). Read it from the data-core, not
         # a backend copy, so the one source of the baseline version is the
-        # data-core's (D13/R3).
+        # data-core's.
         import import_to_sqlite as imp
         versions[imp.GAME_VERSION_TAG] = int(imp.GAME_VERSION_ORDINAL)
     return versions
@@ -106,11 +106,11 @@ def known_versions(config):
 
 def resolve_tag(config, version_tag):
     """Map a maintainer-chosen version TAG to its `VersionContext(tag, ordinal)` --
-    the version params the data-core needs in place of a DLL scan (design S5).
-    Validates the tag against the known versions the server holds (`known_versions`);
-    an unknown tag raises `VersionTagError` (surfaced, never guessed).
+    the version params the data-core needs in place of a DLL scan. Validates the tag
+    against the known versions the server holds (`known_versions`); an unknown tag
+    raises `VersionTagError` (surfaced, never guessed).
 
-    This is the "resolved version another way" the step names: the equivalent of
+    This is the "resolved version another way": the equivalent of
     `resolve_version(dll_path)` for a DLL of `version_tag`, with NO DLL read.
     """
     versions = known_versions(config)

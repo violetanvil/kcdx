@@ -1,30 +1,31 @@
-"""app.csv_integrity -- the Confirm transaction's cheap integrity check (design S4 /
-S7; the round-trip-cost resolution).
+"""app.csv_integrity -- the Confirm transaction's cheap integrity check
+(the round-trip-cost resolution).
 
-THE ROUND-TRIP-COST QUESTION (resolved, results-driven -- the code answered it)
--------------------------------------------------------------------------------
-The save spine (design S7) calls for a round-trip oracle on every save. The data-core's
-full round_trip (seeds_shared.round_trip) asserts BOTH directions of D2:
+THE ROUND-TRIP-COST QUESTION (resolved -- the code answered it)
+--------------------------------------------------------------
+The save spine calls for a round-trip oracle on every save. The data-core's
+full round_trip (seeds_shared.round_trip) asserts BOTH directions of the
+DB<->CSV equivalence invariant:
 
-    import(export(DB)) == DB   -- a FULL run_rebuild from the exported CSVs (+ a refdata
+    import(export(DB)) == DB   -- a FULL rebuild from the exported CSVs (+ a refdata
                                   dump_dir): rebuilds the 1.3GB DEV DB from scratch.
     export(import(CSVs)) == CSVs -- a byte-identity re-export compare: NO rebuild, NO dump.
 
 The `import(export(DB))==DB` half is PROHIBITIVE per Confirm -- it rebuilds the bulk DEV
 DB (1.3GB, the 321K bulk rows) from a refdata dump on EVERY incremental save. The web
-backend has no refdata dump_dir mounted (D18 -- the image carries only app code), and a
+backend has no refdata dump_dir mounted (the image carries only app code), and a
 per-save full rebuild would make every Confirm take minutes. So Confirm runs the CHEAP,
 CORRECT half: the `export(import(CSVs))==CSVs` byte-identity direction -- re-export the
 just-committed DB to a scratch dir and assert the three CSVs are byte-identical to the
 ones Confirm just wrote to data/db-export/ (the curated CSV export -- the git-tracked
-diff record AND, since D38 retired data/seeds/, the rebuild genesis). This proves
+diff record AND the rebuild genesis). This proves
 DB<->CSV information-equivalence for
 the committed change (the export is deterministic: re-exporting the same committed DB
 reproduces the same CSV bytes) WITHOUT a rebuild.
 
 Why this is the CORRECT check for an incremental confirm (not a weaker substitute that
 misses bugs): Confirm's CSVs are themselves produced BY export_seeds from the committed
-DB (step 3). The risk this guards is the export being non-deterministic or diff-unstable
+DB. The risk this guards is the export being non-deterministic or diff-unstable
 -- a re-export that differs from what was committed means the CSVs Confirm staged are not
 a faithful, reproducible projection of the DB (a tool bug: the commit's CSVs would not
 round-trip). The DB->CSV direction is the one the incremental save actually exercises;
@@ -32,13 +33,13 @@ the CSV->DB->CSV full rebuild re-proves the WHOLE 321K-row import pipeline, whic
 incremental one-row edit did not touch and which the data-core's own oracle test
 (test_round_trip on the mini-dump) already covers at build time. (The full bidirectional
 round-trip remains the build-time correctness gate -- it is NOT abandoned, only NOT run
-per incremental save. This is a SURFACED design call: see the step-5 confirm composition.)
+per incremental save. This is a SURFACED design call: see the confirm composition.)
 
 WHAT THIS OWNS (and what it does NOT)
 -------------------------------------
 The check itself is a thin wrapper over the data-core's REAL export (export_seeds): it
 re-exports the committed DB into a scratch dir and byte-compares to the committed CSVs.
-It re-implements no export logic (the export is the data-core's, S5 law 6); it owns only
+It re-implements no export logic (the export is the data-core's); it owns only
 the byte compare + the scratch-dir lifecycle (a backend concern -- the integrity of the
 files the backend is about to commit).
 """
@@ -80,7 +81,7 @@ def assert_csv_export_deterministic(db_path, committed_seed_dir, *, work_dir=Non
       db_path            -- the just-committed reference DB (config.user_db). The export
                             reads it; the USER DB carries the full curated set.
       committed_seed_dir -- the dir holding the three CSVs Confirm just wrote
-                            (config.db_export_dir -- data/db-export/, D20/D38). NOT
+                            (config.db_export_dir -- data/db-export/). NOT
                             mutated -- the re-export goes to a scratch copy.
       work_dir           -- optional scratch dir; a temp dir is created + removed when
                             omitted.
@@ -117,7 +118,7 @@ def assert_csv_export_deterministic(db_path, committed_seed_dir, *, work_dir=Non
                     f"{f}: re-export != committed bytes (len reexport={len(a)} "
                     f"committed={len(b)}; first diff at byte {first})")
         if diffs:
-            # logging.md: the integrity failure logs before it raises -- name the
+            # The integrity failure logs before it raises -- name the
             # diverging files so the operator sees a precise tool-bug report.
             log.warning("Confirm CSV integrity check FAILED: %s", "; ".join(diffs))
             raise CsvIntegrityError(

@@ -9,22 +9,17 @@ assignment, the audit trio, supersession/deprecation integrity, the survival
 columns, version semantics, the CSV file format. Those invariants are binding
 regardless of HOW a row is produced.
 
-> **Source-of-truth note (2026-06-02 — see
-> [`data/maintainer-tool/design.md`](../maintainer-tool/design.md)).** Under the
-> settled maintainer-tool design the **reference DB is the authoring surface**;
+> **Source-of-truth note.** The **reference DB is the authoring surface**;
 > the three seed CSVs are a **deterministic export** of the DB (the git-tracked
 > diff/review layer), produced by the tool, no longer hand-edited. Every rule in
 > this file still binds — it now binds on the **DB-write path** (enforced by the
 > shared validator before any write) and on the export (the exported CSV obeys the
 > file-format rules below and round-trips byte-identically). Where this file says
 > "what the maintainer writes," read it as the invariant the authored row must
-> satisfy, on whichever surface it is authored. The DB shape + the engine's
-> runtime semantics are documented in [`data/reference.md`](../reference.md) and
-> [`data/reference-dev.md`](../reference-dev.md).
+> satisfy, on whichever surface it is authored.
 
-Most rules below are enforced as fail-loud checks in the importer
-(`data/refdata-extractor/python/import_to_sqlite.py`); the harness
-(`validate_db_shape.py`) re-asserts them against the generated DBs.
+Most rules below are enforced as fail-loud checks in the importer; a
+shape-validation pass re-asserts them against the generated DBs.
 Rules explicitly marked **policy-only** are NOT auto-enforced — the
 maintainer is responsible for compliance (review, the test-suite matrix,
 the verification checkpoint).
@@ -243,8 +238,8 @@ still the thing it was verified to be?" The check's *form* mirrors how the kind
 resolves: an AOB-matched kind is re-checked by re-matching the AOB, a derived
 slot by re-running its derivation, and so on. The importer reads these six seed
 columns and populates the FOLDED survival/re-find columns on the curated row's
-`address_versions` row (D22 / design §11.2 — the former `survival` sibling table
-folded onto `address_versions` and deleted; the av row is the sole home).
+`address_versions` row (the survival datum is folded directly onto the
+`address_versions` row, which is its sole home — there is no separate survival table).
 
 All six are NULL-valid. A kind uses only the column(s) its form needs; the rest
 stay empty. An unfilled column = an empty folded cell (the importer leaves the
@@ -260,7 +255,7 @@ A **malformed PRESENT** value is a HARD ERROR; an EMPTY value is always allowed.
 | `survival_slot_count` | A non-negative INTEGER. | `vtable_base` | The expected vtable slot count (the survival check reads N qwords + asserts each is a `.text` pointer). |
 | `survival_expect_unique` | A boolean — exactly `1` or `0` (empty = NULL). Any other value = HARD ERROR. | `callsite`, `instruction_anchor`, `string_anchor` | Whether the locator is expected to resolve to exactly ONE site at the current version: the AOB-unique assertion for `callsite`/`instruction_anchor` (the `survival_aob` pattern matches exactly one `.text` span), and the unique-xref assertion for `string_anchor` (the literal has exactly one `.text` xref). A `1` lets the survival check fail loud on an ambiguous re-match (the locator went stale into non-uniqueness). |
 
-**`survival_rule` grammar (the minimal form step 5.2 authors).** A data_slot is
+**`survival_rule` grammar (the minimal authored form).** A data_slot is
 reached by following a RIP-relative displacement from an anchor, or by a fixed
 offset from another slot. The rule string encodes which:
 
@@ -289,14 +284,11 @@ its body fingerprint (`content_hash` + `length`), already on the
 `address_versions` row from the bulk promote. The importer reuses it; the
 maintainer never hand-authors a function's survival columns.
 
-The six columns are read + format-validated by the importer (`seeds_shared/
-validators.py`); the `survival_derives_from` FK closure is a cross-seed check
+The six columns are read + format-validated by the importer; the
+`survival_derives_from` FK closure is a cross-seed check
 (below). `survival_expect_unique` is used by the search-locating kinds
 (`callsite` + `instruction_anchor` via the AOB-unique assertion, `string_anchor`
-via the unique-xref assertion); the other kinds leave it empty. The folded
-survival/re-find columns on `address_versions` live in `seeds_shared/schema.py`;
-the per-kind survival design rationale is in
-[`data/maintainer-tool/fingerprint-per-kind.md`](../maintainer-tool/fingerprint-per-kind.md).
+via the unique-xref assertion); the other kinds leave it empty.
 
 ## Supersession (entity rename; engine auto-follows)
 
@@ -366,7 +358,7 @@ Every non-deprecated, non-superseded entity in `address_names_seed.csv` MUST
 be exercised by at least one `test-plugins/` plugin. **This is a policy
 rule, not an importer check** — the importer does NOT cross-reference
 `address_names_seed.csv` against the `test-plugins/` tree. Compliance is
-enforced by review (`/code-review`, `/verification-checkpoint`) and by the
+enforced by code review and the pre-launch verification checkpoint, and by the
 test-suite matrix at `test-plugins/README.md`.
 
 The test plugin IS the re-verification mechanism when a new game version
@@ -457,5 +449,5 @@ When KCD2 ships a new build:
 
 ## What changed (this file's history)
 
-Policy doc rewritten 2026-05-28. Previous version (the v0.1 single-CSV +
-banded-IDs + engine-blocks-on-unverified model) is fully superseded.
+The previous version (the v0.1 single-CSV + banded-IDs +
+engine-blocks-on-unverified model) is fully superseded.

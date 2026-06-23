@@ -1,8 +1,8 @@
 # UI screens — index
 
 Single-concern screen specs for the maintainer tool's **React + Mantine web frontend**. Each
-file specs one screen/region; the authoritative design system (tokens, laws, app shell,
-component silhouettes) is **[`../design.md`](../design.md)** — these screens implement it and
+file specs one screen/region against the shared design system (semantic tokens, the numbered
+interaction laws, the app shell, component silhouettes) — these screens implement it and
 reference it by name (a value or law duplicated into a screen is drift).
 
 | Screen | Region | Spec |
@@ -19,6 +19,6 @@ reference it by name (a value or law duplicated into a screen is drift).
 version/verify content moved into s02's header (the version&verify surface); its
 save-result + notices became the top-anchored toast, specified in s06's overlay concern.)*
 
-*(s08 — the verification worklist — is NEW, the verification engine's bulk review surface
-(TRD D28/US-11). The per-module DLL link table + link-to-create live in s02's verify surface;
+*(s08 — the verification worklist — is NEW, the verification engine's bulk review surface.
+The per-module DLL link table + link-to-create live in s02's verify surface;
 the per-author static check verdict lives inline in s04. There is no s07.)*

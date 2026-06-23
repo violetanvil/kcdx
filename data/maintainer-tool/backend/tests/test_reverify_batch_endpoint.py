@@ -1,5 +1,4 @@
-"""test_reverify_batch_endpoint.py -- the /save/reverify-batch PREVIEW endpoint
-(maintainer-tool Phase 6, step 6.2b -- D39).
+"""test_reverify_batch_endpoint.py -- the /save/reverify-batch PREVIEW endpoint.
 
 WHAT THIS PROVES
 ----------------
@@ -16,9 +15,9 @@ transaction.
 THE NO-WRITE PROOF (the load-bearing assertion)
 -----------------------------------------------
 A PREVIEW endpoint writes nothing and opens no transaction (Save-previews /
-Confirm-transacts, D16). After the /save/reverify-batch POST the reference DB files are
-BYTE-IDENTICAL to before. The write is /confirm/batch's (the 6.2 endpoint), not this
-one. FALSIFIABLE: a preview that mutated the DB fails the byte-identical row.
+Confirm-transacts). After the /save/reverify-batch POST the reference DB files are
+BYTE-IDENTICAL to before. The write is /confirm/batch's, not this one. FALSIFIABLE: a
+preview that mutated the DB fails the byte-identical row.
 
 NOTE -- a PREVIEW touches no git remote (it writes nothing, opens no txn), so this test
 needs no temp bare-git remote (unlike the confirm-endpoint tests, which run `git -C`
@@ -27,7 +26,7 @@ rebuilt DBs + a direct-injected crafted state; no git setup.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/test_reverify_batch_endpoint.py -q
+    python -m pytest backend/tests/test_reverify_batch_endpoint.py -q
 """
 import hashlib
 import logging
@@ -43,7 +42,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -132,7 +131,7 @@ def _inject_state(user_db):
         id_open = _add_av(e_open, gvt_id, None, gvt_id, "Old", "2025-01-01", ek_old)
         e_close = _add_entity("kcdx_test_close")
         id_close = _add_av(e_close, gvt_id, None, mid_id, "Old", "2025-01-01", ek_old)
-        # ALREADY-CLOSED-TO-LAST-VERIFIED (D41 close-intervals already-acted): valid_from=GVT,
+        # ALREADY-CLOSED-TO-LAST-VERIFIED (close-intervals already-acted): valid_from=GVT,
         # valid_through=MID, last_verified=MID -- valid_through == last_verified, both
         # non-NULL. The resolver's close-intervals path SKIPS it (the close is already done),
         # so it produces NO spec -> the endpoint must classify it `already_acted`.
@@ -251,10 +250,10 @@ def test_reverify_batch_verify_all_previews_and_writes_nothing(checkout, client_
     # The proof-rank evidence_kind surfaces in the field-delta (the human signal).
     assert _delta_field(gap, "evidence_kind")[1] == "live_production", gap
     assert _delta_field(openrow, "evidence_kind")[1] == "live_test_plugin", openrow
-    # The trio (D17a): verified_by is the injected author; last_verified -> swept.
+    # The audit trio: verified_by is the injected author; last_verified -> swept.
     assert _delta_field(gap, "verified_by")[1] == "BatchSigner", gap
     assert _delta_field(gap, "last_verified_at_version")[1] == LATER_TAG, gap
-    # The D34 gap-extension on the CLOSED gap row.
+    # The gap-extension on the CLOSED gap row.
     assert _delta_field(gap, "valid_through_version") == (MID_TAG, LATER_TAG), gap
     # The OPEN already-covered interval: NO valid_through edit in the delta or edits.
     assert _delta_field(openrow, "valid_through_version") is None, openrow
@@ -267,7 +266,7 @@ def test_reverify_batch_verify_all_previews_and_writes_nothing(checkout, client_
 
 
 # ============================================================================
-# Close-intervals preview: the D35 retract surfaces in the delta, WRITES NOTHING.
+# Close-intervals preview: the retract surfaces in the delta, WRITES NOTHING.
 # ============================================================================
 def test_reverify_batch_close_intervals_previews_and_writes_nothing(checkout,
                                                                     client_at):
@@ -283,17 +282,17 @@ def test_reverify_batch_close_intervals_previews_and_writes_nothing(checkout,
     body = resp.json()
     close = _row_for(body, ids["e_close"])
     assert close is not None, body
-    # The D35 retract: valid_through -> the row's last_verified (MID). Old is '' (open).
+    # The retract: valid_through -> the row's last_verified (MID). Old is '' (open).
     assert _delta_field(close, "valid_through_version") == ("", MID_TAG), close
     assert close["edits"]["valid_through_version"] == MID_TAG, close
     assert _db_hash(root) == db_before, "a close-intervals preview must not touch the DB"
 
 
 # ============================================================================
-# Report-vs-DB reconciliation (D41 fact 2): an already-acted row is classified
+# Report-vs-DB reconciliation: an already-acted row is classified
 # `already_acted` / no-action EXPLICITLY (not silently omitted), the open row stays
 # actionable, the preview WRITES NOTHING. The FE reads this classification, never
-# re-derives it (D41).
+# re-derives it.
 # ============================================================================
 def test_reverify_batch_close_intervals_classifies_already_acted(checkout, client_at):
     root, ids = checkout
@@ -375,8 +374,8 @@ def test_reverify_batch_bad_action_rejected(checkout, client_at):
 
 
 # ============================================================================
-# The canonical-signal emitter -- maps the load-bearing properties to the ACCEPT grammar
-# (.claude/rules/acceptance-signal.md) so the agent reads ONE verdict line, not a log.
+# A compact result emitter -- prints one PASS/FAIL line per load-bearing property +
+# a final summary line, for a quick read of the suite verdict.
 # ============================================================================
 def _emit_signal(results):
     passed = sum(1 for _, ok, _ in results if ok)
@@ -414,7 +413,7 @@ def test_reverify_batch_acceptance_signal(checkout, client_at):
     results.append(("reverify-batch-preview-writes-nothing", ok2,
                     None if ok2 else "the preview MUTATED the DB"))
 
-    # ACCEPT 3 (D41 fact 2): an already-acted row is classified already_acted / no-action
+    # ACCEPT 3: an already-acted row is classified already_acted / no-action
     # EXPLICITLY (not silently omitted), carrying its marker, no field-delta/edits.
     db_before3 = _db_hash(root)
     r3 = client.post("/save/reverify-batch", json={

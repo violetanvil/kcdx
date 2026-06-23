@@ -1,10 +1,10 @@
-"""app.static_serving -- serve the built React SPA's static files alongside the API (D14).
+"""app.static_serving -- serve the built React SPA's static files alongside the API.
 
-D14 settled the SINGLE IMAGE: one uvicorn process serves the API AND the built frontend
-`dist/` static files, same-origin (D18's "CORS may not apply" note). This module owns the
+The single-image design: one uvicorn process serves the API AND the built frontend
+`dist/` static files, same-origin (so CORS may not apply). This module owns the
 serving side ONLY -- the static-dir path is config (KCDX_STATIC_DIR, app.config.static_dir);
-the image's stage-2 COPY places the built `dist/` there (step 16b). It holds NO data-core
-rule logic (D13/R3) -- static serving is pure backend plumbing.
+the container image's build stage copies the built `dist/` there. It holds NO data-core
+rule logic -- static serving is pure backend plumbing.
 
 WHY a catch-all GET route registered LAST, not StaticFiles mounted at "/"
 ------------------------------------------------------------------------
@@ -24,7 +24,7 @@ misconfigured container. The app still boots and the API still serves regardless
 catch-all is the only thing that touches the dir, and it touches it per-request, never at
 import). When no `index.html` resolves, a SPA/asset request returns HTTP 503 with a clear
 JSON body naming the cause ("frontend not built or not mounted") and the failure is LOGGED
-(logging.md -- the failure branch logs before it returns). 503 (not 404) distinguishes
+(the failure branch logs before it returns). 503 (not 404) distinguishes
 "backend up, frontend bundle absent" from a genuine missing resource, mirroring /health's
 report-the-state-don't-crash posture.
 """
@@ -36,7 +36,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .config import static_dir
 
-# One module logger, event-driven (logging.md): the degraded branch logs when no index.html
+# One module logger, event-driven: the degraded branch logs when no index.html
 # resolves, never per served asset.
 log = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ _INDEX_HTML = "index.html"
 
 def _safe_join(root, rel_path):
     """Resolve rel_path under root, refusing any path that escapes root (a `..` traversal
-    or an absolute path -- input-validation.md: a path from the request is untrusted). The
+    or an absolute path -- a path from the request is untrusted). The
     request path is browser/operator-controlled, so a served asset is confined to the static
     dir. Returns the absolute path if it is a real file under root, else None."""
     # normpath collapses `..`; the abspath + commonpath check is the traversal fence.

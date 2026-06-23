@@ -1,29 +1,29 @@
-"""test_save_endpoints.py -- the backend save (PREVIEW) endpoints (Phase 2 step 4b).
+"""test_save_endpoints.py -- the backend save (PREVIEW) endpoints.
 
 WHAT THIS PROVES
 ----------------
 The six save endpoints DRY-VALIDATE a prospective edit and return the field-delta
 over the REAL app + the REAL data-core + the REAL mini-dump DBs (no mock of either --
-the R3/law-6 self-check: TestClient drives FastAPI against the real /save/* routes,
+the no-duplication self-check: TestClient drives FastAPI against the real /save/* routes,
 which call real seeds_shared.db_editor in validate_only mode). The backend is a THIN
 CALLER: each case asserts the endpoint returns the field-delta + the validator's
-verdict (valid/invalid) + the create flags (AP18 / nothing_changed), and -- the
-load-bearing property -- WRITES NOTHING: a Save (valid OR invalid) leaves the DB
+verdict (valid/invalid) + the create flags (new-row-approval / nothing_changed), and --
+the load-bearing property -- WRITES NOTHING: a Save (valid OR invalid) leaves the DB
 BYTE-IDENTICAL. The write CORRECTNESS is the data-core's oracles (test_db_editor_* +
-test_validate_prospective); this step asserts the endpoint drives the dry-validate
-seam + shapes the preview for s06.
+test_validate_prospective); this asserts the endpoint drives the dry-validate seam +
+shapes the preview for the save screen.
 
 THE NO-WRITE PROOF (the load-bearing assertion)
 -----------------------------------------------
-Save is PREVIEW-ONLY (plan-spec "Save-previews / Confirm-transacts -- NOTHING held
-across think-time", user-settled 2026-06-03). After ANY Save -- valid, invalid, a
-create, a lifecycle edit -- the DB file is BYTE-IDENTICAL to before. There is no held
-transaction, no registry, no open connection to check: the proof IS the byte-identical
-DB. The write is the Confirm step's (step 5), not this one.
+Save is PREVIEW-ONLY ("Save-previews / Confirm-transacts -- NOTHING held across
+think-time"). After ANY Save -- valid, invalid, a create, a lifecycle edit -- the DB
+file is BYTE-IDENTICAL to before. There is no held transaction, no registry, no open
+connection to check: the proof IS the byte-identical DB. The write is the Confirm
+step's, not this one.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import hashlib
 import logging
@@ -39,7 +39,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 DATA_CORE_TESTS = os.path.join(REPO_ROOT, "data", "refdata-extractor", "tests")
 REAL_SEED_DIR = os.path.join(REPO_ROOT, "data", "db-export")
 
@@ -60,7 +60,7 @@ GVT = imp.GAME_VERSION_TAG          # "1.5.1164953" -- the only known version
 
 def _build_resolved_checkout():
     """A temp checkout laid out as app.config derives it -- <root>/data/db-export/ with
-    the three curated CSVs (the rebuild genesis -- D38; data/seeds/ is retired) +
+    the three curated CSVs (the rebuild genesis) +
     <root>/data/ (config.out_dir) with the rebuilt reference DBs (the read-test's pattern).
     Each save test gets a FRESH checkout (function scope) -- though a preview writes
     nothing, a fresh DB keeps the byte-identical baseline unambiguous per test. Skips
@@ -69,7 +69,7 @@ def _build_resolved_checkout():
         pytest.skip(f"mini-dump fixture not found: {DUMP_DIR}")
 
     root = tempfile.mkdtemp(prefix="backend_save_checkout_")
-    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir (D38)
+    seed_dir = os.path.join(root, "data", "db-export")  # config.seed_dir -- the curated CSV export dir
     out_dir = os.path.join(root, "data")               # config.out_dir == data/
     os.makedirs(seed_dir, exist_ok=True)
     for f in SEED_FILES:
@@ -101,7 +101,7 @@ def checkout():
 @pytest.fixture()
 def client_at(monkeypatch):
     """A TestClient whose endpoints resolve a given checkout root via KCDX_CHECKOUT
-    (config priority 1 -- how an operator wires the mounted volume, D18)."""
+    (config priority 1 -- how an operator wires the mounted volume)."""
     def _make(checkout_root):
         monkeypatch.setenv(CHECKOUT_ENV_VAR, checkout_root)
         return TestClient(app)
@@ -142,10 +142,10 @@ def _field(body, name):
 
 # A NEW game-version tag for a new VERSION ROW (the row's valid_from_version, a seed
 # cell -- distinct from the RESOLUTION version_tag, which stays GVT/known). A new
-# version at a NEW tag validates cleanly + surfaces the AP18/D12 flags but
-# materializes 0 rows (the apply diff materializes only baseline-version rows --
-# policy.md; the data-core's own create_version oracle uses this exact pattern). It is
-# the constructible valid preview for create-version in a single-version fixture.
+# version at a NEW tag validates cleanly + surfaces the new-row-approval / nothing-changed
+# flags but materializes 0 rows (the apply diff materializes only baseline-version rows;
+# the data-core's own create_version oracle uses this exact pattern). It is the
+# constructible valid preview for create-version in a single-version fixture.
 NEW_ROW_TAG = "1.6.2000000"
 
 
@@ -171,7 +171,7 @@ def test_update_version_previews_valid(checkout, client_at):
     assert body["errors"] == [], body
     # The field delta surfaced (the data-core's, over saved/prospective).
     assert _field(body, "verified_by") == ("OldReviewer", "ChangedReviewer"), body
-    # An UPDATE is NOT AP18-gated.
+    # An UPDATE does not require new-row approval.
     assert "ap18_new_row" not in body, body
     # NO WRITE: the DB is byte-identical -- a Save preview touches nothing.
     assert _db_hash(checkout) == db_before, "a Save preview must not touch the DB"
@@ -181,7 +181,7 @@ def test_create_version_previews_valid_and_flags_ap18(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     # A NEW version row for an existing entity at a NEW valid_from_version, with a
-    # CHANGED cell (a different rva) so D12 nothing_changed is FALSE. The RESOLUTION
+    # CHANGED cell (a different rva) so nothing_changed is FALSE. The RESOLUTION
     # version_tag is GVT (known -- the adapter resolves it); the new ROW's
     # valid_from_version is the new tag.
     resp = client.post("/save/create-version", json={
@@ -196,7 +196,7 @@ def test_create_version_previews_valid_and_flags_ap18(checkout, client_at):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["valid"] is True, body
-    # AP18 surfaced for a new version (D11); D12 nothing_changed is FALSE (rva differs).
+    # A new version surfaces the approval flag; nothing_changed is FALSE (rva differs).
     assert body["ap18_new_row"] is True, body
     assert body["addition_kind"] == "version", body
     assert body["nothing_changed"] is False, body
@@ -221,7 +221,7 @@ def test_create_entity_previews_valid_and_flags_ap18(checkout, client_at):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["valid"] is True, body
-    # AP18 surfaced for a new entity (D11); the assigned id surfaced.
+    # A new entity surfaces the approval flag + the assigned id.
     assert body["ap18_new_row"] is True, body
     assert body["addition_kind"] == "entity", body
     assert isinstance(body["kcdx_id"], int) and body["kcdx_id"] > 0, body
@@ -245,7 +245,7 @@ def test_supersede_previews_valid(checkout, client_at):
     body = resp.json()
     assert body["valid"] is True, body
     assert _field(body, "superseded_by") == ("", "CGame_Update"), body
-    assert "ap18_new_row" not in body, "supersede is an UPDATE, not AP18-gated"
+    assert "ap18_new_row" not in body, "supersede is an UPDATE, no new-row approval"
     assert _db_hash(checkout) == db_before, "the supersede preview wrote nothing"
 
 
@@ -263,7 +263,7 @@ def test_deprecate_previews_valid(checkout, client_at):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["valid"] is True, body
-    assert "ap18_new_row" not in body, "deprecate is an UPDATE, not AP18-gated"
+    assert "ap18_new_row" not in body, "deprecate is an UPDATE, no new-row approval"
     assert _db_hash(checkout) == db_before, "the deprecate preview wrote nothing"
 
 
@@ -271,7 +271,7 @@ def test_edit_notes_previews_valid(checkout, client_at):
     client = client_at(checkout)
     db_before = _db_hash(checkout)
     # Edit entity 1's notes -- a standalone curated prose column (no pair rule). The field delta
-    # surfaces the notes change; an UPDATE -> NOT AP18-gated; the preview writes nothing.
+    # surfaces the notes change; an UPDATE -> no new-row approval; the preview writes nothing.
     resp = client.post("/save/edit-notes", json={
         "version_tag": GVT,
         "kcdx_id": 1,
@@ -284,16 +284,16 @@ def test_edit_notes_previews_valid(checkout, client_at):
     assert body["valid"] is True, body
     # The field-delta carries the notes change (record_kind "names").
     assert _field(body, "notes") == ("", "verified against the 1.5 build"), body
-    assert "ap18_new_row" not in body, "edit-notes is an UPDATE, not AP18-gated"
+    assert "ap18_new_row" not in body, "edit-notes is an UPDATE, no new-row approval"
     assert _db_hash(checkout) == db_before, "the edit-notes preview wrote nothing"
 
 
 # ============================================================================
-# The D12 nothing-changed verdict fires for an identical new version preview.
+# The nothing-changed verdict fires for an identical new version preview.
 # ============================================================================
 def test_create_version_nothing_changed_fires(checkout, client_at):
     """A new version IDENTICAL to its source on every authored column except
-    valid_from_version surfaces nothing_changed=True (D12 -- steer to re-verify). Use
+    valid_from_version surfaces nothing_changed=True (steer to re-verify). Use
     a NULL-trio non-function source (kcdx_id 19, a vtable_index with vtable_slot=4) so
     the identical copy at the NEW tag is itself apply-valid."""
     client = client_at(checkout)
@@ -313,7 +313,7 @@ def test_create_version_nothing_changed_fires(checkout, client_at):
     assert body["valid"] is True, body
     assert body["ap18_new_row"] is True, body
     assert body["nothing_changed"] is True, \
-        "D12 nothing_changed must fire for an identical-except-valid_from copy"
+        "nothing_changed must fire for an identical-except-valid_from copy"
     assert _db_hash(checkout) == db_before, "the create-version preview wrote nothing"
 
 

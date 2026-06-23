@@ -1,16 +1,15 @@
-"""app.main -- the FastAPI app entry + the health/load endpoint (design D14 / US-1 / S7).
+"""app.main -- the FastAPI app entry + the health/load endpoint.
 
-The backend app skeleton. Step 1 (this step) ships ONE endpoint -- the health/load
-endpoint that reports whether the configured checkout (D18) resolves a reference DB
-+ seeds, and the EMPTY/ERROR states when it does not (US-1 acceptance: "if no
-DB/seeds resolve at the configured checkout path, the empty state explains why";
-S7 required state "Empty -- no DB/seeds resolved (names where the backend looked)").
+The backend app entry. The health/load endpoint reports whether the configured
+checkout resolves a reference DB + curated CSVs, and the EMPTY/ERROR states when it
+does not (if no DB/CSVs resolve at the configured checkout path, the empty state
+explains why and names where the backend looked).
 
 The read/save/commit routers are included below; the built React SPA is served by a
-catch-all registered LAST (step 16 -- D14 single image: one process serves the API AND
-the frontend `dist/`, same-origin). The app holds NO data-core rule logic (D13/R3): it
-imports the data-core through the app.data_core seam and reads the checkout through
-app.config; every rule is the data-core's. Static serving is pure backend plumbing.
+catch-all registered LAST (single image: one process serves the API AND the frontend
+`dist/`, same-origin). The app holds NO data-core rule logic: it imports the data-core
+through the app.data_core seam and reads the checkout through app.config; every rule is
+the data-core's. Static serving is pure backend plumbing.
 """
 import logging
 import os
@@ -26,16 +25,15 @@ from .routes_read import router as read_router
 from .routes_save import router as save_router
 from .static_serving import register_static_serving
 
-# One module logger, event-driven (logging.md): the failure branches below log on
-# the data-core read failure, never per request.
+# One module logger, event-driven: the failure branches below log on the
+# data-core read failure, never per request.
 log = logging.getLogger(__name__)
 
 app = FastAPI(
     title="kcdx maintainer tool -- backend",
-    description="The Python API over the headless Address Library data-core "
-                "(design D14). Step 1: skeleton + config + import seam + "
-                "version-tag adapter + health/load. Step 2b: read endpoints "
-                "(curated set / entity detail / version rows).",
+    description="The Python API over the headless Address Library data-core: "
+                "config + import seam + version-tag adapter + health/load + "
+                "read endpoints (curated set / entity detail / version rows).",
     version="0.1.0",
 )
 
@@ -44,10 +42,10 @@ app = FastAPI(
 # Access-Control-Allow-Origin header or it blocks the call. The allowed origins are an
 # env-configurable ALLOWLIST (KCDX_CORS_ORIGINS, localhost dev default) -- NEVER a wildcard:
 # the maintainer tool writes + commits the Address Library, so a tight allowlist is the
-# security-correct choice (D17 operator-wired seam; security-invariants.md). Methods are
-# GET + POST only (the API's whole surface -- read endpoints are GET, save/confirm/cancel are
-# POST; OPTIONS preflight is handled by the middleware automatically). allow_credentials is
-# False: the frontend sends no cookies/credentials (auth is the operator-wired seam, D17).
+# security-correct choice (the operator-wired seam). Methods are GET + POST only (the API's
+# whole surface -- read endpoints are GET, save/confirm/cancel are POST; OPTIONS preflight is
+# handled by the middleware automatically). allow_credentials is False: the frontend sends no
+# cookies/credentials (auth is the operator-wired seam).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
@@ -57,26 +55,25 @@ app.add_middleware(
 )
 
 # The read-for-display endpoints (GET /entities, /entities/{id}, /.../versions) --
-# their own module (structure-by-responsibility); main.py stays the app + health
+# their own module (one file, one responsibility); main.py stays the app + health
 # coordinator.
 app.include_router(read_router)
 
-# The field-delta endpoint (POST /field-delta) the s06 confirm surface calls -- a
-# distinct concern from the read routes, so its own router (structure-by-responsibility).
+# The field-delta endpoint (POST /field-delta) the confirm surface calls -- a
+# distinct concern from the read routes, so its own router.
 app.include_router(delta_router)
 
 # The save (PREVIEW) endpoints (POST /save/*) -- the six job shapes, each VALIDATING
-# the prospective edit + returning the field-delta with NO DB write (step 4b,
-# Save-previews/Confirm-transacts model). Their own router (structure-by-
-# responsibility); the step-5 confirm endpoints run the actual transaction.
+# the prospective edit + returning the field-delta with NO DB write
+# (Save-previews/Confirm-transacts model). Their own router; the confirm endpoints
+# run the actual transaction.
 app.include_router(save_router)
 
 # The Confirm transaction + Cancel (POST /confirm/*, /cancel) -- the synchronous atomic
-# save (step 5): start txn -> DB ops (deferred) -> commit DB -> export CSVs -> integrity
-# -> git commit/push to private, rollback-everything on failure. Its own router
-# (structure-by-responsibility); the git plumbing + the cheap integrity check are the
-# backend's own concern (app.git_commit / app.csv_integrity), the write+validate are the
-# data-core's (D13/R3).
+# save: start txn -> DB ops (deferred) -> commit DB -> export CSVs -> integrity
+# -> git commit/push to private, rollback-everything on failure. Its own router; the git
+# plumbing + the cheap integrity check are the backend's own concern (app.git_commit /
+# app.csv_integrity), the write+validate are the data-core's.
 app.include_router(confirm_router)
 
 def _version_tags_newest_first(versions):
@@ -95,7 +92,7 @@ def _version_tags_newest_first(versions):
 def _checkout_status(config):
     """Resolve what the configured checkout actually holds -- the load endpoint's
     core. Reports each required artifact's presence so the empty/error state can
-    NAME where the backend looked (S7). Holds no rule logic -- it stats paths the
+    NAME where the backend looked. Holds no rule logic -- it stats paths the
     config derives + reads the data-core's known-version set."""
     seed_files = {os.path.basename(p): os.path.isfile(p)
                   for p in config.seed_files}
@@ -103,7 +100,7 @@ def _checkout_status(config):
     user_db_present = os.path.isfile(config.user_db)
     dev_db_present = os.path.isfile(config.dev_db)
 
-    # The known game versions the server holds (the dropdown source, D10/US-10).
+    # The known game versions the server holds (the dropdown source).
     # Reading this also confirms the data-core import seam resolved end-to-end.
     versions_error = None
     try:
@@ -111,15 +108,15 @@ def _checkout_status(config):
     except Exception as exc:  # the seam/DB read failed -- report it, don't crash
         versions = {}
         versions_error = f"{type(exc).__name__}: {exc}"
-        # logging.md: the failure branch logs before it returns -- name the
-        # data-core seam read failure + the checkout path it looked at, so a
+        # The failure branch logs before it returns -- name the data-core seam
+        # read failure + the checkout path it looked at, so a
         # swallowed-into-versions_error read failure is never silent.
         log.warning(
             "data-core known-versions read failed (checkout_path=%s, "
             "user_db=%s): %s", config.checkout_path, config.user_db, exc)
 
     # "resolved" == the checkout yields what the tool needs to load: the curated
-    # USER DB + all three seed CSVs. Missing either -> empty/error (US-1, S7).
+    # USER DB + all three curated CSVs. Missing either -> empty/error.
     resolved = user_db_present and seeds_present and versions_error is None
 
     if resolved:
@@ -138,7 +135,7 @@ def _checkout_status(config):
 
     return {
         "state": state,                  # "resolved" | "empty" | "error"
-        "detail": detail,                # human-readable cause (S7 empty/error copy)
+        "detail": detail,                # human-readable cause (empty/error copy)
         "checkout_path": config.checkout_path,
         "checkout_source": config.checkout_source,   # env | override | dev-default
         "seed_dir": config.seed_dir,
@@ -150,27 +147,27 @@ def _checkout_status(config):
         },
         # NEWEST-FIRST by the data-core's version ordinal (see _version_tags_newest_first).
         "known_version_tags": _version_tags_newest_first(versions),
-        # The configured maintainer identity (FIX 3) -- a NON-SECRET public author identity
+        # The configured maintainer identity -- a NON-SECRET public author identity
         # (name + email, the shape of a git author line) the frontend uses as the
         # verified_by default for the audit trio. Surfaced here because the frontend already
         # consumes /health (the lighter touch over a new endpoint). The push CREDENTIAL
         # (KCDX_PUSH_TOKEN) is a SECRET and is NEVER read or surfaced here
-        # (security-invariants.md -- secrets never enter an exposed surface).
+        # (secrets never enter an exposed surface).
         "maintainer_identity": maintainer_identity(),
     }
 
 
 @app.get("/health")
 def health():
-    """Health/load endpoint (US-1 / S7). Reports whether the configured checkout
-    (D18) resolves a reference DB + seeds, naming where the backend looked when it
-    does not (the empty/error states s01 feeds the frontend, S7). Reads fresh
-    config each call so an operator can mount the volume after boot."""
+    """Health/load endpoint. Reports whether the configured checkout resolves a
+    reference DB + curated CSVs, naming where the backend looked when it does not
+    (the empty/error states the frontend renders). Reads fresh config each call so
+    an operator can mount the volume after boot."""
     config = load_config()
     return _checkout_status(config)
 
 
-# The built React SPA catch-all (D14 single image -- one process serves the API AND the
+# The built React SPA catch-all (single image -- one process serves the API AND the
 # built frontend `dist/`, same-origin). Registered LAST, at module end -- AFTER every API
 # router AND the /health route defined above -- so the API keeps route-resolution priority:
 # Starlette matches routes in REGISTRATION order, so the catch-all `/{spa_path:path}` claims
@@ -179,5 +176,5 @@ def health():
 # position, immediately after the include_router calls) let the catch-all shadow /health,
 # because /health's @app.get decorator runs later in module load. The static-dir path is
 # config (KCDX_STATIC_DIR); static_serving owns the serving mechanism + the degraded
-# contract (structure-by-responsibility -- its own module, not main).
+# contract (its own module, not main).
 register_static_serving(app)

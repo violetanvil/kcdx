@@ -1,4 +1,4 @@
-"""test_maintainer_identity.py -- the env/config-injected maintainer identity (FIX 3).
+"""test_maintainer_identity.py -- the env/config-injected maintainer identity.
 
 WHAT THIS PROVES
 ----------------
@@ -10,16 +10,16 @@ mirroring the existing KCDX_CHECKOUT / KCDX_CORS_ORIGINS env pattern:
      and the documented dev defaults when unset (the boot-without-config posture), each half
      independently.
   2. routes_confirm._resolve_author falls back to the CONFIGURED identity when no body field /
-     X-Kcdx-Author-* header is present (the request-context auth-ready seam, D17) -- so the git
+     X-Kcdx-Author-* header is present (the request-context auth-ready seam) -- so the git
      author and the audit-trio signer are one identity.
   3. /health EXPOSES the identity (maintainer_identity: {name, email}) so the frontend can use
      `name` as the verified_by default -- WITHOUT the push token. The email is a NON-SECRET
      public author identity (like a git author); the push CREDENTIAL (KCDX_PUSH_TOKEN) is a
-     SECRET and is NEVER surfaced in the health body or any response (security-invariants.md).
+     SECRET and is NEVER surfaced in the health body or any response.
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import json
 import os
@@ -110,7 +110,7 @@ def test_resolve_author_explicit_context_still_wins(clean_identity_env):
 
 
 # ----------------------------------------------------------------------------
-# /health EXPOSES the identity WITHOUT the push token (security-invariants.md).
+# /health EXPOSES the identity WITHOUT the push token (a secret never leaks).
 # ----------------------------------------------------------------------------
 def test_health_exposes_identity_without_push_token(clean_identity_env):
     clean_identity_env.setenv(MAINTAINER_NAME_ENV_VAR, "ExposedMaintainer")

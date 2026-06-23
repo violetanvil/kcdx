@@ -9,17 +9,16 @@ CORSMiddleware the header is absent and every cross-origin fetch from the fronte
 blocked by the browser's same-origin policy. The TestClient header assertion is the
 headless gate for the live-browser proof.
 
-The allowlist is env-configurable (KCDX_CORS_ORIGINS, D17 -- the operator-wired seam),
+The allowlist is env-configurable (KCDX_CORS_ORIGINS -- the operator-wired seam),
 localhost dev default, and NEVER a wildcard origin (the maintainer tool writes + commits
-the Address Library; a tight allowlist is the security-correct choice,
-security-invariants.md). Cases:
+the Address Library; a tight allowlist is the security-correct choice). Cases:
 
   1. ALLOWED origin -> the response carries `access-control-allow-origin` echoing the
      origin (the cross-origin call the browser permits). The live header over the REAL
      app (no mock) -- the headless counterpart to the browser actually loading the page.
 
   2. The OPTIONS PREFLIGHT for a mutating POST is permitted (the middleware answers it
-     with the allow-origin + the GET/POST allow-methods) -- the s06 save/confirm POSTs
+     with the allow-origin + the GET/POST allow-methods) -- the save/confirm POSTs
      are preflighted by the browser before the real request.
 
   3. A DISALLOWED origin gets NO `access-control-allow-origin` header (the allowlist is
@@ -33,7 +32,7 @@ security-invariants.md). Cases:
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import os
 import sys

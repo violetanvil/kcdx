@@ -1,48 +1,46 @@
-"""app.routes_save -- the save (PREVIEW) endpoints (the six job shapes, design S6
-US-3...US-8 / S7 save spine / S10 D8/D11/D12/D13; step 4b).
+"""app.routes_save -- the save (PREVIEW) endpoints (the six job shapes), the preview
+half of the Save-previews / Confirm-transacts flow.
 
 WHY PREVIEW-ONLY (the Save-previews / Confirm-transacts model)
 --------------------------------------------------------------
 Save is a PREVIEW: it VALIDATES the prospective edit through the data-core's gate +
 returns the field-delta (`field: old -> new`) for the maintainer to review, and
 writes NOTHING -- no DB write, no transaction, no held state. The maintainer reviews
-the diff, then hits Confirm (step 5), which runs the WHOLE atomic transaction
-synchronously in one request. Nothing touches the DB until Confirm; a Save (valid or
-invalid) leaves the DB byte-identical. (plan-spec "Cross-step invariants" -- the
-Save-previews/Confirm-transacts revision, user-settled 2026-06-03; this REPLACES the
-earlier held-transaction model -- there is no registry, no executor-per-save, no
+the diff, then hits Confirm, which runs the WHOLE atomic transaction synchronously in
+one request. Nothing touches the DB until Confirm; a Save (valid or invalid) leaves
+the DB byte-identical. (This is the Save-previews/Confirm-transacts model; it replaces
+an earlier held-transaction model -- there is no registry, no executor-per-save, no
 reaper.)
 
-THIN CALLER (D13 / R3 / design S5 law 6): the backend computes NOTHING. It
-deserializes the body, resolves the chosen version tag via the step-1 adapter
-(`version=(tag, ordinal)`, NO DLL server-side -- the 1b seam), calls the data-core's
-DRY-VALIDATE path (`validate_only=True` -- the validator runs, no DB write), computes
-the field-delta via data_core.field_delta, and SURFACES the verdict. The VALIDATION
-is the data-core's single gate (D13/D19 -- `validate_only=True` routes through
-db_editor to import_to_sqlite.validate_direct_edit, which validates the PROSPECTIVE DB
-STATE: the prospective DB rows -- the DB as it would be after the direct write -- run
-through the same whole-state validator the direct write runs, before any DB write).
-The backend reimplements no validation / SQL / delta / rule logic. An invalid edit
-(the data-core's verdict) maps to `valid: false` + the validator's error, with NO
+THIN CALLER: the backend computes NOTHING. It deserializes the body, resolves the
+chosen version tag via the adapter (`version=(tag, ordinal)`, NO DLL server-side -- the
+version-tag seam), calls the data-core's DRY-VALIDATE path (`validate_only=True` -- the
+validator runs, no DB write), computes the field-delta via data_core.field_delta, and
+SURFACES the verdict. The VALIDATION is the data-core's single gate (`validate_only=True`
+routes through db_editor to import_to_sqlite.validate_direct_edit, which validates the
+PROSPECTIVE DB STATE: the prospective DB rows -- the DB as it would be after the direct
+write -- run through the same whole-state validator the direct write runs, before any DB
+write). The backend reimplements no validation / SQL / delta / rule logic. An invalid
+edit (the data-core's verdict) maps to `valid: false` + the validator's error, with NO
 write (a preview never writes).
 
-THE VERSION PASSING (the 1b seam, no DLL -- the settled fork)
--------------------------------------------------------------
+THE VERSION PASSING (the version-tag seam, no DLL -- the settled fork)
+---------------------------------------------------------------------
 The data-core write/validate functions accept EXACTLY ONE of `dll_path` / `version`.
-The backend has no DLL server-side (D14/D15/D18), so every Save passes
-`version=(ctx.tag, ctx.ordinal)` (from the adapter's `resolve_tag`) with no dll_path
--- the data-core skips the `.rdata` scan. An unknown tag is the adapter's
-VersionTagError -> an HTTP 422 before the data-core is reached.
+The backend has no DLL server-side, so every Save passes `version=(ctx.tag, ctx.ordinal)`
+(from the adapter's `resolve_tag`) with no dll_path -- the data-core skips the `.rdata`
+scan. An unknown tag is the adapter's VersionTagError -> an HTTP 422 before the data-core
+is reached.
 
 THE SIX JOB SHAPES -> THE DATA-CORE VALIDATE
 --------------------------------------------
-  re-verify / full-column UPDATE (US-3 / US-5) -> update_version_row  (one endpoint;
-      both are an `edits` dict over an existing version row -- ONE endpoint covers
-      both, the validator gates whichever cells the maintainer changed.)
-  create version (US-6)        -> create_version    (AP18 new row + D12 nothing-changed)
-  create entity (US-7)         -> create_entity      (AP18 new row)
-  supersede (US-8 / Job 4)     -> supersede_entity   (UPDATE, not AP18-gated)
-  deprecate (US-8 / Job 5)     -> deprecate_entity   (UPDATE, not AP18-gated)
+  re-verify / full-column UPDATE -> update_version_row  (one endpoint; both are an
+      `edits` dict over an existing version row -- ONE endpoint covers both, the
+      validator gates whichever cells the maintainer changed.)
+  create version       -> create_version    (new row, needs approval + nothing-changed)
+  create entity        -> create_entity      (new row, needs approval)
+  supersede            -> supersede_entity   (UPDATE, no new-row approval required)
+  deprecate            -> deprecate_entity   (UPDATE, no new-row approval required)
 
 Each call passes `validate_only=True`: the data-core validates the prospective edit
 and returns the validator's verdict (+ the create flags read from the prospective
@@ -59,9 +57,9 @@ from . import data_core
 from .adapter import resolve_tag, VersionTagError
 from .config import load_config
 
-# One module logger, event-driven (logging.md): a log fires on a save-preview rejection
-# branch (an unknown tag, the data-core's validation reject) before the response
-# returns -- never per request.
+# One module logger, event-driven: a log fires on a save-preview rejection branch (an
+# unknown tag, the data-core's validation reject) before the response returns -- never
+# per request.
 log = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -80,8 +78,8 @@ _FIELD_ORDER_BY_KIND = {
 # Request bodies -- the record/edit fields + the chosen version_tag, one per shape.
 # Each carries `saved` + `prospective` seed-row dicts ({column: cell}, '' for NULL,
 # the form's was/current values the client already holds) so the response can echo
-# the field delta the data-core computes -- the confirm gate's acceptance signal
-# (D8). The backend assembles nothing: it forwards the two dicts to data_core.field_delta.
+# the field delta the data-core computes -- the confirm gate's acceptance signal. The
+# backend assembles nothing: it forwards the two dicts to data_core.field_delta.
 # ---------------------------------------------------------------------------
 class _SaveBody(BaseModel):
     """The fields every save body shares: the version tag the edit targets (the
@@ -93,44 +91,44 @@ class _SaveBody(BaseModel):
 
 
 class UpdateVersionSave(_SaveBody):
-    """Re-verify / full-column UPDATE (US-3 / US-5): an `edits` dict over the existing
-    version row identified by (kcdx_id, valid_from_version). `edits` keys must be
-    editable version columns (the data-core's EDITABLE_VERSION_COLUMNS gate -- a
-    non-editable / identity-key column is a DbEditError -> 422)."""
+    """Re-verify / full-column UPDATE: an `edits` dict over the existing version row
+    identified by (kcdx_id, valid_from_version). `edits` keys must be editable version
+    columns (the data-core's EDITABLE_VERSION_COLUMNS gate -- a non-editable /
+    identity-key column is a DbEditError -> 422)."""
     kcdx_id: int
     valid_from_version: str
     edits: dict
 
 
 class CreateVersionSave(_SaveBody):
-    """Create a new version (US-6): a new (kcdx_id, valid_from_version) row for an
-    EXISTING entity, its cells in `columns` (prefilled from a source row). AP18-gated
-    + the D12 nothing-changed verdict."""
+    """Create a new version: a new (kcdx_id, valid_from_version) row for an EXISTING
+    entity, its cells in `columns` (prefilled from a source row). Adding a new row
+    requires explicit maintainer approval + carries the nothing-changed verdict."""
     kcdx_id: int
     valid_from_version: str
     columns: dict
 
 
 class CreateEntitySave(_SaveBody):
-    """Create a brand-new entity (US-7): a `name` + the first version row's authored
-    cells (`first_version_columns`). The data-core assigns the next free kcdx_id
-    (append-only). AP18-gated."""
+    """Create a brand-new entity: a `name` + the first version row's authored cells
+    (`first_version_columns`). The data-core assigns the next free kcdx_id (append-only).
+    Adding a new entity requires explicit maintainer approval."""
     name: str
     first_version_columns: dict
 
 
 class SupersedeSave(_SaveBody):
-    """Supersede an entity (US-8 / Job 4): set superseded_by + superseded_at_version
-    on the existing names row `kcdx_id`. An UPDATE -- not AP18-gated."""
+    """Supersede an entity: set superseded_by + superseded_at_version on the existing
+    names row `kcdx_id`. An UPDATE -- no new-row approval required."""
     kcdx_id: int
     superseded_by: str
     superseded_at_version: str
 
 
 class DeprecateSave(_SaveBody):
-    """Deprecate an entity (US-8 / Job 5): set is_deprecated + deprecated_at_version
-    (+ optional deprecation_replacement) on the names row `kcdx_id`. An UPDATE -- not
-    AP18-gated. is_deprecated False + the versions cleared un-deprecates."""
+    """Deprecate an entity: set is_deprecated + deprecated_at_version (+ optional
+    deprecation_replacement) on the names row `kcdx_id`. An UPDATE -- no new-row approval
+    required. is_deprecated False + the versions cleared un-deprecates."""
     kcdx_id: int
     is_deprecated: bool = True
     deprecated_at_version: Optional[str] = None
@@ -139,8 +137,8 @@ class DeprecateSave(_SaveBody):
 
 class EditNotesSave(_SaveBody):
     """Edit an entity's curated `notes` prose (the names row `kcdx_id`): a standalone
-    free-text column, no pair-integrity rule. An UPDATE -- NOT AP18-gated. `notes` '' clears
-    the cell."""
+    free-text column, no pair-integrity rule. An UPDATE -- no new-row approval required.
+    `notes` '' clears the cell."""
     kcdx_id: int
     notes: str
 
@@ -164,11 +162,10 @@ def _run_preview(body, *, kind, record_kind, validate):
 
     WHY this is preview-only: nothing here writes, opens a transaction, or holds
     state. A Save shows "here is what will change, and it validates"; the write is
-    the Confirm step's (step 5). So a rejection is surfaced as `valid: false` + the
-    error (NOT an HTTP error -- an invalid edit is a normal preview outcome the s06
-    surface renders, design D8), while a malformed edit shape or an unknown tag IS an
-    HTTP error (a caller bug / bad input, not a validation verdict to show in the
-    diff).
+    the Confirm step's. So a rejection is surfaced as `valid: false` + the error (NOT
+    an HTTP error -- an invalid edit is a normal preview outcome the edit surface
+    renders), while a malformed edit shape or an unknown tag IS an HTTP error (a caller
+    bug / bad input, not a validation verdict to show in the diff).
 
     Failure modes (NONE writes -- a preview never touches the DB):
       VersionTagError      -> HTTP 422 (the maintainer picked an unknown tag -- bad
@@ -184,7 +181,8 @@ def _run_preview(body, *, kind, record_kind, validate):
     config = load_config()
 
     # Resolve the chosen version tag to (tag, ordinal) -- the data-core's `version=`
-    # param, NO DLL (the 1b seam). An unknown tag is the maintainer's, surfaced as 422.
+    # param, NO DLL (the version-tag seam). An unknown tag is the maintainer's,
+    # surfaced as 422.
     try:
         ctx = resolve_tag(config, body.version_tag)
     except VersionTagError as exc:
@@ -241,18 +239,18 @@ def _field_delta_list(body, record_kind):
 
 
 def _valid_response(body, record_kind, flags):
-    """Assemble the VALID preview response: the field delta (D8 -- the maintainer's
-    acceptance signal), `valid: true`, no errors, and any AP18 / nothing_changed /
-    addition_kind markers the create shapes surfaced (D11/D12 -- read from the
-    prospective seed at preview time, so the s06 confirm gate has them before any
-    write). The update/lifecycle shapes carry no flags."""
+    """Assemble the VALID preview response: the field delta (the maintainer's acceptance
+    signal), `valid: true`, no errors, and any new-row / nothing_changed / addition_kind
+    markers the create shapes surfaced (read from the prospective seed at preview time, so
+    the confirm gate has them before any write). The update/lifecycle shapes carry no
+    flags."""
     response = {
         "field_delta": _field_delta_list(body, record_kind),
         "valid": True,
         "errors": [],
     }
-    # The create shapes surface AP18 / nothing_changed / addition_kind / the new
-    # row's identity; key on what the flag dict carries, not the job -- so a new
+    # The create shapes surface the new-row / nothing_changed / addition_kind markers /
+    # the new row's identity; key on what the flag dict carries, not the job -- so a new
     # create-shape's flags surface with no change here.
     for flag in ("ap18_new_row", "nothing_changed", "addition_kind",
                  "kcdx_id", "valid_from_version", "name"):
@@ -279,9 +277,9 @@ def _invalid_response(body, record_kind, error):
 # ---------------------------------------------------------------------------
 @router.post("/save/update-version")
 def save_update_version(body: UpdateVersionSave):
-    """Re-verify / full-column UPDATE (US-3 / US-5) -- PREVIEW. Validates the edit +
-    returns the field delta for s06's confirm; writes NOTHING. NOT AP18-gated (an
-    UPDATE to an existing row)."""
+    """Re-verify / full-column UPDATE -- PREVIEW. Validates the edit + returns the field
+    delta for the confirm gate; writes NOTHING. No new-row approval required (an UPDATE to
+    an existing row)."""
     return _run_preview(
         body, kind="update-version", record_kind="version",
         validate=lambda version: data_core.update_version_row(
@@ -291,9 +289,9 @@ def save_update_version(body: UpdateVersionSave):
 
 @router.post("/save/create-version")
 def save_create_version(body: CreateVersionSave):
-    """Create a new version (US-6) for an existing entity -- PREVIEW. AP18-gated (a
-    new row) + the D12 nothing-changed verdict -- both surface in the response for
-    the confirm gate; writes NOTHING."""
+    """Create a new version for an existing entity -- PREVIEW. Adding a new row requires
+    explicit maintainer approval + the nothing-changed verdict -- both surface in the
+    response for the confirm gate; writes NOTHING."""
     return _run_preview(
         body, kind="create-version", record_kind="version",
         validate=lambda version: data_core.create_version(
@@ -303,8 +301,9 @@ def save_create_version(body: CreateVersionSave):
 
 @router.post("/save/create-entity")
 def save_create_entity(body: CreateEntitySave):
-    """Create a brand-new entity (US-7) -- PREVIEW. AP18-gated; the data-core assigns
-    the next free kcdx_id (returned in the response). Writes NOTHING."""
+    """Create a brand-new entity -- PREVIEW. Adding a new entity requires explicit
+    maintainer approval; the data-core assigns the next free kcdx_id (returned in the
+    response). Writes NOTHING."""
     return _run_preview(
         body, kind="create-entity", record_kind="version",
         validate=lambda version: data_core.create_entity(
@@ -314,9 +313,9 @@ def save_create_entity(body: CreateEntitySave):
 
 @router.post("/save/supersede")
 def save_supersede(body: SupersedeSave):
-    """Supersede an entity (US-8 / Job 4) -- PREVIEW: superseded_by +
-    superseded_at_version set together. An UPDATE -- NOT AP18-gated. record_kind is
-    "names" (the field delta orders by the address_names header); writes NOTHING."""
+    """Supersede an entity -- PREVIEW: superseded_by + superseded_at_version set together.
+    An UPDATE -- no new-row approval required. record_kind is "names" (the field delta
+    orders by the address_names header); writes NOTHING."""
     return _run_preview(
         body, kind="supersede", record_kind="names",
         validate=lambda version: data_core.supersede_entity(
@@ -326,9 +325,9 @@ def save_supersede(body: SupersedeSave):
 
 @router.post("/save/deprecate")
 def save_deprecate(body: DeprecateSave):
-    """Deprecate an entity (US-8 / Job 5) -- PREVIEW: is_deprecated +
-    deprecated_at_version set together (+ optional deprecation_replacement). An UPDATE
-    -- NOT AP18-gated. record_kind is "names"; writes NOTHING."""
+    """Deprecate an entity -- PREVIEW: is_deprecated + deprecated_at_version set together
+    (+ optional deprecation_replacement). An UPDATE -- no new-row approval required.
+    record_kind is "names"; writes NOTHING."""
     return _run_preview(
         body, kind="deprecate", record_kind="names",
         validate=lambda version: data_core.deprecate_entity(
@@ -342,10 +341,10 @@ def save_deprecate(body: DeprecateSave):
 @router.post("/save/edit-notes")
 def save_edit_notes(body: EditNotesSave):
     """Edit an entity's curated `notes` (the names row) -- PREVIEW: validate the prospective
-    notes edit + return the field delta; writes NOTHING. An UPDATE -- NOT AP18-gated.
-    record_kind is "names" (the field delta orders by the address_names header). notes has no
-    pair-integrity rule, so a valid preview needs only the entity to exist + the prospective
-    DB state to validate (the data-core's gate)."""
+    notes edit + return the field delta; writes NOTHING. An UPDATE -- no new-row approval
+    required. record_kind is "names" (the field delta orders by the address_names header).
+    notes has no pair-integrity rule, so a valid preview needs only the entity to exist + the
+    prospective DB state to validate (the data-core's gate)."""
     return _run_preview(
         body, kind="edit-notes", record_kind="names",
         validate=lambda version: data_core.edit_notes(
@@ -354,16 +353,16 @@ def save_edit_notes(body: EditNotesSave):
 
 
 # ---------------------------------------------------------------------------
-# The bulk re-verify PREVIEW endpoint (design D39 / S7 "Batch mutation"). The FE sends
-# the v3 report's actionable rows + the batch action (verify-all | close-intervals) +
-# the auth-ready identity context (D17); this endpoint routes them through the data-core
-# `reverify_resolver` (which reads the DB + computes the per-row edit-specs -- D39), then
-# returns the per-row FIELD-DELTAS (`field: old -> new`) for the s08 batched-confirm UI.
-# PREVIEW-ONLY: it READS the DB (the resolver opens it READ-ONLY) + computes; it WRITES
-# NOTHING, opens NO transaction (the same Save-previews / Confirm-transacts contract the
-# six single-edit /save/* previews honor -- D16/law 5). The FE then POSTs the SAME
-# computed edits to /confirm/batch (the 6.2 endpoint) to transact (D19 -- the write
-# mechanism is unchanged; only the edit-spec SOURCE moved to the resolver).
+# The bulk re-verify PREVIEW endpoint (the "Batch mutation" surface). The FE sends the
+# v3 report's actionable rows + the batch action (verify-all | close-intervals) + the
+# auth-ready identity context; this endpoint routes them through the data-core
+# `reverify_resolver` (which reads the DB + computes the per-row edit-specs), then returns
+# the per-row FIELD-DELTAS (`field: old -> new`) for the batched-confirm UI. PREVIEW-ONLY:
+# it READS the DB (the resolver opens it READ-ONLY) + computes; it WRITES NOTHING, opens
+# NO transaction (the same Save-previews / Confirm-transacts contract the six single-edit
+# /save/* previews honor -- git is invisible to the maintainer). The FE then POSTs the
+# SAME computed edits to /confirm/batch to transact (the write mechanism is unchanged;
+# only the edit-spec SOURCE moved to the resolver).
 # ---------------------------------------------------------------------------
 class ReportRow(BaseModel):
     """One actionable v3-report row the resolver reads (the subset it needs -- the report
@@ -380,10 +379,10 @@ class ReportRow(BaseModel):
 
 class ReverifyBatchPreview(BaseModel):
     """The /save/reverify-batch request: the batch ACTION + the report rows for that
-    block + the auth-ready identity context (D17a -- the verified_by the verify-all trio
-    writes is the resolved author, the same identity that authors the eventual git
-    commit). `version_tag` is unused by the resolve (each row carries its own resolved
-    version); kept off the body -- the row's `version` is the swept tag."""
+    block + the auth-ready identity context (the verified_by the verify-all trio writes is
+    the resolved author, the same identity that authors the eventual git commit).
+    `version_tag` is unused by the resolve (each row carries its own resolved version);
+    kept off the body -- the row's `version` is the swept tag."""
     action: str                       # "verify-all" | "close-intervals"
     rows: List[ReportRow]
     author_name: Optional[str] = None
@@ -395,14 +394,14 @@ def save_reverify_batch(
         body: ReverifyBatchPreview,
         x_kcdx_author_name: Optional[str] = Header(default=None),
         x_kcdx_author_email: Optional[str] = Header(default=None)):
-    """Bulk re-verify PREVIEW (D39): resolve the report rows for ONE batch action into
-    per-row edit-specs (the data-core `reverify_resolver`), and return the per-row
-    field-deltas for the s08 batched confirm. Writes NOTHING (the resolver reads
-    READ-ONLY + computes; no DB write, no transaction). The FE posts the returned edits
-    to /confirm/batch to transact.
+    """Bulk re-verify PREVIEW: resolve the report rows for ONE batch action into per-row
+    edit-specs (the data-core `reverify_resolver`), and return the per-row field-deltas
+    for the batched confirm. Writes NOTHING (the resolver reads READ-ONLY + computes; no
+    DB write, no transaction). The FE posts the returned edits to /confirm/batch to
+    transact.
 
     The response shape (the batch field-delta list the FE renders -- one UNIFIED `rows`
-    list, each row carrying a `status` classification, D41 fact 2):
+    list, each row carrying a `status` classification):
       {"action": str,
        "rows": [
          # an ACTIONABLE row (the resolver produced an edit-spec):
@@ -413,16 +412,16 @@ def save_reverify_batch(
          {"status": "already_acted", "kcdx_id": int, "version": str,
           "reason": "interval already closed" | "already current"}, ...]}
     An `actionable` row's `edits` is the BatchRowSpec `edits` the FE re-posts to
-    /confirm/batch UNCHANGED; `field_delta` is the human acceptance signal (law 5). An
+    /confirm/batch UNCHANGED; `field_delta` is the human acceptance signal. An
     `already_acted` row carries its identity + a human marker, NO `field_delta`/`edits`
-    (nothing to confirm, never in any batch) -- the s08 worklist moves it to its "no
-    further action" state by READING this classification, never re-deriving it
-    client-side (D41 fact 2: the FE reads the classification, never computes it). The
-    already-acted rows are the two resolver silent-skips surfaced explicitly: verify-all's
-    already-covered skip (last_verified >= swept -- "already current") and
-    close-intervals' already-closed skip (valid_through == last_verified -- "interval
-    already closed"); EVERY other no-spec path is a ReverifyResolveError (-> 422), so a
-    no-spec input row is unambiguously already-acted.
+    (nothing to confirm, never in any batch) -- the worklist moves it to its "no further
+    action" state by READING this classification, never re-deriving it client-side (the FE
+    reads the classification, never computes it). The already-acted rows are the two
+    resolver silent-skips surfaced explicitly: verify-all's already-covered skip
+    (last_verified >= swept -- "already current") and close-intervals' already-closed skip
+    (valid_through == last_verified -- "interval already closed"); EVERY other no-spec path
+    is a ReverifyResolveError (-> 422), so a no-spec input row is unambiguously
+    already-acted.
 
     Failure modes (NONE writes):
       bad action          -> HTTP 422 (a caller bug -- an action the resolver does not
@@ -432,14 +431,14 @@ def save_reverify_batch(
                              close-target -- the caller surfaces it; the report is
                              stale/foreign, a maintainer-visible problem, not a silent
                              skip).
-      DbReadError         -> HTTP 422 (no curated DB resolved -- the s01 empty state's
+      DbReadError         -> HTTP 422 (no curated DB resolved -- the empty-state
                              read-path counterpart)."""
     config = load_config()
-    # The injected commit identity (D17a) -- the SAME resolution the /confirm endpoints
-    # use (body field > header > configured maintainer identity), so the verify-all
-    # trio's verified_by is the identity that will author the commit. Imported lazily to
-    # avoid the routes_confirm <-> routes_save import cycle (routes_confirm imports the
-    # save bodies from here).
+    # The injected commit identity -- the SAME resolution the /confirm endpoints use
+    # (body field > header > configured maintainer identity), so the verify-all trio's
+    # verified_by is the identity that will author the commit. Imported lazily to avoid
+    # the routes_confirm <-> routes_save import cycle (routes_confirm imports the save
+    # bodies from here).
     from .routes_confirm import _resolve_author
     author_name, _author_email = _resolve_author(
         body.author_name, body.author_email, x_kcdx_author_name, x_kcdx_author_email)
@@ -455,7 +454,7 @@ def save_reverify_batch(
     except data_core.ReverifyResolveError as exc:
         # A structural report-vs-DB mismatch (a stale matched id, an unknown version, a
         # missing close-target) OR a bad action -- a caller/input problem the FE surfaces.
-        # NO write happened (the resolver only reads). logging.md: log before returning.
+        # NO write happened (the resolver only reads). Log before returning.
         log.warning("reverify-batch preview rejected (action=%s): %s", body.action, exc)
         raise HTTPException(status_code=422, detail=str(exc))
     except data_core.DbReadError as exc:
@@ -466,7 +465,7 @@ def save_reverify_batch(
     # Shape each resolved edit-spec into the FE's batch field-delta row: the field-delta
     # (field_delta over the resolver-returned saved/edits, ordered by the version header)
     # + the edits to re-post + the row identity. PURE -- field_delta is a no-I/O
-    # description (the data-core's, reused -- law 6); this endpoint computes nothing else.
+    # description (the data-core's, reused); this endpoint computes nothing else.
     rows_out = []
     acted_keys = set()
     for spec in specs:
@@ -483,17 +482,18 @@ def save_reverify_batch(
         })
         acted_keys.add(spec["kcdx_id"])
 
-    # CLASSIFY the already-acted rows (D41 fact 2): the resolver produces NO spec for a
-    # row whose recommended action is already reflected in the DB (verify-all's
-    # already-covered skip, last_verified >= swept; close-intervals' already-closed skip,
-    # valid_through == last_verified). EVERY other no-spec path is a ReverifyResolveError
-    # (handled above -> 422), so an input row that produced no spec is UNAMBIGUOUSLY
-    # already-acted. The match key is `kcdx_id`: the resolver keys each spec by its target
-    # row's kcdx_id (`spec["kcdx_id"]`), one spec per input row at most (verify-all attributes
-    # by matched_address_version_id -> exactly one row; close-intervals resolves the single
+    # CLASSIFY the already-acted rows: the resolver produces NO spec for a row whose
+    # recommended action is already reflected in the DB (verify-all's already-covered
+    # skip, last_verified >= swept; close-intervals' already-closed skip, valid_through ==
+    # last_verified). EVERY other no-spec path is a ReverifyResolveError (handled above ->
+    # 422), so an input row that produced no spec is UNAMBIGUOUSLY already-acted. The match
+    # key is `kcdx_id`: the resolver keys each spec by its target row's kcdx_id
+    # (`spec["kcdx_id"]`), one spec per input row at most (verify-all attributes by
+    # matched_address_version_id -> exactly one row; close-intervals resolves the single
     # interval-containing row of kcdx_id). The endpoint does NOT recompute the skip -- it
-    # surfaces it (the resolver stays untouched, 1.1 owns it). The marker is by action:
-    # close-intervals -> "interval already closed"; verify-all -> "already current".
+    # surfaces it (the resolver stays untouched, it owns the skip logic). The marker is by
+    # action: close-intervals -> "interval already closed"; verify-all -> "already
+    # current".
     reason = ("interval already closed" if body.action == "close-intervals"
               else "already current")
     for r in body.rows:

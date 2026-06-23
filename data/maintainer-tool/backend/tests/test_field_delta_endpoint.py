@@ -1,13 +1,13 @@
-"""test_field_delta_endpoint.py -- the field-delta endpoint (Phase 2 step 3, D8 + D12).
+"""test_field_delta_endpoint.py -- the field-delta endpoint.
 
 WHAT THIS PROVES
 ----------------
 POST /field-delta SURFACES the data-core's field_delta / is_new_version_nothing_changed
-end-to-end over the REAL app + the REAL data-core (no mock of either -- the R3/D13 self-check:
-TestClient drives FastAPI against the real route, which calls the real seeds_shared in-process).
-The backend is a THIN CALLER: each delta case PINS the response to what the data-core's
-field_delta returns directly (not a hand-built expectation), so a drift in the data-core or a
-re-computation in the backend surfaces. Cases:
+end-to-end over the REAL app + the REAL data-core (no mock of either -- the no-duplication
+self-check: TestClient drives FastAPI against the real route, which calls the real
+seeds_shared in-process). The backend is a THIN CALLER: each delta case PINS the response
+to what the data-core's field_delta returns directly (not a hand-built expectation), so a
+drift in the data-core or a re-computation in the backend surfaces. Cases:
 
   1. A version-row edit with several changed fields -> the changed fields as {field, old, new},
      in the data-core's deterministic order, unchanged fields absent; the list of (field, old,
@@ -15,9 +15,9 @@ re-computation in the backend surfaces. Cases:
   2. A None-vs-'' (and ''-vs-missing) no-op field is NOT in the delta (the data-core's
      empty-cell semantics surface through the API).
   3. record_kind="names" orders the delta by ADDRESS_NAMES_CSV_HEADER (a lifecycle edit).
-  4. The D12 verdict: is_new_version=true + a new version identical to its source except
-     valid_from_version -> nothing_changed=True; a real change -> nothing_changed=False; and
-     the verdict field is ABSENT when is_new_version is not set.
+  4. The new-version verdict: is_new_version=true + a new version identical to its source
+     except valid_from_version -> nothing_changed=True; a real change -> nothing_changed=False;
+     and the verdict field is ABSENT when is_new_version is not set.
   5. The response list ORDER matches the data-core's OrderedDict order (the whole point of a
      list, not a JSON object -- asserted explicitly).
 
@@ -26,7 +26,7 @@ is a pure dict-vs-dict comparison). So the test needs no fixture and no skip gua
 
 RUN
 ---
-    python -m pytest data/maintainer-tool/backend/tests/ -q
+    python -m pytest backend/tests/ -q
 """
 import os
 import sys
@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.normpath(os.path.join(HERE, ".."))          # .../backend
 REPO_ROOT = os.path.normpath(os.path.join(BACKEND_DIR, "..", "..", ".."))
-DATA_CORE_PYDIR = os.path.join(REPO_ROOT, "data", "refdata-extractor", "python")
+DATA_CORE_PYDIR = os.path.join(BACKEND_DIR, "data_core")
 
 sys.path.insert(0, BACKEND_DIR)
 sys.path.insert(0, DATA_CORE_PYDIR)
@@ -84,7 +84,7 @@ def test_version_delta_surfaces_changed_fields_pinned_to_data_core():
     # The exact changed set (and unchanged fields absent: module/kind/kcdx_id/valid_from).
     changed_fields = {c["field"] for c in body["changes"]}
     assert changed_fields == {"rva", "last_verified_at_version", "evidence_kind"}, changed_fields
-    # No D12 verdict requested -> the field is absent (an UPDATE does not steer).
+    # No nothing-changed verdict requested -> the field is absent (an UPDATE does not steer).
     assert "nothing_changed" not in body, body
 
 
@@ -141,14 +141,15 @@ def test_names_record_kind_orders_by_names_header():
 
 
 # ----------------------------------------------------------------------------
-# Case 4: the D12 nothing-changed verdict (new version identical except valid_from).
+# Case 4: the nothing-changed verdict (new version identical except valid_from).
 # ----------------------------------------------------------------------------
 def test_d12_nothing_changed_true_for_identical_new_version():
     source = {
         "kcdx_id": "7", "valid_from_version": "1.4", "module": "WHGame.dll",
         "rva": "0x1000", "kind": "function", "last_verified_at_version": "1.4",
     }
-    # A new version: a copy at a new valid_from_version, nothing else differs -> D12 fires.
+    # A new version: a copy at a new valid_from_version, nothing else differs -> the
+    # nothing-changed verdict fires.
     new_version = dict(source)
     new_version["valid_from_version"] = "1.5"
 
@@ -219,7 +220,7 @@ def test_response_list_order_matches_data_core_ordereddict():
 def test_unknown_record_kind_is_rejected_not_silently_defaulted():
     # record_kind is a closed Literal["version","names"]. A typo must be a clean 422 (Pydantic),
     # NOT a silent fall-through to the version order -- a wrong-order delta shipping silently is
-    # the failure this guards (the field order is load-bearing for s06 layout stability).
+    # the failure this guards (the field order is load-bearing for save-screen layout stability).
     saved = {"kcdx_id": "7", "rva": "0x1000"}
     prospective = {"kcdx_id": "7", "rva": "0x2000"}
 
