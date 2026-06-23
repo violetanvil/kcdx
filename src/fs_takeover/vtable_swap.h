@@ -32,4 +32,8 @@ namespace kcdx::fs_takeover {
 // untouched (the engine keeps its own vtable; no kcdx ownership this boot).
 bool SwapVtableOnObject(void* pCryPak);
 
+// === DIAGNOSTIC (PROBE U) — the kcdx vtable buffer address kcdx wrote into the
+// CCryPak object at the swap, for the post-seat reswap watcher. NO-RESIDUE. ===
+void* GetKcdxVtableAddr();
+
 }  // namespace kcdx::fs_takeover

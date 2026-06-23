@@ -198,4 +198,12 @@ bool SwapVtableOnObject(void* pCryPak) {
     return true;
 }
 
+// === DIAGNOSTIC (PROBE U) — the kcdx vtable address, for the reswap watcher to
+// compare [obj+0x00] against. Returns the process-lifetime g_kcdxVtable buffer
+// address kcdx wrote into the object at the swap. NO-RESIDUE: remove with PROBE U.
+void* GetKcdxVtableAddr() {
+    return static_cast<void*>(g_kcdxVtable);
+}
+// === END PROBE U accessor ===
+
 }  // namespace kcdx::fs_takeover

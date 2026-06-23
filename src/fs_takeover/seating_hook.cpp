@@ -14,6 +14,7 @@
 #include "pso_probe.h"  // === DIAGNOSTIC (PROBE P) === KI-0028 shader-blob -> PSO
 #include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
 #include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
+#include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -223,6 +224,21 @@ void __fastcall HookedConstructStore(void* csystem) {
         // slots stay the engine's; skip the index build entirely.
         return;
     }
+
+    // === DIAGNOSTIC (PROBE U) — KI-0028 post-seat reswap watcher ==============
+    // The swap took. Arm the watcher that samples [pCryPak+0x00] (the object's
+    // vtable ptr) + *(gEnv pCryPak slot) for the rest of boot — to catch the
+    // engine RE-POINTING the CCryPak vtable or making a SEPARATE CCryPak the live
+    // global AFTER kcdx's one-shot seat (the unprobed H4-state seam; CORRECTION 4).
+    // Read-only on engine memory; bounded sampler; no hook. NO-RESIDUE: remove
+    // with PROBE U on retirement.
+    {
+        const uintptr_t slotVa = kcdx::refdb::ResolveAddrByName(kNamePCryPakSlot);
+        kcdx::fs_takeover::ReswapProbeStartAtSeat(
+            pCryPak, kcdx::fs_takeover::GetKcdxVtableAddr(),
+            reinterpret_cast<const void*>(slotVa));
+    }
+    // === END PROBE U arm ===
 
     // The swap took. Build the asset index BEFORE returning — the engine's first
     // file call through the swapped object comes AFTER this helper returns (P1:
