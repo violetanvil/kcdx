@@ -1,50 +1,39 @@
-# KI-0028 ROOT CAUSE (found 2026-06-22, PROBE W) — kcdx IsFileExist over-reports existence vs vanilla
+# KI-0028 ROOT CAUSE (CORRECTED 2026-06-22) — kcdx misses the level component paks under the `data/levels/` prefix
 
-**Status:** root cause IDENTIFIED + dump-confirmed. Fix is a design decision (kcdx existence semantics) — surfaced to the user, NOT yet built. AP17 mechanism below.
+**Status:** root cause IDENTIFIED + dump-confirmed + log-pinned. The earlier "IsFileExist over-report vs vanilla" framing in this file was a RED HERRING — corrected below. Fix is a kcdx serve/resolution fix (no thunk-back). KI-0028 OPEN.
 
-## The mechanism (falsifiable, sourced)
+## TWO earlier framings, both FALSIFIED — read this first
 
-kcdx's `IsFileExist3` (CCryPak existence-by-name, slot 67) returns **EXISTS (kcdx=1)** for files the engine's OWN original check returns **NOT-EXISTS (vanilla=0)**. The engine, told a file exists then unable to actually load it through the path that "yes" implies, **aborts the level load** ("The level can't be loaded, exiting — kutnohorsko", the main-menu background level).
+1. **"kcdx over-reports existence vs vanilla" (the IsFileExist3 kcdx=1/vanilla=0 divergence) — RED HERRING.** Per the user's correct principle, kcdx IS the filesystem; vanilla's answer is NOT ground truth. AND the data shows kcdx SERVES those files perfectly: for `data/GameShaders/.../whanim.cfi`, after `IsFileExist3=1`, the engine opens `%engine%/shaders/cache/d3d12/whanim.cfib` and kcdx serves it `how=index-pak result=7`, `want==got`, clean. The existence "divergence" is harmless — the shaders flow fine. NOT the cause.
 
-### Every link sourced
+2. **"a downstream consumer of the exists-answer fails" — also wrong.** The shaders are opened AND served successfully. There is no failing shader consumer.
 
-1. **PROBE W differential — 675 `VANILLA_DIFF` lines, ALL `slot=IsFileExist3 kcdx=1 vanilla=0`** (`kcdx-dev_2026-06-22_18-21-45.log`). kcdx's index-HIT says EXISTS; the captured engine original (same `(pName, location)` args, read-only) says NOT. Spans many asset classes:
-   - `.cfi` (294) + `.cfx` (287) — CryFX shader source/includes under `data/GameShaders/HWScripts/CryFX/`
-   - `.xml` (53) — `Scripts/AI/Factions.xml`, `Libs/MovementTransitions/*`, `Animations/Mannequin/ADB/*tags.xml`
-   - `.adb` (28) — animation databases
-   - `.gfx` (10) — Scaleform UI
-   - `.bk2` (2) — `Videos/startup/startup_01/startup_01.bk2`
-   - `.dat` (1)
-   So this is a GENERAL existence-over-report, NOT shader-specific.
+## THE ACTUAL ROOT CAUSE — a `data/`-prefix index/resolution miss on the LEVEL component paks
 
-2. **The engine aborts deliberately.** Crash dump `kcdx_2026-06-22_18-21-45.dmp` (96 MB, a REAL minidump — first for KI-0028): exception `0x000000d2` via `KERNELBASE!RaiseException` (`rdi=0xd2`). `0xd2` is a controlled engine fatal-exit code, NOT an access violation — matches the "level can't be loaded, exiting" popup. The engine chose to exit; it did not corrupt-and-crash.
+The engine aborts ("The level can't be loaded, exiting — kutnohorsko") because **kcdx returns MISS (`result=0`) for the level's component paks the engine requests under the `data/levels/kutnohorsko/` prefix**, so the engine finds the level's pak set NOWHERE and gives up.
 
-3. **NOT new, NOT a PROBE W artifact.** "level can't be loaded" (`cant_load=1`) appears in BOTH prior black runs (`kcdx_2026-06-22_17-34-39.log`, `…16-39-40.log`) — runs with NO differential. The black screen WAS this level-load failure all along; the prior runs were killed (Task Manager) before/around the popup, so it was never seen. PROBE W's differential is READ-ONLY (compares + discards the original's answer, returns kcdx's unchanged) — it made the WHY visible, it did not cause the failure.
+### The decisive contrast (same log, `kcdx-dev_2026-06-22_18-21-45.log`)
 
-4. **The `FAULTED_FIRE` storm is downstream teardown, not cause.** `cap_03_hook_lua_callback`/`cap03_update_callee` faults thousands of times starting 18:23:40 — ~110s AFTER the VANILLA_DIFF storm (18:21:50) and after the level-load failure. It is the per-frame test hook firing into the engine's exit/teardown, a consequence of the abort, not its cause.
+- kcdx's enumeration FINDS the level dir: `enum FindFirst pattern="levels/*.*" matched=3 entries="klaster, kutnohorsko, trosecko"`.
+- kcdx says the level pak EXISTS under the bare prefix: `IsFileExist3 vpath="levels/kutnohorsko/level.pak" how=original result=1`; `GetFileStat vpath="data\levels\kutnohorsko\level.pak" result=794343690` (a real stat).
+- **BUT the engine then opens the level's COMPONENT paks under `data/levels/kutnohorsko/` and kcdx MISSES every one** — `how=miss-original result=0` for: `data/levels/kutnohorsko/*.pak`, `.../cestool.pak` + `cestool-part0..5.pak`, `.../hlod.pak` + `hlod-part0..5.pak`, `.../hlod_vegetation-part0..N.pak`, etc. (and the same misses under every Workshop-mod root + the `mods/` tree).
 
-## Why kcdx says EXISTS where vanilla says NOT
+### The mechanism
 
-The divergence is in the index-HIT arm of `kcdx_IsFileExist3` (`metadata_slots.cpp`). kcdx resolves the vpath against its unified index and, on a HIT, returns true — but the engine original returns false for the same `(name, location)`. Candidate sub-mechanisms (the fix probe/read settles which):
+The engine requests the level's component paks under the **`data/levels/kutnohorsko/<component>.pak`** shape. kcdx's index does NOT resolve that key → `how=miss-original` → it thunks the engine original → the original ALSO misses (the engine's own pak-dir doesn't have these mounted under that name at this point) → `result=0`. The engine exhausts every search root (base `data/`, all Workshop mod folders, `mods/`) for the level pak set, finds it nowhere, and calls the controlled `RaiseException(0xD2)` level-load-failure exit (dump `kcdx_..._18-21-45.dmp`, FAULTED_CULPRIT WHGame.DLL+0x23ACACA → KingdomCome.exe main — a deliberate abort, NOT an AV).
 
-- **`location` semantics not honored on the index HIT.** `IsFileExist3(self, pName, location)`: location==2 pak-only, ==1 disk-only, else either. kcdx's index HIT may report existence for a `location` the engine is querying as a DIFFERENT location (e.g. the engine asks "does this exist as a LOOSE/disk file?" (location==1) and kcdx answers yes from a PAK-resident index entry — which is NOT a disk file). The engine then commits to a disk-load path that fails.
-- **kcdx's index carries entries under a normalized path/casing/alias the engine's original query does not match** — kcdx's `ResolveVPath` normalizes (fold + alias) so it HITS where the engine's literal pak-dir lookup MISSES; kcdx then claims existence for a name the engine cannot resolve the same way.
+The level DOES exist on disk: `Data/Levels/kutnohorsko/` is present (the component paks are there). kcdx indexes/serves the level under the bare `levels/...` key (the enum + `level.pak` exists answer prove it has SOME view) but MISSES the `data/levels/...`-prefixed component-pak requests the engine actually uses to load the level. **This is a `data/`-prefix normalization/index-coverage gap on the level component paks** — the SAME CLASS as KI-0026 (a prefix/alias resolution gap, `gameshaders`→`shaders`), now on the `data/levels/` path.
 
-The decisive next read: for a sample diverging vpath, what `location` did the engine pass, and what is the kind (Pak/Loose) of kcdx's index entry — does kcdx report a PAK entry as existing when the engine asked location==1 (disk-only)? That is the §-precise bug.
+### Why this is the kcdx defect (the user's principle)
 
-### PINNED (2026-06-22, same-log read) — it is NOT a location-filter bug; kcdx HITS where the engine MISSES on location=either
+kcdx IS the filesystem; the engine asks it "serve `data/levels/kutnohorsko/hlod.pak`" and kcdx must serve it (the file exists) — instead kcdx returns miss. kcdx is failing to serve the engine exactly what it needs. The fix is to make kcdx's index/resolution cover the level component paks under the `data/levels/` prefix the engine requests (NOT thunk-back — kcdx owns the serve).
 
-ALL 675 divergences are `how=index-either` (the FS_BOOT_TRACE meta line for each). So the engine passed `location` = "either" (not 1=disk-only, not 2=pak-only), and kcdx's either-arm returns true on ANY index hit. The location-filter sub-theory is FALSIFIED — location is "either", trivially handled. The bug is: **kcdx's `ResolveVPath` (normalized fold + alias) HITS the index for these names, while the engine's OWN original `IsFileExist3(name, either)` MISSES.** Two precise candidates:
+## NOT a PROBE W artifact
 
-1. **Timing/mount-order:** kcdx's index is built ONCE at seat over ALL paks; the engine's original existence check reflects only what is MOUNTED at the moment of the call. kcdx reports a not-yet-mounted-by-the-engine file as existing → the engine commits to a load the mount state can't satisfy → abort. (The dominant `data/GameShaders/` set fits this: the shader paks' mount/alias timing.)
-2. **Alias over-match (KI-0026 lineage):** the `data/GameShaders/...` set is the SAME alias class as KI-0026 (the `data/gameshaders/` → indexed `shaders/` engine-pak alias). kcdx's index resolves that alias and reports EXISTS; the engine original, querying its pak-dir with the raw `data/GameShaders/` name at this point, MISSES. kcdx is answering for a key the engine cannot resolve the same way yet.
+"level can't be loaded" (`cant_load=1`) is in BOTH prior black runs (17-34, 16-39) with NO differential. The black screen WAS this level-load failure all along — the engine reached the menu's background level load, missed the level paks, and aborted (silent only because prior runs were killed before/around the popup). PROBE W's read-only differential made the investigation finally read the FS trace at the failure point; it did not cause it.
 
-Both reduce to: **kcdx's index existence answer is computed over a DIFFERENT (broader, alias-resolved, fully-mounted) view than the engine's own existence check has at call time — so kcdx says EXISTS where the engine, with its current view, says NOT, and the engine's load logic (which trusts its own subsequent operations, not kcdx's existence claim) then fails.** The §-precise fix probe: for a diverging `data/GameShaders/*.cfi`, does the engine ORIGINAL resolve it under the `shaders/`-aliased key (KI-0026) but not the raw `data/GameShaders/` key — i.e. is kcdx claiming existence under a name the engine only finds via the alias?
+## The fix probe / read owed (AP17 — confirm before fixing)
 
-## This answers "why couldn't our logging see it"
-
-kcdx never FAILED — it confidently returned "exists". Every prior probe measured kcdx's outputs and found them self-consistently correct. The bug is a CORRECT-LOOKING answer that is WRONG RELATIVE TO VANILLA, invisible until the differential compared the two. The fix (PROBE W as kept infrastructure) is exactly the observability the project wanted.
-
-## The fix is a DESIGN decision (surfaced, not chosen)
-
-kcdx's existence answer must match what the engine needs — but "match vanilla exactly" vs "honor location and report the unified set correctly" is a design call about the takeover's existence semantics (the totalizing-invariant §5.1 vs the engine's location-filtered contract). Surfaced to the user. The fix stays inside kcdx ownership (no thunk-back) — make `kcdx_IsFileExist3`'s index HIT honor the `location` filter the way the engine original does, so kcdx reports existence ONLY where the engine would, while still covering the pak-resident set the takeover legitimately owns.
+- Read kcdx's index build (`asset_index` / the pak walk at seat) + `ResolveVPath`: does it index `Data/Levels/<level>/*.pak` at all, and under what key (`levels/...` vs `data/levels/...`)? The enum finding `levels/*.*` but the component-pak open missing `data/levels/...` says the index has the DIR but resolves the component-pak REQUEST shape (`data/levels/...`) to a miss.
+- Confirm: is it a PREFIX mismatch (`data/` not folded to the index key) or a COVERAGE gap (the per-level component paks under `Data/Levels/<level>/` never indexed)? The fix differs: prefix-fold in `ResolveVPath` vs walk the level dirs at index build.
+- The `how=miss-original result=0` (kcdx missed AND the original missed) is the tell: kcdx's index doesn't carry these, so it falls to the engine original which also can't resolve them at this point — exactly the KI-0026 "kcdx must own the resolution the engine can't do itself" shape.
