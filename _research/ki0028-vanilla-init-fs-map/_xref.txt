@@ -1,0 +1,15 @@
+=== xrefs to auto_resourcelist.txt (0x183a3bd00) ===
+   site 0x004dcd1f  in func_start 0x004dcb60
+   site 0x0244fccf  in func_start 0x0244fbc0
+=== xrefs to resourcelist.txt (0x183a3bd18) ===
+   site 0x004dcd45  in func_start 0x004dcb60
+   site 0x036c4638  in func_start 0x036c4618
+=== xrefs to Levels/ (0x183a3bd40) ===
+   site 0x004dcbb3  in func_start 0x004dcb60
+=== xrefs to /LevelInfo.xml (0x184052310) ===
+   site 0x0178baa9  in func_start 0x0178b86c
+=== xrefs to levels/ (0x184052f20) ===
+   site 0x009b885b  in func_start 0x009b8597
+   site 0x039b37f4  in func_start 0x039b370c
+=== xrefs to auto_resourcelist_total.txt (0x1846ac5c8) ===
+   site 0x0244fcd9  in func_start 0x0244fbc0

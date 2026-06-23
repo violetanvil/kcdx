@@ -1,0 +1,4 @@
+=== data refs (vtable slots) holding 0x4dcb60 ===
+   0x000183dbfe80
+
+=== callers of LevelInfo-getter 0x178b86c ===
