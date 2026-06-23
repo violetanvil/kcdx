@@ -43,8 +43,18 @@ void IndexPakRoot(AssetIndex& index, const std::wstring& root,
     // enumeration — not a runtime-mechanism probe; no hardcoded pak list).
     // Same std::filesystem iteration pattern mod_absorb/enabled_list_builder.cpp
     // uses for mod paks.
+    // RECURSIVE walk (KI-0028): the level component paks live NESTED under
+    // Data/Levels/<level>/*.pak (and other vanilla pak trees nest too) — a
+    // single-level directory_iterator missed them, so kcdx returned miss for
+    // every data/levels/<level>/<component>.pak request and the engine aborted
+    // the level load. recursive_directory_iterator covers the FULL nested vanilla
+    // pak set (kcdx IS the filesystem — it owns every vanilla pak the engine
+    // reads, not just the top-level ones). The per-entry body is depth-agnostic:
+    // it filters *.pak and keys each pak's entries by the vpath stored in the
+    // pak's central directory (pe.name), not the pak's disk depth.
     std::error_code ec;
-    fs::directory_iterator it(root, ec);
+    fs::recursive_directory_iterator it(
+        root, fs::directory_options::skip_permission_denied, ec);
     if (ec) {
         // This root does not resolve (wrong path / absent on this machine — an
         // absent Engine dir is NOT fatal, same as an absent Data dir). Log +

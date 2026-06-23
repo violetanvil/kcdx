@@ -51,3 +51,22 @@ kcdx must index the level component paks so it serves them when the engine asks.
 - **OR specifically walk `Data/Levels/<level>/*.pak`** (a targeted second pass over the known level-pak location) — narrower, but a named special-case rather than a general "index everything nested".
 
 Under what key the nested paks are indexed must match the engine's request shape (`data/levels/<level>/<component>.pak` — the engine requests with the `data/` prefix here, per the trace), so the resolve path covers the exact request. KI-0028 OPEN; fix pending the design choice.
+
+## FIX LANDED + VERIFIED (2026-06-22) — recursive pak walk; level-load abort RESOLVED
+
+`IndexPakRoot` changed `directory_iterator` → `recursive_directory_iterator` (`skip_permission_denied`, `ec`-safe). VERIFIED live (`kcdx-dev_2026-06-22_18-37-17.log`):
+
+- **Index GREW: 46→77 paks, 307,006→509,362 entries** (+202k). The nested level paks are now parsed + indexed: `cestool.pak`, `hlod.pak`, `hlod_vegetation.pak`, `level.pak`, `recast.pak`, `svo.pak`, `terrain.pak` (the `Data/Levels/kutnohorsko/*.pak` set). (PROVEN — `asset_index_built entries=509362 paks=77` + PAK_READER parse lines.)
+- **The "level can't be loaded" abort is GONE** — zero `RaiseException`/`cant_load`/`0xD2` this run (was present in every prior run). (PROVEN.)
+- **No regression** — suite 320/343, same as before the larger index. (PROVEN.)
+
+So the level-pak coverage gap WAS a real chain-blocker and the recursive walk fixes it. One layer of KI-0028 resolved.
+
+## NEXT LAYER EXPOSED — present now PUMPS but indexed-geometry draws still absent (the original no-present black, advanced)
+
+With the level loading, the render state CHANGED from the prior runs:
+- **Present is now ADVANCING** (`d_present=34/35` per second, `hr_present=0`) — NOT frozen as in the pre-fix black runs (where present_count was stuck). The frame loop reaches present now.
+- **But `draw_indexed=0` still** (DRAW_PROBE: 27094 instanced, 0 indexed, `om_null_rt=0`) — the menu's real indexed geometry is STILL not drawn. The game actively presents BLACK frames.
+- The `main_menu_kutnohorsko3.bk2` menu-background-video shows a `VANILLA_DIFF` (kcdx=1/vanilla=0) — a candidate next thread (does the menu video / Scaleform UI geometry path diverge?).
+
+**Note (user steer):** the window not being foreground is JUST alt-tab (the user reading logs) — NOT the cause; a CryEngine game renders in background (throttled), it does not go black. Focus is ruled out. The remaining bug is the indexed-geometry/draw layer with present now live — the same `draw_indexed=0` thread PROBE S found, now with the level actually loaded and present pumping.
