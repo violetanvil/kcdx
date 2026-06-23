@@ -47,6 +47,25 @@ commit_at_filing: 4befc07
 > correct (cap-109 DEFLATE + want==got), so it is NOT corrupt content — it is the engine's shader-system
 > init not completing under the swap. Status stays OPEN; root cause (the precise stall mechanism, AP17)
 > still owed. Full trail: the FINDING §"PROBE P RESULT".
+>
+> **CORRECTION 4 (2026-06-22) — the whole shader/PSO axis AND the entire kcdx-SERVED-OUTPUT class are
+> exonerated; the wedge is a kcdx-perturbed STATE/ORDER, not anything kcdx serves.** PROBE P swap-OFF
+> overturned CORRECTION 3's premise: `gfx_calls=1` on the WORKING menu too — the engine builds its menu
+> pipelines from an on-disk cache through an API PROBE P doesn't hook, so `gfx_calls=1` is NORMAL, not a
+> stall. Six probes (R/R2/R3/R4/P) confirmed the shader-cache-validation / offline-precache /
+> runtime-precache / lazy-create / device-PSO-create paths ALL run identically swap-ON vs swap-OFF.
+> PROBE S then measured the draws: swap-ON records MORE draws (9500 vs 1383) but **zero indexed-geometry
+> draws** (vs 96 swap-OFF) to valid, non-null render targets. PROBE T (this session) then forced kcdx
+> handles out of the engine's pak-index alias range (bit-40 encoding) to test the handle-straddle (H3a):
+> **STILL BLACK, `draw_indexed=0` unchanged, serve health byte-identical, no fault** — falsifying the
+> straddle AND proving the engine treats the kcdx handle as a fully opaque token (never tag-tested,
+> dereferenced, or truncated). **Net: every kcdx OUTPUT the engine consumes — served bytes (`diffs=0`),
+> handle value/semantics, sizes, enumeration counts — is now measured identical-or-correct swap-ON, yet
+> the menu's indexed geometry is never built and the frame composites black.** The divergence is NOT in
+> what kcdx SERVES; it is in a STATE or init-ORDER the swap perturbs that the geometry-build path depends
+> on (the H4-class P-F only killed for kcdx's added THREADS, never for the swap's effect on engine init
+> order/state). OPEN; next probe targets the kcdx-perturbed state the indexed-geometry build reads, not a
+> served file. Full trail: `_research/ki0028-cshaderman-pso-consumer-recon/FINDINGS.md` + `HANDLE-STRADDLE-LEAD.md` §"PROBE T RESULT".
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
