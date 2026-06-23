@@ -332,7 +332,6 @@ add_library(kcdx SHARED
     src/fs_takeover/metadata_slots.cpp
     src/fs_takeover/enum_slots.cpp
     src/fs_takeover/find_slots.cpp
-    src/fs_takeover/enum_diff_probe.cpp
     src/version_compat.cpp
     src/refdb.cpp
     src/blake3.cpp

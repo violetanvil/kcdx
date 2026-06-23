@@ -9,7 +9,6 @@
 
 #include "asset_index.h"       // GetBuiltIndex + FoldEngineAliasToIndexKey (alias fold)
 #include "boot_trace.h"        // FS_BOOT_TRACE — boot-window slot trace (KI-0026)
-#include "enum_diff_probe.h"   // === DIAGNOSTIC (PROBE Y) — ReplayAndDiffFind (enumeration vanilla-differential)
 #include "file_handle.h"       // the kcdx handle pool — find-handle mint/peek/advance/close
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
@@ -339,13 +338,6 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
     // walk by count alone). Traced from `names` BEFORE the move into the pool;
     // gated (boot window only), so the sample-string build is a cold-path cost.
     TraceEnumNames("FindFirst", pattern, names);
-    // === DIAGNOSTIC (PROBE Y) — enumeration vanilla-differential. kcdx built
-    // `names`/`isDir` (its synthesized unified set) for `pattern`; replay the
-    // SAME pattern through the captured engine ORIGINAL FindFirst/Next/Close and
-    // log ENUM_DIFF iff the entry SETS differ. Read-only; boot-window gated;
-    // called BEFORE the move into MintFind (the vectors are consumed below).
-    // NO-RESIDUE: remove with PROBE Y. ===
-    ReplayAndDiffFind(self, pattern, names, isDir);
     const KcdxHandle h = MintFind(std::move(names), std::move(isDir));
     if (h == 0) {
         // Mint failed (logged loud by the pool) — fail to the no-match contract
