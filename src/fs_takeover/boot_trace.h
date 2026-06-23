@@ -94,6 +94,44 @@ inline void TraceMeta(const char* slot, const char* vpath, const char* how,
         kcdx::log::KV("result", result));
 }
 
+// === DIAGNOSTIC (PROBE W) — vanilla-DIFFERENTIAL self-validation ============
+// KI-0028: kcdx never FAILS (every serve correct), yet the engine silently makes
+// a different successful decision under the swap. The observability gap is that
+// the trace flags "kcdx answered X", never "kcdx answered X but VANILLA would
+// have answered Y". This helper closes it: an index-HIT metadata slot that
+// answers WITHOUT asking the original ALSO calls the captured original (read-only
+// existence/size — idempotent, §-safe, the same captured bodies the miss arm
+// thunks) and logs ONLY on a divergence. Silent when kcdx matches vanilla; SHOUTS
+// the slot + vpath + both answers when it doesn't — the first time the log can
+// say "this is where kcdx diverges from vanilla", attributed by vpath.
+//
+// A divergence on a geometry/UI-loader path = the mechanism, named. ZERO
+// divergences logged across boot = the "kcdx answers differently" class is
+// FALSIFIED by direct measurement (pivot off the filesystem).
+//
+// Cost: logs only on mismatch; the original call is a cold read-only metadata
+// query (engine pak-dir + disk), the same the miss arm already makes. The caller
+// returns kcdx's answer UNCHANGED — the original's answer is compared + discarded,
+// so kcdx's behavior + the screen are identical (the log is the only delta).
+// NO-RESIDUE: remove with PROBE W on retirement.
+inline void TraceVanillaDiff(const char* slot, const char* vpath,
+                             long long kcdxAnswer, long long vanillaAnswer) {
+    if (!BootWindowActive()) return;  // predicted-skip after boot
+    if (kcdxAnswer == vanillaAnswer) return;  // MATCH — silent (the common case)
+    LOG_WARN_KV("VANILLA_DIFF", "diverge",
+        kcdx::log::KV::BareStr("slot", slot),
+        kcdx::log::KV("vpath", vpath ? vpath : "<null>"),
+        kcdx::log::KV("kcdx", kcdxAnswer),
+        kcdx::log::KV("vanilla", vanillaAnswer),
+        kcdx::log::KV::BareStr("detail",
+            "kcdx's index-HIT answer DIFFERS from what the engine original would "
+            "return for this name — a correct-but-different-from-vanilla serve "
+            "that can steer an engine loader down a different branch (load/skip/"
+            "pick-a-different-source). This is the KI-0028 observability signal: "
+            "kcdx did not FAIL, it answered DIFFERENTLY. The vpath names what; the "
+            "engine decision it steers is downstream."));
+}
+
 // Trace an open-family slot call (FOpen / AdjustFileName). `vpath` is the
 // inbound name; `disk` is the resolved disk path (or the pak path / "" when not
 // applicable); `result` is the open outcome (a non-zero kcdx handle id, 0 on a

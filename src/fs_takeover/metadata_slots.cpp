@@ -118,6 +118,17 @@ void LogMissingOriginal(const char* whichSlot, const char* vpath) {
             "defect, surfaced loud."));
 }
 
+// === DIAGNOSTIC (PROBE W) — IsFileExist3 vanilla-differential helper. kcdx
+// answered EXISTS(=1) from its index for `pName`; call the captured original with
+// the SAME (pName, location) and log iff it disagrees. Read-only (the original is
+// the engine pak-dir + disk existence check the miss arm already thunks); kcdx's
+// answer is unaffected. NO-RESIDUE: remove with PROBE W. ===
+void DiffExist3(void* self, const char* pName, int location) {
+    IsFileExist3OrigFn_t orig = g_origIsFileExist3.load(std::memory_order_acquire);
+    if (!orig) return;  // no captured original → nothing to compare (already loud elsewhere)
+    TraceVanillaDiff("IsFileExist3", pName, 1, orig(self, pName, location) ? 1 : 0);
+}
+
 }  // namespace
 
 void SetMetadataOriginals(const void* const* originalVtable) {
@@ -202,6 +213,15 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
                 LogFirstMeta("GetFileSize", pName, "index-pak");
                 TraceMeta("GetFileSize", pName, "index-pak",
                           static_cast<long long>(bs->size));
+                // PROBE W — kcdx returns the index size; does vanilla agree? A
+                // size divergence can mis-steer a loader (alloc/read/skip). Read-
+                // only; kcdx's answer unchanged.
+                if (GetFileSizeOrigFn_t o =
+                        g_origGetFileSize.load(std::memory_order_acquire)) {
+                    TraceVanillaDiff("GetFileSize", pName,
+                                     static_cast<long long>(bs->size),
+                                     static_cast<long long>(o(self, pName, bDiskOnly)));
+                }
                 return bs->size;
             }
         } else {  // Loose: the override IS a disk file; stat it for the true size.
@@ -252,6 +272,7 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
         if (location == 2) {
             if (isPak) { LogFirstMeta("IsFileExist3", pName, "index-pak");
                          TraceMeta("IsFileExist3", pName, "index-pak", 1);
+                         DiffExist3(self, pName, location);  // PROBE W
                          return true; }
         } else if (location == 1) {
             if (!isPak) {  // a loose disk override — confirm the disk file exists.
@@ -260,12 +281,14 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
                     GetFileAttributesW(wpath) != INVALID_FILE_ATTRIBUTES) {
                     LogFirstMeta("IsFileExist3", pName, "index-loose");
                     TraceMeta("IsFileExist3", pName, "index-loose", 1);
+                    DiffExist3(self, pName, location);  // PROBE W
                     return true;
                 }
             }
         } else {  // either
             LogFirstMeta("IsFileExist3", pName, "index-either");
             TraceMeta("IsFileExist3", pName, "index-either", 1);
+            DiffExist3(self, pName, location);  // PROBE W
             return true;
         }
         // location filtered the index source out → fall to the original.
@@ -327,6 +350,16 @@ bool kcdx_IsFileExist2(void* self, const char* pName) {
     if (ResolveVPath(GetBuiltIndex(), pName)) {
         LogFirstMeta("IsFileExist2", pName, "index");
         TraceMeta("IsFileExist2", pName, "index", 1);
+        // === DIAGNOSTIC (PROBE W) — vanilla-differential: kcdx says EXISTS from
+        // its index; what would the engine ORIGINAL say? A divergence (kcdx=1,
+        // vanilla=0) is a pak-resident vpath the engine's own pak-dir would NOT
+        // find → an existence answer that can steer a loader to load/skip
+        // differently. Read-only; kcdx's answer (true) is returned unchanged.
+        if (IsFileExist2OrigFn_t orig =
+                g_origIsFileExist2.load(std::memory_order_acquire)) {
+            TraceVanillaDiff("IsFileExist2", pName, 1, orig(self, pName) ? 1 : 0);
+        }
+        // === END PROBE W ===
         return true;  // an index entry is always a file (never a dir stub).
     }
 
