@@ -272,4 +272,22 @@ void PresentProbeStart() {
     ArmFactoryHooks();
 }
 
+bool PresentProbeSwapchainCaptured() {
+    return g_swapchain.load(std::memory_order_acquire) != nullptr;
+}
+
+uint64_t PresentProbeLastCount() {
+    // PROBE Y reads present progress off the captured swapchain DIRECTLY (a live
+    // GetLastPresentCount call), NOT the WatcherMain-cached last_present — the
+    // watcher self-terminates after 120 reads (~2min), but the swapchain ptr is
+    // valid the whole process life, so a stall reached AFTER the watcher exits
+    // still sees present advancing. Returns 0 if the swapchain was never captured
+    // (a distinguishable "never armed" input for the trigger, not a false flat).
+    IDXGISwapChain* sc = g_swapchain.load(std::memory_order_acquire);
+    if (!sc) return 0;
+    UINT last = 0;
+    if (FAILED(CallGetLastPresentCount(sc, &last))) return 0;
+    return (uint64_t)last;
+}
+
 }  // namespace kcdx::fs_takeover

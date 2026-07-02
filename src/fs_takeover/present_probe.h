@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // === DIAGNOSTIC (PROBE K) — KI-0028 present-count delta (NO present hook) ===
 //
 // WHY (KI-0028, after the J.2-J.5 reframe + Gate A architect-review): the game
@@ -49,5 +51,14 @@ namespace kcdx::fs_takeover {
 // game already created its factory before this arms, the hook simply never fires
 // and K2 logs "swapchain never captured" (an outcome, not a failure).
 void PresentProbeStart();
+
+// PROBE Y read accessors — read present progress off the captured swapchain
+// DIRECTLY (a live GetLastPresentCount), NOT the WatcherMain-cached value, so
+// they stay valid the whole process life (the K2 watcher self-terminates after
+// 120 reads ~2min). PROBE Y's stall trigger uses PresentProbeLastCount() as the
+// "present climbing" arm factor and PresentProbeSwapchainCaptured() to
+// distinguish "not armed yet" from a genuine flat count.
+bool     PresentProbeSwapchainCaptured();
+uint64_t PresentProbeLastCount();
 
 }  // namespace kcdx::fs_takeover

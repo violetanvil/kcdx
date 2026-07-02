@@ -276,6 +276,17 @@ void StartWatcherOnce() {
 
 }  // namespace
 
+uint64_t DrawcallProbeIndexedCount() {
+    // PROBE Y reads the LIVE draw counter (incremented in HookedDrawIndexed),
+    // NOT the SummaryMain watcher's cached value — the watcher self-terminates
+    // after 40 reads (~2min) but this atomic advances for the whole process
+    // life, so a stall reached AFTER the watcher exits is still observed.
+    // Relaxed: the trigger tolerates one-sample lag (a real stall holds
+    // draw_indexed==0 for many frames), no happens-before edge (concurrency.md,
+    // same rationale as boot_watch g_lastMs).
+    return g_drawIndexed.load(std::memory_order_relaxed);
+}
+
 void DrawcallProbeStart() {
     bool expected = false;
     if (!g_armed.compare_exchange_strong(expected, true,

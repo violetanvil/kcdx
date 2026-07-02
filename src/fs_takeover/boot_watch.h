@@ -63,4 +63,11 @@ uint64_t BootWatchTickCount();
 // advancing — a live boot produces no dump.
 void BootWatchStart();
 
+// Capture + log ALL thread stacks NOW (the F1/F2 suspend-window discipline lives
+// entirely inside this call — see boot_watch.cpp). Exposed so a sibling stall
+// trigger (PROBE Y — stall_stack_probe.cpp, whose stall signature keeps the
+// heartbeat ALIVE and so never trips BootWatchStart's cessation dumper) can reuse
+// the exact same Gate-A-blessed capture path. `label` tags the dump lines.
+void BootWatchDumpAllThreads(const char* label);
+
 }  // namespace kcdx::fs_takeover

@@ -122,6 +122,25 @@ void DumpAllThreads(const char* label) {
     const DWORD selfTid = GetCurrentThreadId();
     const DWORD pid     = GetCurrentProcessId();
 
+    // Now callable from TWO diagnostic watcher threads — boot_watch's cessation
+    // dumper AND PROBE Y (stall_stack_probe.cpp). Their trigger signatures are
+    // mutually exclusive (heartbeat stopped vs alive+draws==0) but not provably
+    // so in TIME; a concurrent second entry would race the static `dumps[]`
+    // buffer and garble the decisive capture. This latch admits exactly one dump
+    // at a time (a dump is a terminal one-shot on a wedged boot, so a dropped
+    // second dump is fine — the first already captured every thread). RAII so it
+    // releases on every exit path (incl. the snapshot-failed early return).
+    static std::atomic<bool> g_dumping{false};
+    bool expected = false;
+    if (!g_dumping.compare_exchange_strong(expected, true,
+                                           std::memory_order_acq_rel)) {
+        return;  // another watcher is mid-dump; its capture is authoritative
+    }
+    struct DumpLatch {
+        std::atomic<bool>& f;
+        ~DumpLatch() { f.store(false, std::memory_order_release); }
+    } dumpLatch{g_dumping};
+
     static ThreadDump dumps[kMaxThreads];  // static: no stack blow, watcher-only
     int dumpCount = 0;
 
@@ -379,6 +398,13 @@ DWORD WINAPI WatcherMain(LPVOID) {
 
 uint64_t BootWatchTickCount() {
     return g_tick.load(std::memory_order_relaxed);
+}
+
+void BootWatchDumpAllThreads(const char* label) {
+    // Thin public reuse of the anon-namespace dumper (F1/F2 discipline is inside
+    // it). PROBE Y (stall_stack_probe.cpp) fires this on the stall-no-geometry
+    // signature the cessation watcher cannot see.
+    DumpAllThreads(label);
 }
 
 void BootWatchTick() {

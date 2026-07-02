@@ -16,6 +16,7 @@
 #include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
 #include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
 #include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
+#include "stall_stack_probe.h"  // === DIAGNOSTIC (PROBE Y) === KI-0028 stall-no-geometry stack trigger
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -171,6 +172,17 @@ void __fastcall HookedConstructStore(void* csystem) {
     // A/B. NO-RESIDUE: remove with PROBE S on retirement.
     kcdx::fs_takeover::DrawcallProbeStart();
     // === END PROBE S arm ===
+
+    // === DIAGNOSTIC (PROBE Y) — KI-0028 stall-no-geometry stack trigger ========
+    // Measurement 1 (handoff §12.B): the proven stall keeps the heartbeat ALIVE
+    // (Main ticks ~35/s) so boot_watch's cessation dumper never fires. PROBE Y
+    // fires the SAME capture on the real signature — present advancing but
+    // draw_indexed stuck at 0 — reading the sibling probes' LIVE accessors (not
+    // their bounded watcher caches). Armed here, BEFORE the noswap return, so the
+    // swap-ON vs swap-OFF main-thread stacks capture at the same phase for the
+    // A/B diff that names the sequencer gate. NO-RESIDUE: remove with PROBE Y.
+    kcdx::fs_takeover::StallStackProbeStart();
+    // === END PROBE Y arm ===
 
     // === DIAGNOSTIC (PROBE W) — resolve WHGame's module bounds ONCE here, at the
     // seat (single-threaded, before any FS slot fires), into lock-free atoms used

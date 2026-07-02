@@ -1,6 +1,8 @@
 // === DIAGNOSTIC (PROBE S) — KI-0028 command-list DRAW recording =================
 #pragma once
 
+#include <cstdint>
+
 namespace kcdx::fs_takeover {
 
 // Arm PROBE S: the D3D12 command-list draw-recording tracer. Idempotent.
@@ -47,5 +49,12 @@ void DrawcallProbeStart();
 // List on. Idempotent (first device wins). NO-RESIDUE: remove the PROBE P call
 // site too on retire.
 void DrawcallProbeOnDeviceCaptured(void* device);
+
+// PROBE Y read accessor — the LIVE cumulative DrawIndexedInstanced count. Reads
+// the raw atomic (incremented in the D3D12 hook), NOT the bounded SummaryMain
+// watcher's cache, so it stays valid the whole process life. PROBE Y's stall
+// trigger reads this to detect "geometry never requested" (draw_indexed==0). 0
+// before the device/cmd-list hook lands (reads as "no draws yet", correct).
+uint64_t DrawcallProbeIndexedCount();
 
 }  // namespace kcdx::fs_takeover
