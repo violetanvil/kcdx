@@ -1335,8 +1335,17 @@ The user-directed step-back (Reframe 8: "stop probing individual functions, reas
 | Run | Mask (marker) | Status | Result |
 |---|---|---|---|
 | Z2.1 | `kFamAll` (no marker) — confound self-check | DONE (2026-07-02) | `probe_z_live_mask=15`, 41 samples all `draw_indexed=0` → **BLACK reproduced; self-check PASSES.** The full swap is a genuine repro; the bisection is valid. |
-| Z2.2 | `kFamNone` (`kcdx-thunkswap`) — mechanism-vs-logic split | NOT STARTED | renders → mechanism innocent, a family's LOGIC is culprit → per-family; black → the swap MECHANISM itself (object/timing/index) is the differentiator |
-| Z2.3 | one `kcdx-live-*` at a time — per-family | NOT STARTED | which single family live flips BLACK names the culprit (only runs if Z2.2 renders) |
+| Z2.2 | `kFamNone` (`kcdx-thunkswap`) — mechanism-vs-logic split | DONE (2026-07-02) | `probe_z_live_mask=0`, `kcdx_owned=0` (every slot thunks), yet the transition FIRES at ~33s (`draw_indexed` 0→152742) → **RENDERS. The swap MECHANISM is INNOCENT** (object overwrite/seat/index all happen). The culprit is a slot family's LOGIC → per-family build-up (Z2.3). |
+| Z2.3 | one `kcdx-live-*` at a time — per-family build-up | IN PROGRESS | which single family live flips BLACK names the culprit. Sub-ledger below. |
+
+**Z2.3 per-family build-up (each = ONE family live, the other three thunk; `draw_indexed` climbs = that family is INNOCENT, stays 0 = that family is the CULPRIT):**
+
+| Sub | Marker (only one live) | Status | Result |
+|---|---|---|---|
+| Z2.3-open | `kcdx-live-open` (1/35/36 AdjustFileName/FOpen) | NOT STARTED | |
+| Z2.3-read | `kcdx-live-read` (38..66 handle reads) | NOT STARTED | |
+| Z2.3-metadata | `kcdx-live-metadata` (13/45/67../93 exist/size/stat) | NOT STARTED | |
+| Z2.3-enum | `kcdx-live-enum` (14/63/64/65 ForEachFile/FindFirst/Next/Close) | NOT STARTED | |
 
 **What is CONFIRMED (this session):**
 - **The differentiator is a specific, time-located event, not a vague "never loads."** Y.6 (DRAW_PROBE on the working swap-OFF menu) measured: the working path holds `draw_indexed=0` / `ia_set_ib=0` for its first **~27s** (instanced UI draws only — the SAME signature as the swap-ON black screen), then a **transition fires at ~10:29:42** and backdrop geometry drawing begins and climbs to `draw_indexed=68024`. The swap-ON black screen never fires that transition (`draw_indexed=0` forever). The pre-transition state is IDENTICAL on both arms — the divergence is purely whether the transition fires. (`_research/ki0028-tick-geometry-dispatch-recon/Y6-workingmenu-draw-progression.md`.)
