@@ -1342,7 +1342,7 @@ The user-directed step-back (Reframe 8: "stop probing individual functions, reas
 
 | Sub | Marker (only one live) | Status | Result |
 |---|---|---|---|
-| Z2.3-open | `kcdx-live-open` (1/35/36 AdjustFileName/FOpen) | NOT STARTED | |
+| Z2.3-open | `kcdx-live-open` (1/35/36 AdjustFileName/FOpen) | DONE (2026-07-02) | **CRASH** (third outcome) — `mask=1`, `kcdx_owned=3`. Dump: AV `NULL_CLASS_PTR_READ ucrtbase!fileno`, `mov [rcx+18h]` with **`rcx=3`** — the engine called `fileno()` on a `FILE*` of `3`. kcdx's FOpen returns a **kcdx HANDLE (int token), not a FILE\*** (`open_slots.cpp:119` MintLoose `return h`); the engine calls `fileno()` DIRECTLY on FOpen's return (read/metadata thunked → engine's own path), gets kcdx's handle-int → deref → AV. **The OPEN family (FOpen return TYPE) is directly implicated.** Stack up through `C_Game::CreateInstance`. See `_research/ki0028-tick-geometry-dispatch-recon/Z2-3-open-crash-fileno-handle-mismatch.md` |
 | Z2.3-read | `kcdx-live-read` (38..66 handle reads) | NOT STARTED | |
 | Z2.3-metadata | `kcdx-live-metadata` (13/45/67../93 exist/size/stat) | NOT STARTED | |
 | Z2.3-enum | `kcdx-live-enum` (14/63/64/65 ForEachFile/FindFirst/Next/Close) | NOT STARTED | |
