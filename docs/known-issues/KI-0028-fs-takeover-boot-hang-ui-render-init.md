@@ -138,6 +138,36 @@ symbolized offline vs kcdx PDB + WHGame RVA table (real RVA = nearest-export RVA
 - capture fires on all-kcdx/all-present-loop frames → trigger MIS-ARMED (fired before the real stall) →
   re-tune the arm condition; NOT a result.
 
+**RESULT (RAN 2026-07-02, swap-ON `kcdx-dev_2026-07-02_09-44-29.log`; swap-OFF control
+`…_09-41-45.log`).** PROBE Y's TRIGGER works perfectly, validated on BOTH arms:
+- **swap-OFF (control):** `STALL_STACK_ARMED` (present=574, ticks=208) → `STALL_STACK_ADVANCED`
+  (draw_indexed=10320) → NO dump. Correctly detected the working outcome (geometry WAS requested). ✓
+- **swap-ON (repro):** `STALL_STACK_ARMED` (present=3362, draw_indexed=0, ticks=214) →
+  `STALL_STACK_FIRED` (present=4513, **draw_indexed=0**, confirm_polls=40) → dumped 256 threads. ✓
+- **NEW MEASURED FACT (was only INFERRED before): the stall signature is real** — swap-ON, present
+  climbs 3362→4513 (120fps) while `draw_indexed` stays EXACTLY 0 across the whole 40-poll confirm
+  window. "reached streaming/UI, never requested geometry" is now GROUND TRUTH, not FS-trace absence.
+- **Main (tid=42548, confirmed = heartbeat tid, still ticking 1579):** stack is the KNOWN per-frame
+  window/display loop — frame 13 `WHGame 0x869C39`, frame 3 `0x866090` (the focus-poll), frame 10
+  `kcdx.dll 0x42A1A` (HookedUpdate), KingdomCome.exe main below. NO level/scene/geometry-init frame.
+  The deep non-Main threads are OS input (`CoreMessaging`/`inputhost`) + Bink video (`bink2w64`) — all
+  normal, none parked in engine geometry work.
+- **VERDICT — outcome 3 (partial) + a CAPTURE-DESIGN LIMITATION, not the gate named.** Main is in NO
+  level-init frame → "level never loads" is now POSITIVELY SUPPORTED (Main never entered a load path),
+  and the axis moves to "where Main sits" = the per-frame window loop `0x869C39`/`0x866090` — which
+  PROBE M ALREADY proved runs IDENTICALLY swap-on/off (the per-frame trap, §5.4). So a single Main-stack
+  sample does NOT name the sequencer gate: **Main is not PARKED at a divergence point, it is LOOPING**
+  a full per-frame cycle that never DISPATCHES the geometry-request work. A call-stack snapshot of a
+  running loop catches the loop, not the branch-not-taken / job-not-dispatched that is the real
+  divergence (the Reframe 6 sampling-artifact, now confirmed for the stack-diff approach too). AND the
+  swap-OFF arm ADVANCED (no dump), so there is no swap-OFF Main stack to diff against regardless.
+- **What Measurement 1 DID deliver:** the stall is a positively-measured fact (not inference); Main is
+  confirmed looping-not-parked; "level never loads" gains positive support; the render/present/window
+  axes are re-confirmed off the table (present advancing, window healthy, no parked render thread). What
+  it did NOT deliver: the named gate — because the divergence is a NOT-TAKEN transition inside a running
+  loop, not a parked frame. The next probe must observe the DECISION (what per-frame check Main evaluates
+  to decide "advance to geometry" and why it evaluates false swap-ON), NOT another stack snapshot.
+
 **Gate A verdict (architect-review, 2026-07-02): PROCEED-with-conditions — one BLOCKING never-fire hole
 closed by re-design.** The blocking finding (correct): the sibling probe SUMMARY WATCHERS self-terminate on
 bounded read budgets (`present_probe.cpp:118` after 120 reads ~2min; `drawcall_probe.cpp:242` after 40
@@ -164,10 +194,10 @@ condition many frames; one-sample lag tolerated) — carry a why-comment per the
 | Y.0 Gate A — architect-review the trigger-addition design | DONE | PROCEED-with-conditions; never-fire hole closed by the re-design above |
 | Y.1 Read accessors on the two probe headers: `DrawcallProbeIndexedCount()` (reads live `g_drawIndexed`) + `PresentProbeLastCount()` (reads `GetLastPresentCount` off the captured swapchain, NOT a cached value) | DONE (`d43cc75`) | Gate-A fix: independent of the sibling watchers' bounded lifetimes |
 | Y.2 PROBE Y in its own file `stall_stack_probe.{h,cpp}`: arm on present-climbing + heartbeat-floor, fire `BootWatchDumpAllThreads("stall_no_geometry")` on `draw_indexed==0` after N wakes; emit `STALL_STACK_ARMED`/`FIRED`/`ADVANCED`/`NEVER_ARMED` | DONE (`d43cc75`) | own file (no-monolith line cap); reuses the Gate-A-blessed capture; dump-latch added (2 watcher threads); build GREEN, step-review PROCEED |
-| Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | IN PROGRESS | agent-builds-and-deploys; user launches each arm once |
-| Y.4 User launches arm 1 (swap-ON), arm 2 (swap-OFF); agent reads `STALL_STACK` frames from each log | NOT STARTED | two launches |
-| Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | NOT STARTED | first-differing frame = the gate → feeds Measurement 2 |
-| Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; kills the backdrop-premise trap cheaply |
+| Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | DONE | deployed `E93CCDD0…`, dev mode on, stale noswap marker removed for swap-ON |
+| Y.4 User launches swap-OFF (control) + swap-ON (repro); agent reads `STALL_STACK` frames | DONE | both ran; trigger validated both arms; swap-ON FIRED + dumped 256 threads |
+| Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | DONE (partial) | stall signature MEASURED; Main confirmed LOOPING (not parked) on the per-frame trap `0x869C39`; gate NOT named — divergence is a not-taken transition, not a parked frame. See RESULT above |
+| Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; still owed (kills the backdrop-premise trap) |
 
 ## Relationship to KI-0027
 
