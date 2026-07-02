@@ -216,6 +216,13 @@ dispatch DECISION. Existing recon's surviving candidates to carry in: the `0x549
 runtime-vtable, static-unresolvable, now lower-priority since the axis moved from window/present to
 geometry-dispatch.
 
+**Measurement 2 RESULT (2026-07-02) — the tick render-dispatch axis is EXONERATED; it is NOT the differentiator.**
+Static disassembly of the tick dispatcher `0x667b24` (`_research/ki0028-tick-geometry-dispatch-recon/`, gated body-read verifier PROCEED) found the tick's ONE per-frame render-dispatch gate: `0x667ed0 cmp qword [0x492b908], r14 ; je 0x667f84` — when render singleton `0x492b908` is null, the tick skips the block dispatching `[obj+0x240/0x250/0x248]` (via the singleton) + `[rsi+0x430/0x428]` (via CSystem), with float/resolution args = an IRenderer/I3DEngine interface. `0x492b908` has ZERO static writers (gEnv-table pointer, runtime-installed) — its null-ness swap-on/off is not statically decidable.
+
+**BUT the existing draw-count evidence already settles the runtime half, killing this as the gate:** `RECONCILE-render-vs-levelload-2026-06-23.md` records swap-ON `draw_instanced=9500` (vs `1383` swap-OFF) alongside `draw_indexed=0`. The renderer is issuing 9500 instanced draws swap-ON → the render tick block RUNS → `0x492b908` is NON-null swap-ON → the `0x667ed0` gate is TAKEN (not skipped) on both paths. This is my FINDINGS "Outcome B": the render dispatch executes swap-ON; `draw_indexed=0` originates DEEPER, not at this gate. **Measurement 2 confirms Reframe 7/8's conclusion from the code side: `draw_indexed=0` is a downstream symptom of "no level geometry loaded," NOT a render-routing/dispatch gate.** The per-frame render tick is alive and un-perturbed by the swap; the missing thing is UPSTREAM (the level-load trigger Reframe 8 left unproven).
+
+**This does NOT re-open a one-deep probe** (per the Reframe-8 step-back directive): it EXONERATES the tick-dispatch axis and returns the question to the user-directed reassessment — "what does the swap provably perturb, before the next probe." The render pipeline is now exonerated at three layers (shader/PSO by Reframe 7's six probes; window/present by PROBE M + window-exit recon; per-frame render-dispatch by this Measurement 2). The surviving un-exonerated axis is the level-load TRIGGER (Reframe 8), still the reassessment's subject.
+
 ## Relationship to KI-0027
 
 KI-0027 (the table-DB load failing because kcdx's fs-takeover did not serve the
