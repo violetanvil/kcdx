@@ -1196,6 +1196,36 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 7 (2026-06-23) — the CURRENT frontier: level-load never fires swap-ON; the render-graph read is SUPERSEDED
+
+The 06-22 render-side investigation (`_research/ki0028-cshaderman-pso-consumer-recon/`) exonerated the entire shader/PSO axis by measurement (present succeeds, cache accepts, precache/PSO-create identical both paths) and pinned a terminal fact: swap-ON the frame records `draw_instanced=9500 draw_indexed=0 om_null_rt=0` vs swap-OFF `1383 / 96 / 0`. That investigation read `draw_indexed=0` as a render-target-routing question and proposed a heavier render-graph instrument.
+
+**That read is SUPERSEDED (user-approved pivot 2026-06-23).** The next-day zero-plugin FS baseline (`_research/ki0028-fsr2-poll-loop-recon/CLEAN-ZEROPLUGIN-BASELINE-2026-06-23.md`) trace-diffed the FS logs and proved `draw_indexed=0` is a DOWNSTREAM SYMPTOM of "the level never loaded," not a routing bug:
+
+```
+mmrm_used_meshes      black=0       crash=7
+merged_meshes_sectors black=0       crash=7
+levels/kutnohorsko    black=6       crash=118,847   <-- the whole difference
+leveldata.xml         black=2       crash=17
+```
+
+Swap-ON, the engine reads base + UI assets (high-water mark = `cursor_green.dds`, `pros_qr_frame.dds`, `autoexec.cfg`, `config/config.dat` — all menu/UI), then STALLS before requesting ANY level geometry — zero `.cgf` in 100,097 trace lines. The frame is black because there is no loaded world geometry to draw; the 9500 non-indexed draws are the menu/UI compositor over a world that never loaded. The render pipeline is ALIVE (present succeeds, PSOs build) — it just has nothing to draw.
+
+**False lead already killed (do NOT re-chase):** level-EXISTENCE is not the gate. Both black and level-entering runs get identical enum (`level.pak`=1, loose `kutnohorsko.xml`=0, which is CORRECT — no loose xml exists, engine falls back to `level.pak`). Both agree through existence, then diverge at the level-LOAD the black run never starts.
+
+**The pivot:** drop render-graph/resource-routing; pursue the LEVEL-LOAD TRIGGER — where the FS swap actually bites. A level-load that silently never starts is far more plausibly a file-serving/enumeration divergence (in kcdx's blast radius) than a D3D12 render bug (not).
+
+**Next probe — level-load-entry after-hook (armed before the swap decision, A/B).** Entry points already RE'd + body-read in `_research/ki0028-vanilla-init-fs-map/` (reuse-first, no fresh Ghidra needed): `CResourceList::Load @ 0x4dcb60` (first level-resource read) → pathbuilder `0x4dd384` → slot-4 reader `0x4dd5e4` → open-helper `0x4605bc` → `CCryPak::FOpen` slot 36 `0x4614A0`; orchestrator `C_Game::CreateInstance`; record reader `0x66bbf0`. NOT on disk (fresh Ghidra if needed): `mmrm_used_meshes.lst` has zero hits (never traced to a function), and the `CLevelSystem::LoadLevel`/`SetCurrentLevel` WRITER is unpinned.
+
+> Probe asks: *does the engine BEGIN loading the level swap-ON?* After-hook `CResourceList::Load @ 0x4dcb60`, armed before the swap decision.
+> - **Outcome A** — fires swap-OFF, NOT swap-ON → an UPSTREAM gate stops level-load before it begins; the divergence is in what the engine checks to DECIDE to load (a file/enum kcdx serves differently). **← the bet.** Next: hook the `C_Game::CreateInstance` caller region to find the gate.
+> - **Outcome B** — fires swap-ON, then early-returns/finds-nothing → level-load starts but a served manifest (`leveldata.xml`) parses empty under the swap. Next: dump the bytes it reads swap-ON vs swap-OFF.
+> - **Outcome C** — fires identically both paths, identical bytes → the gate is DOWNSTREAM of the resource-list read. Next: hook the next stage (needs the unpinned writer, fresh Ghidra).
+
+Full cross-document reconciliation: `_research/ki0028-fsr2-poll-loop-recon/RECONCILE-render-vs-levelload-2026-06-23.md`. Bind-root caveat: the `83a9279` bind-root-prefix fix cleared the `0xD2` abort and is IN; the black screen persists after it, so this level-load gate is a SEPARATE mechanism downstream of that fix — confirm the fix is still live in the swap-ON run before concluding Outcome A.
+
+---
+
 ## Open questions (for /debug — after P-C)
 
 - **NEW (Reframe 5, log-proven): is the `~20:29:43` NGX wedge PERMANENT, or does it eventually wake?**

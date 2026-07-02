@@ -181,6 +181,11 @@ Both simple explanations are falsified by direct measurement. **The draws execut
 
 ## 5. Where the bug is now pinned (sourced, not inferred)
 
+> **⚠ SUPERSEDED (2026-06-23) — the §5/§6 render-routing conclusion is OVERTURNED.**
+> The interpretation below ("a render-resource / render-target-routing question") was reached at the D3D12 draw-call layer WITHOUT the FS-trace data. The next-day zero-plugin baseline (`_research/ki0028-fsr2-poll-loop-recon/CLEAN-ZEROPLUGIN-BASELINE-2026-06-23.md`) trace-diffed the FS logs and proved `draw_indexed=0` is a **downstream symptom of "the level never loaded,"** NOT a routing bug: swap-ON the engine reads UI/menu assets then STALLS before requesting any level geometry — `mmrm_used_meshes=0`, `.cgf`=0, `levels/kutnohorsko` opened 6× (vs 118,847× on a run that entered the level). There is no content geometry to route because none was loaded. The 9500 non-indexed draws are the menu/UI compositor over a world that never loaded.
+> **Do NOT pursue the "heavier render-graph instrument" §6 proposes** — it would instrument a render graph that is downstream of the actual break and find nothing. The live direction is the LEVEL-LOAD TRIGGER (does it fire swap-ON at all?). Full reconciliation + pivot: `_research/ki0028-fsr2-poll-loop-recon/RECONCILE-render-vs-levelload-2026-06-23.md`.
+> Everything in §1–§4 (the measured exonerations: hang, present, shader-cache, precache, PSO-create, draw-submission) STANDS — those are direct measurements, not the overturned interpretation.
+
 By a chain of seven measurements, each disproving a theory:
 
 **Exonerated — proven identical or absent on BOTH paths, by measurement:**
