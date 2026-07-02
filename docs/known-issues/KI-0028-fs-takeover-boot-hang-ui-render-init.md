@@ -197,7 +197,7 @@ condition many frames; one-sample lag tolerated) — carry a why-comment per the
 | Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | DONE | deployed `E93CCDD0…`, dev mode on, stale noswap marker removed for swap-ON |
 | Y.4 User launches swap-OFF (control) + swap-ON (repro); agent reads `STALL_STACK` frames | DONE | both ran; trigger validated both arms; swap-ON FIRED + dumped 256 threads |
 | Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | DONE (partial) | stall signature MEASURED; Main confirmed LOOPING (not parked) on the per-frame trap `0x869C39`; gate NOT named — divergence is a not-taken transition, not a parked frame. See RESULT above |
-| Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; still owed (kills the backdrop-premise trap) |
+| Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | DONE (2026-07-02) | Answered via DRAW_PROBE (kcdx FS-trace is blind swap-OFF — slots bypassed). Working menu `draw_indexed=68024` (vs swap-ON `0`) → backdrop-premise trap CONFIRMED real; "no geometry loaded" IS the differentiator. NEW: working path holds `draw_indexed=0` for ~27s then a TRANSITION fires — swap-ON never fires it. See `_research/ki0028-tick-geometry-dispatch-recon/Y6-workingmenu-draw-progression.md` |
 
 **PROBE Y → Measurement 2 REFRAME (2026-07-02, reuse-first off `_research/ki0028-window-exit-gate-recon/`).**
 PROBE Y's Main stack (`0x869C39` window-focus loop, `0x866090` bounded poll) is EXACTLY the region the
