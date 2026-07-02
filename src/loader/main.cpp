@@ -228,6 +228,95 @@ bool InjectViaCreateRemoteThread(HANDLE hProcess,
 }
 
 // ---------------------------------------------------------------------------
+// Disable switch
+// ---------------------------------------------------------------------------
+
+// Resolve the game exe the same two ways RunLauncher does (argv[1] from
+// Steam's %command%, else sibling KingdomCome.exe), with NO kcdx setup —
+// used only by the disabled path. Returns false if no game exe is found.
+bool ResolveGameExe(const wchar_t* selfDir, wchar_t* out, size_t cap,
+                    bool* outFromArgv) {
+    *outFromArgv = false;
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    bool ok = false;
+    if (argc >= 2 && argv && argv[1] && PathFileExistsW(argv[1])) {
+        ok = SUCCEEDED(StringCchCopyW(out, cap, argv[1]));
+        *outFromArgv = true;
+    } else {
+        StringCchPrintfW(out, cap, L"%sKingdomCome.exe", selfDir);
+        ok = PathFileExistsW(out) != FALSE;
+    }
+    if (argv) LocalFree(argv);
+    return ok;
+}
+
+// Launch the game with ZERO kcdx involvement — no injection, no engine dir,
+// no logging setup. The disabled-marker path. argv[2..N] are passed through
+// when the game exe came from %command%/argv[1] (mirrors RunLauncher's
+// pass-through). Returns the process exit-style code.
+int LaunchGameVanilla(const wchar_t* selfDir) {
+    wchar_t gameExePath[MAX_PATH];
+    bool fromArgv = false;
+    if (!ResolveGameExe(selfDir, gameExePath, _countof(gameExePath), &fromArgv)) {
+        MessageBoxW(nullptr,
+            L"kcdx is disabled (kcdx.disabled present), but KingdomCome.exe "
+            L"was not found next to kcdx.exe. Remove kcdx.disabled, or run "
+            L"KingdomCome.exe directly.",
+            L"kcdx.exe: game not found", MB_OK | MB_ICONERROR);
+        return 3;
+    }
+
+    // Build the child command line (argv[0] = quoted exe path; pass through
+    // any %command% args when invoked via Steam).
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    int firstPassThroughArg = fromArgv ? 2 : 1;
+    wchar_t cmdBuf[2048];
+    StringCchPrintfW(cmdBuf, _countof(cmdBuf), L"\"%s\"", gameExePath);
+    for (int i = firstPassThroughArg; i < argc; ++i) {
+        StringCchCatW(cmdBuf, _countof(cmdBuf), L" ");
+        bool needsQuotes = false;
+        for (const wchar_t* p = argv[i]; *p; ++p) {
+            if (*p == L' ' || *p == L'\t') { needsQuotes = true; break; }
+        }
+        if (needsQuotes) StringCchCatW(cmdBuf, _countof(cmdBuf), L"\"");
+        StringCchCatW(cmdBuf, _countof(cmdBuf), argv[i]);
+        if (needsQuotes) StringCchCatW(cmdBuf, _countof(cmdBuf), L"\"");
+    }
+    if (argv) LocalFree(argv);
+
+    // Current dir = game-bin (no trailing slash), same reason as RunLauncher:
+    // KingdomCome.exe does relative-path LoadLibrary for WHGame.dll etc.
+    wchar_t cwdBuf[MAX_PATH];
+    StringCchCopyW(cwdBuf, _countof(cwdBuf), selfDir);
+    size_t cwdLen = wcslen(cwdBuf);
+    while (cwdLen > 0
+           && (cwdBuf[cwdLen - 1] == L'\\' || cwdBuf[cwdLen - 1] == L'/')) {
+        cwdBuf[--cwdLen] = 0;
+    }
+
+    // No CREATE_SUSPENDED — there is nothing to inject; just run it.
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = CreateProcessW(gameExePath, cmdBuf, nullptr, nullptr, FALSE,
+                             0, nullptr, cwdBuf, &si, &pi);
+    if (!ok) {
+        DWORD err = GetLastError();
+        wchar_t msg[512];
+        StringCchPrintfW(msg, _countof(msg),
+            L"kcdx is disabled, but launching KingdomCome.exe failed "
+            L"(Win32 error 0x%08x).", err);
+        MessageBoxW(nullptr, msg, L"kcdx.exe: launch failed", MB_OK | MB_ICONERROR);
+        return 4;
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -237,6 +326,19 @@ int RunLauncher() {
     if (!GetSelfDir(selfDir, _countof(selfDir))) {
         Logf(L"FATAL: couldn't resolve launcher directory");
         return 1;
+    }
+
+    // Disable switch — BEFORE anything else. A `kcdx.disabled` file next to
+    // kcdx.exe routes straight to a vanilla launch: no injection, no engine
+    // dir, no logging, no kcdx involvement of any kind. The escape hatch that
+    // works even when the engine is broken (it never loads). Delete the file
+    // to re-enable.
+    wchar_t disableMarker[MAX_PATH];
+    StringCchPrintfW(disableMarker, _countof(disableMarker),
+                     L"%skcdx.disabled", selfDir);
+    if (PathFileExistsW(disableMarker)) {
+        OutputDebugStringW(L"[kcdx] kcdx.disabled present; launching vanilla KCD2, kcdx not loaded\r\n");
+        return LaunchGameVanilla(selfDir);
     }
 
     // Engine dir + logs dir. Folder name is kcdx-engine/ (prefix makes

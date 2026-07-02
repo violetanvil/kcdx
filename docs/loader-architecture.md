@@ -110,6 +110,32 @@ and shows an actionable error dialog naming the failure mode.
 Source: [`src/loader/main.cpp`](../src/loader/main.cpp). One TU, no
 dependencies beyond Win32. Under 150 KB stripped.
 
+### Disable switch — `kcdx.disabled`
+
+A file named `kcdx.disabled` next to `kcdx.exe` (at the bin root)
+disables kcdx entirely. It is the FIRST thing the launcher checks —
+before path resolution, logging, or engine setup. When present, the
+launcher resolves KingdomCome.exe (the same two ways it normally does:
+`%command%`/argv[1] from Steam, else sibling lookup) and launches it
+**vanilla** — no `CREATE_SUSPENDED`, no injection, no engine DLL, no
+kcdx involvement of any kind. The game runs as if kcdx were not
+installed.
+
+```
+<game>/Bin/Win64MasterMasterSteamPGO/
+├── kcdx.exe
+├── kcdx.disabled        ← presence disables kcdx; launches vanilla KCD2
+└── kcdx-engine/
+```
+
+- **To disable:** create the file (any contents, empty is fine).
+- **To re-enable:** delete the file.
+
+This is the escape hatch that works even when the engine is broken:
+because the DLL is never injected, a crash or hang in kcdx's own load
+path cannot occur on the disabled run. One marker file, no editor, no
+TOML — the user toggles kcdx without touching the engine config.
+
 ### kcdx.dll's perspective at runtime
 
 Once injected, `kcdx.dll`'s `DllMain` runs inside KingdomCome.exe's
