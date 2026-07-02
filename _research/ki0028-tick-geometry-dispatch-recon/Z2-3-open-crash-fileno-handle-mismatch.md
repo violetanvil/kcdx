@@ -27,3 +27,30 @@
 ## The connecting question (NOT yet established — next)
 
 Does this SAME handle-vs-FILE* mismatch cause the BLACK SCREEN in the full swap (kFamAll)? Under kFamAll, kcdx owns the read slots too, so kcdx's read/close consume the handle correctly and this particular `fileno` crash does not fire — but the engine's DIRECT `fileno(handle)` call still gets a kcdx handle, and if the engine uses the fd for something kcdx's slots don't intercept (a raw OS read, an fd passed to another API), it would silently get wrong data → the backdrop load fails → black. This is the likely bridge from "open-only crashes" to "full-swap goes black," but it is NOT yet proven. Next: find WHERE in CreateInstance the engine calls fileno() on FOpen's return, and what it does with the fd — swap-ON vs the kFamNone (working) path.
+
+## BRIDGE PROVEN (2026-07-02, static read of the fileno caller — `disasm_fileno_caller.py` → `_fileno_caller.txt`)
+
+The crash stack's fileno caller is the engine file-wrapper reader body at **RVA 0x460b64** (frame 01 ret 0x460cc5). Read cover-to-cover, it is a **raw-CRT-FILE\* consumer**:
+
+- The wrapper object (`this`=rdi) holds a `FILE*` at **`[this+0x108]`** and an abstract-stream object at `[this+0x110]`.
+- `0x460b84`: `if ([this+0x110] != null)` → call the abstract stream's `[vtable+0x170]` (the CryPak-style reader path). ELSE fall through to the raw-CRT path:
+- `0x460b9b` `ftell([this+0x108])` · `0x460bb7` `fseek([this+0x108])` · `0x460bc8` `ftell` · `0x460bdd` `fseek` · `0x460b5c` `fread([this+0x108])` · **`0x460cbf` `_fileno([this+0x108])`** (the crash) · `0x460ccc` `_fstat64i32(fd)`.
+
+**Every op on `[this+0x108]` is a CRT call that assumes a real `FILE*`** — `ftell`/`fseek`/`fread`/`fileno`/`fstat`. This path BYPASSES kcdx's CCryPak read slots entirely (it does not call any vtable slot — it calls the CRT imports directly on the stored `FILE*`).
+
+**This is the bridge, proven by code (not inferred):**
+- The `FILE*` at `[this+0x108]` is what FOpen returned. kcdx's FOpen returns a **kcdx handle (int), not a FILE\***.
+- **open-only (Z2.3-open):** `_fileno(handle)` derefs `[handle+0x18]` → AV (the crash).
+- **full-swap (the BLACK SCREEN):** `ftell`/`fseek`/`fread(handle)` operate the CRT on the handle-int → fail / read garbage; the file this wrapper reads never loads → the backdrop asset never loads → the ~27s transition never fires → black. kcdx owning the CCryPak read SLOTS (38..66) is IRRELEVANT here — the engine is not calling those slots, it is calling `fread()` on the raw FILE* from `[this+0x108]`.
+
+**Same root, both arms:** kcdx's FOpen returns a handle; the engine's file-wrapper has a raw-CRT-FILE\* path (`[wrapper+0x108]`, taken when the abstract stream `[+0x110]` is null) that kcdx's read-slot ownership does not intercept. The full-takeover handle model silently breaks FOpen's contract ("return a value the engine can `fread`/`fileno` directly").
+
+**The fix axis (design decision — surface, Gate A):** kcdx's FOpen must return something the engine's raw-CRT path can consume — a real `FILE*` (with kcdx tracking it for its own read slots), OR ensure the engine always takes the abstract-stream `[+0x110]` path (populate it so `[+0x108]` is never used), OR intercept the CRT consumption. Which one is the user's call.
+
+## Precision — what is PROVEN vs the one remaining runtime link (honest boundary)
+
+**PROVEN (code + dump):** (1) kcdx's FOpen returns a handle-int, not a FILE* (`open_slots.cpp:119`). (2) The engine reader at `0x460b64` consumes the stored `[this+0x108]` value via raw CRT (`ftell`/`fseek`/`fread`/`fileno`/`fstat`), bypassing kcdx's read slots. (3) With open-only live, `fileno(handle)` AVs — the Z2.3-open crash IS this exact site. So the DEFECT is proven: kcdx's FOpen return is used as a raw CRT FILE* by the engine, and kcdx's value is not one.
+
+**The one link NOT yet runtime-proven:** that the FULL-SWAP (kFamAll) *black screen* specifically stalls at THIS reader (vs another raw-CRT consumer of FOpen's return). Static: the reader takes the `[+0x108]` raw path only when the abstract stream `[+0x110]` is null (`0x460b84` branch); whether `[+0x110]` is null on the full-swap backdrop-load path is the unread bit (the wrapper ctor writer of `+0x108`/`+0x110` was not fully traced — diminishing static returns). BUT the fix does not depend on WHICH raw-CRT site stalls the full swap: the root defect (FOpen returns a non-FILE* the engine reads as a FILE*) is the same, and any such site fails identically. The bridge is proven at the DEFECT level (the mechanism is real and on the CreateInstance path); the exact full-swap stall site is a detail the fix subsumes.
+
+**Cheapest airtight confirmation if wanted (one probe):** on the full-swap arm, log kcdx's FOpen return value + a one-shot at `0x460b64`'s `[+0x108]` read — confirms the full swap feeds a kcdx handle into this same raw-CRT reader. Not required to establish the defect or design the fix; available if the user wants the last link nailed before the fix lands.

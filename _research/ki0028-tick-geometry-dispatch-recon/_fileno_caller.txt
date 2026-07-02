@@ -1,0 +1,142 @@
+
+=== fileno-caller region (frames 01 @0x460cc5 / 02 @0x460b99): 0x460b40..0x460d40 ===
+0x00460b40 call    rdx
+0x00460b42 add     rsp, 0x30
+0x00460b46 pop     rbx
+0x00460b47 ret     
+0x00460b48 mov     r9, qword ptr [rcx + 0x108]
+0x00460b4f mov     edx, 1
+0x00460b54 mov     rcx, rbx
+0x00460b57 add     rsp, 0x30
+0x00460b5b pop     rbx
+0x00460b5c jmp     qword ptr [rip + 0x35a31b5]  ; IMPORT fread
+0x00460b63 int3    
+0x00460b64 mov     qword ptr [rsp + 8], rbx
+0x00460b69 mov     qword ptr [rsp + 0x10], rbp
+0x00460b6e mov     qword ptr [rsp + 0x18], rsi
+0x00460b73 push    rdi
+0x00460b74 sub     rsp, 0x20
+0x00460b78 mov     rdi, rcx
+0x00460b7b xor     ebp, ebp
+0x00460b7d mov     rcx, qword ptr [rcx + 0x110]
+0x00460b84 test    rcx, rcx
+0x00460b87 je      0x180460b9b  [fwd->0x460b9b]
+0x00460b89 mov     rax, qword ptr [rcx]
+0x00460b8c mov     rdx, qword ptr [rdi + 0x108]
+0x00460b93 call    qword ptr [rax + 0x170]
+0x00460b99 jmp     0x180460bf3  [fwd->0x460bf3]
+0x00460b9b mov     rcx, qword ptr [rdi + 0x108]
+0x00460ba2 call    qword ptr [rip + 0x35a3140]  ; IMPORT ftell
+0x00460ba8 mov     rcx, qword ptr [rdi + 0x108]
+0x00460baf xor     edx, edx
+0x00460bb1 mov     esi, eax
+0x00460bb3 lea     r8d, [rdx + 2]
+0x00460bb7 call    qword ptr [rip + 0x35a3143]  ; IMPORT fseek
+0x00460bbd test    eax, eax
+0x00460bbf jne     0x180460bf1  [fwd->0x460bf1]
+0x00460bc1 mov     rcx, qword ptr [rdi + 0x108]
+0x00460bc8 call    qword ptr [rip + 0x35a311a]  ; IMPORT ftell
+0x00460bce mov     rcx, qword ptr [rdi + 0x108]
+0x00460bd5 xor     r8d, r8d
+0x00460bd8 mov     edx, esi
+0x00460bda movsxd  rbx, eax
+0x00460bdd call    qword ptr [rip + 0x35a311d]  ; IMPORT fseek
+0x00460be3 test    eax, eax
+0x00460be5 mov     rcx, rbx
+0x00460be8 cmovne  rcx, rbp
+0x00460bec mov     rax, rcx
+0x00460bef jmp     0x180460bf3  [fwd->0x460bf3]
+0x00460bf1 xor     eax, eax
+0x00460bf3 mov     rbx, qword ptr [rsp + 0x30]
+0x00460bf8 mov     rbp, qword ptr [rsp + 0x38]
+0x00460bfd mov     rsi, qword ptr [rsp + 0x40]
+0x00460c02 add     rsp, 0x20
+0x00460c06 pop     rdi
+0x00460c07 ret     
+0x00460c08 mov     qword ptr [rsp + 8], rbx
+0x00460c0d mov     qword ptr [rsp + 0x18], rbp
+0x00460c12 push    rsi
+0x00460c13 push    rdi
+0x00460c14 push    r14
+0x00460c16 sub     rsp, 0x60
+0x00460c1a mov     rax, qword ptr [rip + 0x449c39f]  ;[.data]0x48fcfc0 "2-+"
+0x00460c21 xor     rax, rsp
+0x00460c24 mov     qword ptr [rsp + 0x50], rax
+0x00460c29 lea     rbx, [rcx + 0x10]
+0x00460c2d mov     rbp, rcx
+0x00460c30 mov     rcx, rbx
+0x00460c33 lea     rsi, [rdx - 1]
+0x00460c37 mov     r14, rdx
+0x00460c3a call    0x180462014  -> fn 0x462014
+0x00460c3f xor     edi, edi
+0x00460c41 test    al, al
+0x00460c43 je      0x180460c51  [fwd->0x460c51]
+0x00460c45 lock incdword ptr [rbx]
+0x00460c48 lea     rcx, [rbx + 0x10]
+0x00460c4c call    0x18042deb4  -> fn 0x42deb4
+0x00460c51 mov     rcx, qword ptr [rbp + 0x40]
+0x00460c55 movabs  rdx, 0xaaaaaaaaaaaaaaab
+0x00460c5f mov     rax, qword ptr [rbp + 0x48]
+0x00460c63 sub     rax, rcx
+0x00460c66 sar     rax, 3
+0x00460c6a imul    rax, rdx
+0x00460c6e cmp     rsi, rax
+0x00460c71 jae     0x180460cb4  [fwd->0x460cb4]
+0x00460c73 lea     rax, [rsi + rsi*2]
+0x00460c77 mov     rax, qword ptr [rcx + rax*8 + 8]
+0x00460c7c test    rax, rax
+0x00460c7f je      0x180460c88  [fwd->0x460c88]
+0x00460c81 mov     rax, qword ptr [rax + 0x28]
+0x00460c85 mov     edi, dword ptr [rax + 8]
+0x00460c88 mov     rcx, rbx
+0x00460c8b call    0x180506f94  -> fn 0x506f94
+0x00460c90 mov     eax, edi
+0x00460c92 mov     rcx, qword ptr [rsp + 0x50]
+0x00460c97 xor     rcx, rsp
+0x00460c9a call    0x181c1e8c0  -> fn 0x1c1e8c0
+0x00460c9f lea     r11, [rsp + 0x60]
+0x00460ca4 mov     rbx, qword ptr [r11 + 0x20]
+0x00460ca8 mov     rbp, qword ptr [r11 + 0x30]
+0x00460cac mov     rsp, r11
+0x00460caf pop     r14
+0x00460cb1 pop     rdi
+0x00460cb2 pop     rsi
+0x00460cb3 ret     
+0x00460cb4 mov     rcx, rbx
+0x00460cb7 call    0x180506f94  -> fn 0x506f94
+0x00460cbc mov     rcx, r14
+0x00460cbf call    qword ptr [rip + 0x35a2fcb]  ; IMPORT _fileno
+0x00460cc5 mov     ecx, eax   <<< frame 01 (fileno caller ret addr)
+0x00460cc7 lea     rdx, [rsp + 0x20]
+0x00460ccc call    qword ptr [rip + 0x35a2b7e]  ; IMPORT _fstat64i32
+0x00460cd2 movsxd  rax, dword ptr [rsp + 0x34]
+0x00460cd7 jmp     0x180460c92  [BACK->0x460c92]
+0x00460cd9 int3    
+0x00460cda int3    
+0x00460cdb int3    
+0x00460cdc mov     qword ptr [rsp + 0x10], rbx
+0x00460ce1 mov     qword ptr [rsp + 0x18], rsi
+0x00460ce6 push    rdi
+0x00460ce7 sub     rsp, 0x20
+0x00460ceb lea     rbx, [rcx + 0x10]
+0x00460cef mov     rsi, rcx
+0x00460cf2 mov     rcx, rbx
+0x00460cf5 mov     qword ptr [rsp + 0x30], rbx
+0x00460cfa mov     rdi, rdx
+0x00460cfd call    0x180462014  -> fn 0x462014
+0x00460d02 test    al, al
+0x00460d04 je      0x180460d12  [fwd->0x460d12]
+0x00460d06 lock incdword ptr [rbx]
+0x00460d09 lea     rcx, [rbx + 0x10]
+0x00460d0d call    0x18042deb4  -> fn 0x42deb4
+0x00460d12 mov     rbx, qword ptr [rsi + 0x40]
+0x00460d16 lea     rcx, [rdi - 1]
+0x00460d1a mov     rax, qword ptr [rsi + 0x48]
+0x00460d1e movabs  rdx, 0xaaaaaaaaaaaaaaab
+0x00460d28 sub     rax, rbx
+0x00460d2b sar     rax, 3
+0x00460d2f imul    rax, rdx
+0x00460d33 cmp     rcx, rax
+0x00460d36 jae     0x180460d4d  [fwd->0x460d4d]
+0x00460d38 lea     rax, [rcx + rcx*2]
+0x00460d3c mov     ebx, dword ptr [rbx + rax*8]
