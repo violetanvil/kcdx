@@ -1196,7 +1196,30 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
-## Reframe 7 (2026-06-23) — the CURRENT frontier: level-load never fires swap-ON; the render-graph read is SUPERSEDED
+## Reframe 8 (2026-07-02) — PROBE X (CResourceList::Load) is a RED HERRING; "level never loads" is NOT established
+
+PROBE X (levelload_probe.cpp) after-hooked `CResourceList::Load @ 0x4dcb60` armed before the swap decision, A/B over 3 launches:
+
+| | swap-ON (black) ×2 | swap-OFF control (menu) |
+|---|---|---|
+| hook armed | ok=1 | ok=1 |
+| swap state | live (`vtable_swapped`, FOpen `./system.cfg`) | suppressed (`probe_f_swap_suppressed`) |
+| reached | black screen | MENU ✓ |
+| **`load_calls`** | **0** | **0** |
+
+`CResourceList::Load` fires ZERO times even on the working menu run. So `load_calls=0` swap-ON proves NOTHING about the swap — this function is not on the menu boot path at all. Identical trap to PROBE R2 (a swap-ON zero that is also zero on the path that works). **PROBE X is falsified as a probe target.**
+
+Two consequences:
+1. **Reframe 7's "the level-load never fires swap-ON" claim is NOT established.** It rested on FS-trace ABSENCE (`mmrm=0`, `.cgf=0`), never on catching the load trigger. `CResourceList::Load` was the candidate trigger; it is not the trigger (fires on neither path). The "level never loads" theory is unconfirmed, not proven.
+2. **New symptom undercuts it further:** this session's swap-ON runs showed a LONG load time before the black screen (user-observed). A level that never begins loading would reach black FAST. A long load means the engine IS doing substantial work — closer to "content loads but never renders" than "level-load never triggers."
+
+**Status: both prior framings (render-routing, level-load-never-fires) are now suspect.** Two independent leads each dead-ended one function deep. User-directed pivot (2026-07-02): STEP BACK — stop probing individual functions, reassess what the swap provably perturbs before the next probe. The reassessment supersedes Reframe 7's "next probe = level-load-entry hook" direction.
+
+Probe retirement owed (no-residue): capture PROBE X finding + wiring to `_research/probe-archive/`, remove `levelload_probe.{h,cpp}` from source + CMake + seating_hook arm. (Not yet done — the several stale render-side probe arms K/P/R/S/U/W in seating_hook.cpp are ALSO owed retirement; batch with the reassessment outcome.)
+
+---
+
+## Reframe 7 (2026-06-23) — SUPERSEDED by Reframe 8: level-load-entry lead did not pan out
 
 The 06-22 render-side investigation (`_research/ki0028-cshaderman-pso-consumer-recon/`) exonerated the entire shader/PSO axis by measurement (present succeeds, cache accepts, precache/PSO-create identical both paths) and pinned a terminal fact: swap-ON the frame records `draw_instanced=9500 draw_indexed=0 om_null_rt=0` vs swap-OFF `1383 / 96 / 0`. That investigation read `draw_indexed=0` as a render-target-routing question and proposed a heavier render-graph instrument.
 

@@ -465,6 +465,58 @@ persisted** — so none is the KI-0028 root cause, but each is a permanent corre
 
 ## 12. The current working direction (where the trail ends)
 
+> **REFRAMED 2026-07-02 (fresh-frame reassessment after PROBE X falsified).** The render-build-DISPATCH and
+> dropped-state-mutator framings below (12.A, preserved) were the 06-23 frontier. A cold fresh-frame re-read of
+> the whole evidence base (theories withheld) reset the direction to the SEQUENCER axis (12.B). Both prior
+> framings shared a blind spot: each stopped at a file-op or draw-call layer; the divergence lives in engine
+> control-flow BETWEEN two boot phases that neither layer sees. The current direction is 12.B.
+
+### 12.B — CURRENT direction: the boot-phase SEQUENCER (2026-07-02, reassessment-grounded)
+
+**What the swap PROVABLY perturbs (from measured facts ONLY):** the transition from "base-asset + UI streaming"
+into the next boot phase. The proven chain is narrow and one-directional: swap-ON, the engine streams 65k
+textures + 18k XML + shaders, presents a UI/menu compositor at full framerate, and **stops advancing** — it
+never begins the work that first requests indexed geometry. `draw_indexed=0` and black are proven CONSEQUENCES
+of that stall, not independent faults.
+
+**The unexamined subsystem the proven facts implicate:** the **boot-phase state machine / init sequencer** that
+GATES the asset-stream→scene-geometry (menu→level) transition. The render lead looked BELOW it (draws); the
+level-load lead looked at its FILE SYMPTOM (`.cgf`=0) — neither observed the sequencer deciding not to advance.
+The swap perturbs a piece of STATE that sequencer reads to decide "advance." The NEW "long load then black"
+symptom (this session, user-observed, in NO prior evidence doc) is a direct clue about THIS gate: a long stall
+in a transition is a property of the transition gate, not of file serving.
+
+**"The level never loads swap-ON" is NOT proven — it is the leading INFERENCE (a trap, §13).** It rests on
+FS-trace ABSENCE (`.cgf`=0, `mmrm`=0), never on catching a load trigger fire-or-not. FS_BOOT_TRACE is
+file-ops-only — structurally blind to reached-and-early-returned vs never-called. PROBE X after-hooked the
+candidate trigger `CResourceList::Load @ 0x4dcb60` and it fired ZERO times on BOTH the black run AND the
+working-menu control → it is not the trigger (red herring, like R2). No probe has yet OBSERVED the level-load
+trigger firing or not.
+
+**The single most-falsifying next observation (reassessment's pick — NOT another guessed hook):** a **live
+invasive main-thread deep stack of the swap-ON process DURING the long-load / pre-black window, plus a swap-OFF
+main-thread stack at the same phase, DIFFED.** One capture, ground truth. It NAMES the real sequencer function
+for free (the KI-0026 method: identify the real RVA, then read the body) instead of testing one more guessed
+function. It has been designed repeatedly and never cleanly obtained — every prior "identical" capture was `-pv`
+NONINVASIVE on a possibly-post-AltF4 process (a flagged confound); the last invasive attempts died before
+capture. The long-load window is the transition window and has never been sampled. Outcome map: swap-ON main
+parked in a level/scene-init frame swap-OFF main already passed → level-load axis CONFIRMED by positive evidence
++ the sequencer named; swap-ON main where no level-load frame appears → "level never loads" FALSIFIED, axis
+moves to where the stack actually sits. (cdb crashed once earlier on a post-black idle process — capturing
+DURING the long load is the new, never-tried part; use invasive `-p` + `qd`, NEVER `q`.)
+
+**The proven-vs-unproven map (the durable takeaway — do not re-litigate the proven; do not trust the unproven):**
+- PROVEN (measured): not a hang/deadlock (ticks ~35/s); present SUCCEEDS at 120fps + GPU scanout, frame is
+  presented BLACK; draws execute to valid targets but `draw_indexed=0` (vs 96 swap-OFF), `om_null_rt=0`; the
+  ENTIRE shader/PSO axis runs identically both paths (`gfx_calls=1` both); ZERO mesh files read swap-ON; level
+  EXISTENCE served correctly + identically both ways; every kcdx-served OUTPUT measured correct (bytes, handle,
+  identity, the 4 slot contracts); test plugins NOT the cause (zero-plugin still black).
+- UNPROVEN (inference/absence — traps): "the level never loads" (rests on FS absence); "the menu renders over a
+  backdrop level that fails to load" (never checked whether the WORKING menu itself reads meshes); any residual
+  "FSR2/NGX" instinct (nearest-export noise); the "long load" (brand-new, uncorrelated to any probe).
+
+### 12.A — SUPERSEDED (06-23) frontier framings, preserved for the trail
+
 **The pinned question (OPEN):** what STATE or init-ORDER does the swapped CCryPak perturb — NOT a file it
 serves — that the render-pipeline build depends on, such that the engine runs its full loop, has every shader
 input enumerated + served + cache-read, yet never builds the scene/material/UI pipelines (`gfx_calls=1`,
@@ -488,6 +540,8 @@ workers idle) and presents only black? (KI-0028 doc CORRECTION 4 + 5; FINDING §
 
    These are not contradictory: both name "an engine STATE the swap perturbs that gates the render-build,"
    reached either from the dispatch site (1) or from the slot side-effect that would set the gating state (2).
+   NOTE (2026-07-02): these remain plausible MECHANISMS for a confirmed sequencer stall, but are downstream of
+   first OBSERVING where the stall is (12.B) — do not build either probe before the live stack names the frame.
 
 **Standing constraints on any probe (from PROBE M + Reframe 6):** the divergence is NOT observable in the
 wedged stack's own frames/globals (they run identically swap-on/off — the per-frame trap). Observe what the
@@ -506,9 +560,10 @@ state inevitable. "Boots now" / "black screen gone" is symptom restatement, not 
 are CURRENTLY LIVE in the deployed `kcdx.dll` and must be captured-then-removed from live source on closure
 (no `#if 0`, no dormant flag): `pso_probe.{h,cpp}` (P), `present_probe.{h,cpp}` (K), `boot_watch.cpp` (W/H),
 `dispatch_probe.{h,cpp}` (R), `reswap_probe.{h,cpp}` (U), `drawcall_probe.{h,cpp}` (S), `boot_trace.h`
-differential (W). `find_slots.cpp` (PROBE Q) CONTAINS A REAL FIX — promote the synthetic-dir-entry emission,
-drop only its logging. The `//`-collapse (`0249b2e`) is already a clean fix. (FINDING §"ARMED PROBES IN
-SOURCE".)
+differential (W), **`levelload_probe.{h,cpp}` (X — 2026-07-02, falsified as a target; capture its red-herring
+finding to the archive + remove from source/CMake/`seating_hook.cpp` arm).** `find_slots.cpp` (PROBE Q)
+CONTAINS A REAL FIX — promote the synthetic-dir-entry emission, drop only its logging. The `//`-collapse
+(`0249b2e`) is already a clean fix. (FINDING §"ARMED PROBES IN SOURCE".)
 
 ---
 
@@ -529,6 +584,15 @@ SOURCE".)
   kcdx `fflush`es every line. Read the log AFTER exit, or read kcdx's in-memory state via cdb. (HANDOFF §4.4.)
 - **Read the dump, don't bisect by launches.** On a crash with a minidump, run `cdb -z <dmp> -c ".ecxr;
   !analyze -v; k 40"` FIRST. (Standing methodology.)
+- **"The level never loads swap-ON" is an INFERENCE from FS-trace absence, not a measured fact (2026-07-02).**
+  `.cgf`=0 / `mmrm`=0 says the engine read no mesh files; it does NOT say the engine never TRIED to load the
+  level (FS_BOOT_TRACE is file-ops-only — blind to reached-and-early-returned vs never-called). No probe has
+  observed the load trigger. `CResourceList::Load @ 0x4dcb60` was the candidate trigger — PROBE X proved it
+  fires ZERO times on the WORKING menu too (red herring). Do not treat "level never loads" as settled; it needs
+  positive evidence (a live stack showing where main actually is — 12.B).
+- **The backdrop-menu premise is unchecked.** "The 9500 non-indexed draws are a menu compositor over a level
+  that failed to load" assumes the WORKING swap-OFF menu reads meshes. Nobody has measured whether the working
+  menu itself reads `mmrm`/`.cgf`. If it does NOT, "no level loaded" cannot be the black-vs-menu differentiator.
 
 ---
 
@@ -560,6 +624,7 @@ SOURCE".)
 | PROBE V / W | DESIGNED: request-stream differential / vanilla-differential self-validation (not all built) | The standing observability want — flags "correct serve that DIFFERS from vanilla", caller-attributed |
 | (shader enum chain) | gameshaders alias fold (`e88a9eb`) + synthetic dir entries (`d265732`, PROBE Q) + `//` collapse (`0249b2e`) | 3 real enum/alias defects FIXED + verified; all shader enums succeed, full cache serves; black persists |
 | (bind-root) | vanilla-vs-kcdx FS map → bind-root keying fix (`83a9279`) | Real level-resolution gate (empty-record → `RaiseException(0xD2)`) found + FIXED; black persists (CORRECTION 5) |
+| PROBE X | After-hook `CResourceList::Load @ 0x4dcb60` (first level-resource read), armed pre-swap, A/B | `load_calls=0` swap-ON AND swap-OFF (menu) → NOT the menu boot path; RED HERRING (like R2). "Level never loads" stays an inference, unconfirmed. (Reframe 8; 2026-07-02) |
 
 ---
 
@@ -579,6 +644,12 @@ SOURCE".)
 - `_research/ki0028-cshaderman-pso-consumer-recon/HANDLE-STRADDLE-LEAD.md` — PROBE T (handle-straddle
   falsified) + PROBE U (reswap falsified, the after-hook refinement, the dropped-state-mutator class) +
   PROBE V/W designs.
+- `_research/ki0028-cshaderman-pso-consumer-recon/KI-0028-MANAGER-RUNDOWN.md` — the render-side probe chain
+  (R/R2/R3/R4/P/S); its §5/§6 render-routing conclusion is SUPERSEDED (banner in-file).
+- `_research/ki0028-fsr2-poll-loop-recon/CLEAN-ZEROPLUGIN-BASELINE-2026-06-23.md` — the FS-trace-diff
+  (`.cgf`=0 swap-ON; test plugins exonerated; the level-load-stall observation that IS an inference).
+- `_research/ki0028-fsr2-poll-loop-recon/RECONCILE-render-vs-levelload-2026-06-23.md` — reconciles the render
+  vs level-load reads of `draw_indexed=0`; the 06-23 pivot (superseded 2026-07-02 by the sequencer reframe §12.B).
 - `_research/ki0028-vanilla-init-fs-map/ROOT-CAUSE-bind-root-prefix.md` + `POST-FIX-LIVE-CAPTURE.md` —
   CORRECTION 5 (bind-root keying fix `83a9279`; the `RaiseException(0xD2)` abort it cleared).
 - `_research/ki0028-metadata-consumer-recon/` — slot-diff A (existence-timing) consumer reads, falsified.
@@ -605,12 +676,17 @@ engine consumes — served bytes (`diffs=0`), handle value/semantics (PROBE T), 
 sizes, enumeration counts, the four slot return-contracts (A/B/C/D, consumer-read), and the shader/PSO build
 paths (R/R2/R3/R4/P) — has been measured correct or identical swap-on/off. Four real FS/shader/enum defects
 found along the way were fixed (e88a9eb, d265732, 0249b2e, 83a9279) without clearing the black screen — so
-the engine now has every shader input enumerated, served, and cache-read, and STILL builds one PSO. The
-remaining open hypothesis: the swap perturbs some engine STATE or init-ORDER (not a served file) that gates
-the render-pipeline-build DISPATCH — reachable either from the dispatch site (the owed 3-layer dispatch
-tracer at the `.cfxb`-cache consumer) or from a slot that is both a file op and a dropped state-mutator
-(THUNK slots 15/101). The wedged stack's own frames/globals run identically swap-on/off (PROBE M; the
-`0x869c39` counters are a `std::call_once` guard, the `GetActiveWindow` gate converges at second 1 — both
-falsified), so the next probe must be armed before the swap decision and observe what the swap CHANGES in
-engine state/order, A/B. The fix must stay inside kcdx's full-init ownership (no thunk-back); closure
-requires a falsifiable root-cause mechanism paragraph (AP17), not "the black screen is gone."
+the engine now has every shader input enumerated, served, and cache-read, and STILL builds one PSO.
+**Reframed 2026-07-02 (§12.B):** the swap PROVABLY perturbs the transition from asset/UI streaming into the
+phase that first requests geometry — the engine completes streaming + presents a UI compositor, then STOPS
+ADVANCING. The unexamined subsystem is the boot-phase SEQUENCER that gates that transition (the render lead
+looked below it at draws; the level-load lead looked at its file symptom `.cgf`=0 — neither observed the
+sequencer). "The level never loads" is an INFERENCE from FS-trace absence, NOT proven — PROBE X after-hooked
+the candidate trigger `CResourceList::Load` and it fired zero times on the WORKING menu too (red herring). The
+single most-falsifying next observation is a LIVE INVASIVE main-thread deep stack captured DURING the new
+long-load / pre-black window, swap-ON vs swap-OFF, diffed — it names the real sequencer frame by ground truth
+instead of guessing another hook (invasive `-p` + `qd`, never `q`; capture during the long load, never yet
+sampled). The wedged-stack frames/globals run identically swap-on/off (PROBE M — the per-frame trap), so any
+probe is armed before the swap decision and observes what the swap CHANGES in engine state/order, A/B. The fix
+must stay inside kcdx's full-init ownership (no thunk-back); closure requires a falsifiable root-cause mechanism
+paragraph (AP17), not "the black screen is gone."
