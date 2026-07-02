@@ -138,14 +138,33 @@ symbolized offline vs kcdx PDB + WHGame RVA table (real RVA = nearest-export RVA
 - capture fires on all-kcdx/all-present-loop frames → trigger MIS-ARMED (fired before the real stall) →
   re-tune the arm condition; NOT a result.
 
+**Gate A verdict (architect-review, 2026-07-02): PROCEED-with-conditions — one BLOCKING never-fire hole
+closed by re-design.** The blocking finding (correct): the sibling probe SUMMARY WATCHERS self-terminate on
+bounded read budgets (`present_probe.cpp:118` after 120 reads ~2min; `drawcall_probe.cpp:242` after 40
+reads ~2min). If the streaming→geometry transition happens AFTER those budgets expire, a cached present
+count reads FLAT, PROBE Y never arms, and the silence is indistinguishable from "the bug didn't occur" —
+the exact never-fire trap the plan exists to avoid. **Re-design that closes it (Gate A option a+c):** PROBE
+Y depends on NOTHING the sibling watchers keep alive — it reads the RAW underlying state that lives the
+whole process: `g_drawIndexed` (a live atomic incremented in the D3D12 hook — never bounded) directly, and
+`GetLastPresentCount` off the captured swapchain ptr (`g_swapchain`, valid process-life) directly, NOT a
+watcher-cached last-read. Plus PROBE Y emits a DISTINGUISHABLE terminal signal for every outcome
+(`STALL_STACK_ARMED` / `STALL_STACK_FIRED` / `STALL_STACK_NEVER_ARMED` with the reason: present never
+climbed / swapchain never captured) so a never-fire is an OBSERVED outcome, never silence. Gate A confirmed:
+reuse of `DumpAllThreads` is sound (F1/F2 suspend-window discipline is inside it, untouched by a trigger
+change); cross-probe atomic coupling is fine for a probe (do NOT centralize — scope creep vs no-residue);
+no hook-arming hazard vs the swap A/B; nothing crosses into a user-owned design decision (pure diagnostic,
+Performance-only, no-residue throwaway). Relaxed ordering on the reads is correct (a real stall holds the
+condition many frames; one-sample lag tolerated) — carry a why-comment per the `g_lastMs` precedent
+(`boot_watch.cpp:24`).
+
 **Probe plan (persisted status list — §B.4; flip each row as it lands):**
 
 | Step | Status | Note |
 |---|---|---|
-| Y.0 Gate A — architect-review the trigger-addition design | pending | new read accessors + `WatcherMain` control-flow change, >1 src file |
-| Y.1 Surface `g_drawIndexed` + present-count as readable atomics (accessors on the two probe headers) | NOT STARTED | counters already exist as process-global atomics; add read accessors only |
-| Y.2 Add the arm-on-present + heartbeat-floor + `draw_indexed==0` trigger to `WatcherMain` → `DumpAllThreads("stall_no_geometry")` | NOT STARTED | reuses the existing capture path; one new trigger arm |
-| Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | NOT STARTED | agent-builds-and-deploys; user launches each arm once |
+| Y.0 Gate A — architect-review the trigger-addition design | DONE | PROCEED-with-conditions; never-fire hole closed by the re-design above |
+| Y.1 Read accessors on the two probe headers: `DrawcallProbeIndexedCount()` (reads live `g_drawIndexed`) + `PresentProbeLastCount()` (reads `GetLastPresentCount` off the captured swapchain, NOT a cached value) | DONE (`d43cc75`) | Gate-A fix: independent of the sibling watchers' bounded lifetimes |
+| Y.2 PROBE Y in its own file `stall_stack_probe.{h,cpp}`: arm on present-climbing + heartbeat-floor, fire `BootWatchDumpAllThreads("stall_no_geometry")` on `draw_indexed==0` after N wakes; emit `STALL_STACK_ARMED`/`FIRED`/`ADVANCED`/`NEVER_ARMED` | DONE (`d43cc75`) | own file (no-monolith line cap); reuses the Gate-A-blessed capture; dump-latch added (2 watcher threads); build GREEN, step-review PROCEED |
+| Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | IN PROGRESS | agent-builds-and-deploys; user launches each arm once |
 | Y.4 User launches arm 1 (swap-ON), arm 2 (swap-OFF); agent reads `STALL_STACK` frames from each log | NOT STARTED | two launches |
 | Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | NOT STARTED | first-differing frame = the gate → feeds Measurement 2 |
 | Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; kills the backdrop-premise trap cheaply |
