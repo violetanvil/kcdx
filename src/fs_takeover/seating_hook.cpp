@@ -15,8 +15,8 @@
 #include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
 #include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
 #include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
-#include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
 #include "stall_stack_probe.h"  // === DIAGNOSTIC (PROBE Y) === KI-0028 stall-no-geometry stack trigger
+#include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -228,37 +228,50 @@ void __fastcall HookedConstructStore(void* csystem) {
     }
     // === END PROBE F ===
 
-    // === DIAGNOSTIC (PROBE Z) — a `<kcdx-engine>/kcdx-thunkswap` marker makes the
-    // swap a NO-OP: kcdx installs its OWN vtable on the object (same mechanism —
-    // the [obj+0x00] overwrite, object identity, seat timing, the index still
-    // builds) but EVERY slot thunks to the engine original, so ZERO kcdx FS slot
-    // logic runs. The one variable that isolates the swap MECHANISM from kcdx's
-    // slot BEHAVIOR. Outcome map (KI-0028 P-Z):
-    //   still BLACK → the swap mechanism (object layout/overwrite/timing/a touched
-    //     member) is the differentiator, NOT kcdx's FS logic → bisect the mechanism.
-    //   boots to MENU → the mechanism is innocent; kcdx's actual slot logic causes
-    //     it → re-enable slot families one at a time to find which.
-    // Composes with noswap (noswap = no swap at all; thunkswap = swap, no logic).
-    // NO-RESIDUE: removed with PROBE Z. Scratch.
-    bool forceAllThunk = false;
+    // === DIAGNOSTIC (PROBE Z2) — per-FAMILY bisection via marker files. The swap
+    // MECHANISM always happens (the [obj+0x00] overwrite, object identity, seat
+    // timing, index build); the marker files choose which kcdx slot-family LOGIC is
+    // live. Default (no markers) = kFamAll (a normal full swap) so an ordinary boot
+    // is unaffected. Markers (in <kcdx-engine>/):
+    //   kcdx-thunkswap            → kFamNone   (the PROBE Z no-op swap: all thunk)
+    //   kcdx-live-open|read|metadata|enum → set ONLY the named families live
+    //     (presence of ANY kcdx-live-* marker switches from the kFamAll default to
+    //      the explicit named set — so `kcdx-live-open` alone = open live, rest thunk)
+    // Outcome (KI-0028 P-Z2): mask that RENDERS vs mask that goes BLACK names the
+    // culprit family BY CONSTRUCTION. kFamAll must reproduce black (the confound
+    // self-check — if all-live renders, the premise is contaminated).
+    // NO-RESIDUE: removed with PROBE Z2. Scratch.
+    uint32_t liveFamilyMask = kcdx::fs_takeover::kFamAll;
     {
-        std::wstring thunkMarker =
-            (kcdx::paths::EngineDataDirPath() / L"kcdx-thunkswap").wstring();
-        if (GetFileAttributesW(thunkMarker.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            forceAllThunk = true;
-            LOG_INFO_KV(kCat, "probe_z_thunkswap_active",
+        namespace fst = kcdx::fs_takeover;
+        const auto eng = kcdx::paths::EngineDataDirPath();
+        auto present = [&](const wchar_t* name) -> bool {
+            return GetFileAttributesW((eng / name).wstring().c_str()) !=
+                   INVALID_FILE_ATTRIBUTES;
+        };
+        if (present(L"kcdx-thunkswap")) {
+            liveFamilyMask = fst::kFamNone;  // no-op swap (PROBE Z baseline).
+        } else if (present(L"kcdx-live-open") || present(L"kcdx-live-read") ||
+                   present(L"kcdx-live-metadata") || present(L"kcdx-live-enum")) {
+            liveFamilyMask = fst::kFamNone;  // explicit set: start empty, add named.
+            if (present(L"kcdx-live-open"))     liveFamilyMask |= fst::kFamOpen;
+            if (present(L"kcdx-live-read"))     liveFamilyMask |= fst::kFamRead;
+            if (present(L"kcdx-live-metadata")) liveFamilyMask |= fst::kFamMetadata;
+            if (present(L"kcdx-live-enum"))     liveFamilyMask |= fst::kFamEnum;
+        }
+        if (liveFamilyMask != fst::kFamAll) {
+            LOG_INFO_KV(kCat, "probe_z_family_mask",
+                kcdx::log::KV("live_mask", static_cast<uint64_t>(liveFamilyMask)),
                 kcdx::log::KV::BareStr("detail",
-                    "PROBE Z: kcdx-thunkswap marker present — the swap installs "
-                    "kcdx's vtable with EVERY slot thunking to the engine original "
-                    "(no kcdx FS slot logic runs; the swap mechanism + index build "
-                    "happen identically). If boot still goes black, the swap "
-                    "mechanism is the differentiator; if it reaches the menu, "
-                    "kcdx's slot logic is."));
+                    "PROBE Z2: a per-family bisection mask is active (not the full "
+                    "kFamAll swap). The swap mechanism + index build happen; only "
+                    "the named slot families run kcdx logic, the rest thunk. The "
+                    "mask that renders vs goes black names the culprit family."));
         }
     }
-    // === END PROBE Z (marker read; threaded into SwapVtableOnObject below) ===
+    // === END PROBE Z2 (mask computed; threaded into SwapVtableOnObject below) ===
 
-    if (!SwapVtableOnObject(pCryPak, forceAllThunk)) {
+    if (!SwapVtableOnObject(pCryPak, liveFamilyMask)) {
         // SwapVtableOnObject already logged the specific reason. Leave g_swapped
         // set: a null/failed object will not become valid on a re-fire of this
         // single-call helper, and re-attempting per call would spam. The engine
