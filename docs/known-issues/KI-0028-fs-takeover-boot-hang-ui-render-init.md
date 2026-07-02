@@ -1343,12 +1343,17 @@ Root cause proven (Reframe 9). Gate A architect-review dispatched on the two cou
 
 | Step | What | Status | Gate |
 |---|---|---|---|
-| Z3 (probe) | On the FULL-swap arm, make one loose FOpen return the real `FILE*` (not the handle) and log whether the engine's `0x460b64` raw-CRT reader (`ftell`/`fread`/`fileno` on `[+0x108]`) SUCCEEDS on it → renders / crashes / still-black. Outcome→meaning: renders → cross-CRT `FILE*` works, Q2 is sound, build the full fix. crashes/garbage → engine's CRT can't operate kcdx's `FILE*`, pivot to OS-`HANDLE`/`_open_osfhandle` (feeds Q1). | NOT STARTED | probe (results-driven) |
-| Fix-loose | FOpen returns a real `FILE*` for loose files; kcdx tracks `fp`→state side-band so read/seek/close slots map it. | BLOCKED on Z3 | Gate B (root-cause-verifier) |
-| Fix-pak | Pak entries return a `FILE*`-shaped object (memory-stream or temp file) the engine's raw-CRT path can operate. | BLOCKED on Z3 | Gate B |
+| Z3 (probe) | Cross-CRT precondition: can the engine's CRT operate a `FILE*` kcdx opened? | **DONE — RESOLVED STATICALLY (2026-07-02), no launch needed** | probe (results-driven §4) |
+| Fix-loose | FOpen gives the engine a `FILE*` **the engine's own ucrtbase can operate** (shape re-forked by Z3 — a′/b/c below). | BLOCKED on the re-forked Q2 (Gate A + user) | Gate B (root-cause-verifier) |
+| Fix-pak | Pak entries return a `FILE*`-shaped object (memory-stream or temp file) the engine's raw-CRT path can operate. | BLOCKED on the re-forked Q2 | Gate B |
 | Design-fix | Re-open the FS-takeover TRD P3/§4.4 (falsified); present-tense body edit + changelog. | NOT STARTED | `/design` |
 
-The FOpen fix is NOT yet built — Z3 (the cross-CRT probe) is the gate before any fix lands.
+**Z3 RESULT (static, decisive) — the literal Q2 fix is UNSAFE; Q2 re-forks.** `_research/ki0028-tick-geometry-dispatch-recon/Z3-static-cross-crt-file-layout.md`:
+- kcdx links `/MT` (its OWN static CRT baked into `kcdx.dll` — `CMakeLists.txt:384`); WHGame links ucrtbase DYNAMICALLY (`api-ms-win-crt-stdio-l1-1-0.dll` → `_wfopen`/`fread`/`_fileno`/…, from the WHGame import table). **Two distinct CRT instances = two distinct `FILE*` stream tables.**
+- A `FILE*` is CRT-instance-private. Handing WHGame's ucrtbase a kcdx-static-CRT `FILE*` is the **KI-0019 cross-CRT straddle** (KI-0019 = the heap analogue; this = the stdio analogue). So **"FOpen returns a real FILE*" as literally stated (Q2-a) is unsafe** — it swaps the fileno-on-an-int crash for a fileno-on-a-foreign-FILE* crash, same class.
+- The fix must give the engine a `FILE*` **the engine's OWN ucrtbase opened**. Re-forked Q2 (Gate A + user's call): **a′** kcdx opens loose files by calling the ENGINE's ucrtbase `_wfopen` (read slots then operate via ucrtbase too); **b** kcdx opens an OS `HANDLE`, the engine adopts it via `_open_osfhandle`+`_fdopen` → a ucrtbase `FILE*`; **c** force the engine's abstract-stream `[+0x110]` path so its raw-CRT reader never runs. **No launch was owed — the CRT-instance split settles the hazard statically; the literal live probe would only test a form already shown unsafe.**
+
+The FOpen fix is NOT built — the re-forked Q2 (a′/b/c) is the gate, the user's call.
 
 ## Reframe 9 (2026-07-02) — the REASSESSMENT: the differentiator is a ~27s backdrop-load TRANSITION; PROBE Z2 (slot-family bisection) is the theory-independent next probe
 
