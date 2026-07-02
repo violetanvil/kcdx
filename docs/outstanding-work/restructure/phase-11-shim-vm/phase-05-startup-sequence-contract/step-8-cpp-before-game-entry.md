@@ -1,4 +1,4 @@
-# P5 step 7 — the kcdx-driven C++ before-game entry
+# P5 step 8 — the kcdx-driven C++ before-game entry
 
 ## What
 

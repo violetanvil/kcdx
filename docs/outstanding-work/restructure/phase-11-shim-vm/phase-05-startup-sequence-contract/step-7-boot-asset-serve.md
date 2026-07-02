@@ -1,4 +1,4 @@
-# P5 step 6 — boot-asset serve via the early slot (KI-0005) + the AP14 warn decision
+# P5 step 7 — boot-asset serve via the early slot (KI-0005) + the AP14 warn decision
 
 ## What
 

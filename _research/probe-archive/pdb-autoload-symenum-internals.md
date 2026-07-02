@@ -158,6 +158,26 @@ when deployed — so 3b's graceful-fallback + teaching-log path must DETECT the
 FASTLINK/stub case and tell the author "ship a FULL PDB" (not just "no PDB →
 exports-only"). The "every internal, zero-friction" promise holds for a FULL PDB.
 
+## PROBE G (CRT-noise filter design, 2026-06-09) — source-file filtering is viable
+
+`SymGetLineFromAddr64(symbol address)` reports a per-symbol SOURCE FILE that
+cleanly separates the author's functions from the CRT/compiler plumbing the
+enumerate also yields (probe `_research/ki0014-pdb-recon/probe_g_srcfile.py`):
+
+- `cap90_internal_target` → `…\test-plugins\cap-90-pdb-autoload\cap-90.cpp` (the
+  plugin's OWN source).
+- `operator delete` → `…\src\vctools\crt\vcstartup\…`; `_set_new_handler` →
+  `minkernel\crts\ucrt\…`; `__crt_seh_guarded_call` → `VCCRT\vcruntime\…`.
+- Some CRT data/vftables → `(no source)`.
+
+So PDB-autoload can keep only the author's functions by REJECTING a recorded
+function whose source file matches a CRT/compiler marker (`vctools\crt`, `ucrt`,
+`vcruntime`, `vccrt`, `vcstartup`, `minkernel\crts`) OR has no source file. A
+"must be under the plugin dir" positive filter is fragile (build dir varies); the
+CRT-source-marker denylist + no-source-reject is the robust shape. Needs
+`SYMOPT_LOAD_LINES` (already set) and a per-symbol `SymGetLineFromAddr64` call in
+the enumerate callback.
+
 ## Reusable wiring
 
 The probe block + the cap-89 fixture are the reconstruction recipe. The engine

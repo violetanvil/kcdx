@@ -1,0 +1,60 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.015 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.26100.8249 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+*** wait with pending attach
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+ModLoad: 00007ff6`87920000 00007ff6`87a99000   E:\SteamLibrary\steamapps\common\KingdomComeDeliverance2\Bin\Win64MasterMasterSteamPGO\KingdomCome.exe
+ModLoad: 00007ffa`cd5e0000 00007ffa`cd846000   C:\Windows\SYSTEM32\ntdll.dll
+ModLoad: 00007ffa`cb8e0000 00007ffa`cb9a9000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffa`cadf0000 00007ffa`cb1ea000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffa`cb9b0000 00007ffa`cbb77000   C:\Windows\System32\USER32.dll
+ModLoad: 00007ffa`cb1f0000 00007ffa`cb217000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffa`cb350000 00007ffa`cb37b000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffa`cb220000 00007ffa`cb34b000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffa`cad40000 00007ffa`cade3000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffa`ca9e0000 00007ffa`cab2c000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffa`cc780000 00007ffa`ccf04000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffa`cbde0000 00007ffa`cbf78000   C:\Windows\System32\ole32.dll
+ModLoad: 00007ffa`cb4e0000 00007ffa`cb863000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffa`cb3c0000 00007ffa`cb4d8000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffa`cb870000 00007ffa`cb8d7000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffa`ad650000 00007ffa`ad6ec000   C:\Windows\SYSTEM32\MSVCP140.dll
+ModLoad: 00007ffa`ad760000 00007ffa`ad78c000   C:\Windows\SYSTEM32\VCRUNTIME140.dll

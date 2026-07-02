@@ -1,4 +1,4 @@
-# P5 step 8 — the author startup-sequence doc (the timeline)
+# P5 step 9 — the author startup-sequence doc (the timeline)
 
 ## What
 
@@ -29,21 +29,21 @@ to, the query value it returns, and which context (A/B/C) it runs in. This is th
   what-can-I-do-when view.
 - Verify the doc against the AS-BUILT contract (`docs-discipline` — nothing documented
   that isn't built): every event token + query value + phase the doc names is the one
-  steps 2-7 actually shipped.
+  steps 2-8 actually shipped.
 
 ## Test bar
 
 This is a DOC step — its "test" is the docs-discipline completeness check: every
-author-reachable phase from steps 2-7 appears on the timeline with its event token +
+author-reachable phase from steps 2-8 appears on the timeline with its event token +
 query value + context; every ctx-A/internal phase is shown-not-subscribable; the
 snippets are copy-paste-runnable; `docs/init.md` cross-references resolve. Verified at
 `step-review` / the phase gate (a doc step has no `cap-NN` runtime row — the
-runtime behavior was tested in steps 2-7; this step proves the DOC describes it
+runtime behavior was tested in steps 2-8; this step proves the DOC describes it
 faithfully). No new code; no PROBE Q concern.
 
 ## Dependencies
 
-P5 steps 2-7 (the doc describes the AS-BUILT contract — every phase, event, and query
+P5 steps 2-8 (the doc describes the AS-BUILT contract — every phase, event, and query
 value the doc names must already be shipped; documenting an unbuilt surface is the
 docs-discipline violation). Ordered LAST so the doc is written against reality, not an
 intended surface.

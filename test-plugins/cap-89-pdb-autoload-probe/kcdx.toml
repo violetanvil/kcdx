@@ -1,0 +1,34 @@
+# CAP-89 — PDB auto-load probe (DbgHelp internal-symbol enumeration).
+#
+# PROBE FIXTURE, not a feature. A native C++ DLL whose only jobs are to ship a
+# deliberately NON-EXPORTED internal function (cap89_internal_probe_target,
+# absent from the export table by construction) alongside its kcdxPlugin_Load
+# export, and to ship a Release-build sidecar .pdb next to the DLL.
+#
+# The engine-side probe (gated to this plugin name) runs DbgHelp
+# SymInitialize + SymLoadModuleEx + SymEnumSymbols against THIS DLL's on-disk
+# path + loaded base, and checks whether the non-exported internal appears in
+# the enumeration with a non-zero address. That single check answers whether a
+# foreign plugin DLL's internal-function addresses are recoverable from a
+# sidecar .pdb at all.
+#
+# Test mode: boot-only. There is no kcdx.test.report row — the verdict is the
+# engine probe's PDB_PROBE log line, read by the agent after launch.
+#
+# Load order: no [load_order] table — default after_game / priority 50 is fine;
+# the probe does not depend on this plugin's position relative to any other.
+
+[kcdx]
+test_suite_only = true
+
+[plugin]
+name                = "cap_89_pdb_autoload_probe"
+display_name        = "CAP-89 PDB auto-load probe"
+author              = "ts"
+description         = "Probe fixture: a C++ DLL with a deliberately non-exported internal function + a sidecar .pdb, so the engine can test whether DbgHelp SymEnumSymbols recovers an internal function's name + address from a foreign plugin DLL's release-build PDB."
+version             = "0.1.0"
+kcdx_min_version    = "0.1.0"
+log_level           = "info"
+
+[entrypoints]
+dll = "cap-89.dll"
