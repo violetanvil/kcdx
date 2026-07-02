@@ -1326,6 +1326,30 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 10 (2026-07-02) — FIX SETTLED: keep full takeover, FOpen returns a real `FILE*` — probe-first (Gate A cleared, both decisions the user's)
+
+Root cause proven (Reframe 9). Gate A architect-review dispatched on the two coupled forks; both surfaced to the user; both settled:
+
+- **Q1 (strategic) — KEEP full FS takeover** (not coexistence). Rationale: wins on Capability (kcdx IS the filesystem — one unified index, uniform enumeration/precedence); the FOpen fix below is smaller AND more complete than perfecting the handle-id (it closes the whole raw-CRT-consumer class); preserves the settled §1 total-ownership vision.
+- **Q2 (tactical) — FOpen returns a real `FILE*`**, tracked side-band so kcdx's own read/seek/close slots still map it. The engine's raw-CRT path (`ftell`/`fseek`/`fread`/`fileno` on `[wrapper+0x108]`) then gets exactly what it expects; every raw-CRT consumer (proven + latent) is satisfied by one representation change at `open_slots.cpp` (return `fp`, not the minted handle `h`).
+
+**HARD PRECONDITION (probe-first, per results-driven) — PROBE Z3.** Whether the engine's ucrtbase CRT can operate a `FILE*` that kcdx's statically-linked CRT opened is a **cross-CRT unknown of the SAME class that produced KI-0019** (kcdx's CRT freeing a foreign object). It is NOT assumed — it is PROBED before the fix lands. If the probe shows the engine's CRT cannot operate a kcdx-CRT `FILE*`, the fix shape changes (an OS-`HANDLE` adopted via `_open_osfhandle` on the engine's CRT, or Q1 re-opens toward coexistence) — so the probe result feeds back into Q1/Q2.
+
+**Two mandatory corrections carried regardless (architect-review §4):**
+1. **`docs/design/` (the FS-takeover TRD) P3/§4.4 is FALSIFIED and must be re-opened.** P3 asked "does any engine code BYPASS the vtable and operate a handle directly?" and resolved "outcome 1 — no" by checking only two off-vtable candidates (the streamer's `m_zipFile`, DirectStorage) — it MISSED the file-wrapper reader at `0x460b64`. The handle-id representation (§4.4, SETTLED) rests on that falsified probe. This is the "settled clause asserting an unobserved runtime mechanism" defect (`results-driven.md`) — a `/design` revision (present-tense body edit + changelog), the user's call to trigger.
+2. The pak-entry case (Q2 residual): a pak asset has no real `FILE*` (it's an in-memory inflate), so pak reads need a `FILE*`-shaped object too (a memory-stream `FILE*` or a temp real file) — its own probe-first sub-step, not folded into the loose-file fix.
+
+**Probe-first plan (ordered, incremental-delivery):**
+
+| Step | What | Status | Gate |
+|---|---|---|---|
+| Z3 (probe) | On the FULL-swap arm, make one loose FOpen return the real `FILE*` (not the handle) and log whether the engine's `0x460b64` raw-CRT reader (`ftell`/`fread`/`fileno` on `[+0x108]`) SUCCEEDS on it → renders / crashes / still-black. Outcome→meaning: renders → cross-CRT `FILE*` works, Q2 is sound, build the full fix. crashes/garbage → engine's CRT can't operate kcdx's `FILE*`, pivot to OS-`HANDLE`/`_open_osfhandle` (feeds Q1). | NOT STARTED | probe (results-driven) |
+| Fix-loose | FOpen returns a real `FILE*` for loose files; kcdx tracks `fp`→state side-band so read/seek/close slots map it. | BLOCKED on Z3 | Gate B (root-cause-verifier) |
+| Fix-pak | Pak entries return a `FILE*`-shaped object (memory-stream or temp file) the engine's raw-CRT path can operate. | BLOCKED on Z3 | Gate B |
+| Design-fix | Re-open the FS-takeover TRD P3/§4.4 (falsified); present-tense body edit + changelog. | NOT STARTED | `/design` |
+
+The FOpen fix is NOT yet built — Z3 (the cross-CRT probe) is the gate before any fix lands.
+
 ## Reframe 9 (2026-07-02) — the REASSESSMENT: the differentiator is a ~27s backdrop-load TRANSITION; PROBE Z2 (slot-family bisection) is the theory-independent next probe
 
 The user-directed step-back (Reframe 8: "stop probing individual functions, reassess what the swap provably perturbs before the next probe") is now answered. The reassessment rests only on confirmed ground truth.
@@ -1338,7 +1362,7 @@ The user-directed step-back (Reframe 8: "stop probing individual functions, reas
 | Z2.2 | `kFamNone` (`kcdx-thunkswap`) — mechanism-vs-logic split | DONE (2026-07-02) | `probe_z_live_mask=0`, `kcdx_owned=0` (every slot thunks), yet the transition FIRES at ~33s (`draw_indexed` 0→152742) → **RENDERS. The swap MECHANISM is INNOCENT** (object overwrite/seat/index all happen). The culprit is a slot family's LOGIC → per-family build-up (Z2.3). |
 | Z2.3 | one `kcdx-live-*` at a time — per-family build-up | DONE (open run decisive) | Z2.3-open CRASHED at the FOpen-return→fileno site + the bridge is proven — the OPEN family / FOpen-return-type is the root. read/metadata/enum runs NOT needed (culprit found). |
 
-**ROOT CAUSE (proven — bridge confirmed 2026-07-02):** kcdx's `FOpen` (open family, slot 36) returns a **kcdx handle (int token), not a CRT `FILE*`** (`open_slots.cpp:119`). The engine has a file-wrapper reader (`WHGame` RVA `0x460b64`, on the `C_Game::CreateInstance` path) that consumes FOpen's return via **raw CRT** — `ftell`/`fseek`/`fread`/`_fileno`/`_fstat64i32` on `[wrapper+0x108]` — bypassing kcdx's CCryPak read slots entirely (taken when the abstract stream `[+0x110]` is null). open-only live → `_fileno(handle)` derefs `[handle+0x18]` → AV (Z2.3-open crash). Full swap → the same raw-CRT ops run on the handle-int → the backdrop asset never loads → the ~27s transition never fires → BLACK. kcdx owning the read SLOTS is irrelevant — the engine calls the CRT directly on FOpen's return. The full-takeover handle model silently breaks FOpen's contract ("return a value the engine can `fread`/`fileno`"). See `_research/ki0028-tick-geometry-dispatch-recon/Z2-3-open-crash-fileno-handle-mismatch.md`. **The fix (kcdx's FOpen returns a real FILE* / forces the abstract-stream path / intercepts the CRT consumption) is a design decision — Gate A + user's call.**
+**ROOT CAUSE (proven — bridge confirmed 2026-07-02):** kcdx's `FOpen` (open family, slot 36) returns a **kcdx handle (int token), not a CRT `FILE*`** (`open_slots.cpp:119`). The engine has a file-wrapper reader (`WHGame` RVA `0x460b64`, on the `C_Game::CreateInstance` path) that consumes FOpen's return via **raw CRT** — `ftell`/`fseek`/`fread`/`_fileno`/`_fstat64i32` on `[wrapper+0x108]` — bypassing kcdx's CCryPak read slots entirely (taken when the abstract stream `[+0x110]` is null). open-only live → `_fileno(handle)` derefs `[handle+0x18]` → AV (Z2.3-open crash). Full swap → the same raw-CRT ops run on the handle-int → the backdrop asset never loads → the ~27s transition never fires → BLACK. kcdx owning the read SLOTS is irrelevant — the engine calls the CRT directly on FOpen's return. The full-takeover handle model silently breaks FOpen's contract ("return a value the engine can `fread`/`fileno`"). See `_research/ki0028-tick-geometry-dispatch-recon/Z2-3-open-crash-fileno-handle-mismatch.md`. **The fix is settled (Reframe 10): keep full takeover, FOpen returns a real `FILE*`, probe-first.**
 
 **Z2.3 per-family build-up (each = ONE family live, the other three thunk; `draw_indexed` climbs = that family is INNOCENT, stays 0 = that family is the CULPRIT):**
 
