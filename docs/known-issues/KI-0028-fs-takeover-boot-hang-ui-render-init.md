@@ -199,6 +199,23 @@ condition many frames; one-sample lag tolerated) — carry a why-comment per the
 | Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | DONE (partial) | stall signature MEASURED; Main confirmed LOOPING (not parked) on the per-frame trap `0x869C39`; gate NOT named — divergence is a not-taken transition, not a parked frame. See RESULT above |
 | Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; still owed (kills the backdrop-premise trap) |
 
+**PROBE Y → Measurement 2 REFRAME (2026-07-02, reuse-first off `_research/ki0028-window-exit-gate-recon/`).**
+PROBE Y's Main stack (`0x869C39` window-focus loop, `0x866090` bounded poll) is EXACTLY the region the
+window-exit-gate recon already mapped AND PROBE M already exonerated (loop fields evolve identically
+swap-on/off). Combined with PROBE Y's NEW fact (`draw_indexed`=0, but PROBE K proved present SUCCEEDS),
+the conclusion sharpens: **the window-focus loop Main was sampled in is NOT the geometry-dispatch path** —
+it is one per-frame sub-call of the tick. The geometry-request decision lives ELSEWHERE in the per-frame
+tick, dispatched from the tick dispatcher (`0x667b24`; PROBE Y frames 9/11/12 = `0x667DE2`/`0x6678A0`/
+`0x532FB5` around `HookedUpdate` `0x42A1A`). PROBE Y merely caught Main in the window-poll sub-call, not
+the geometry sub-call. **Measurement 2 RE target (decided — static-first):** disassemble the tick
+DISPATCHER (`0x667b24` + the `0x532FB5`→`0x6678A0`→`0x667DE2` call chain above `HookedUpdate`) to find
+where the per-frame tick CONDITIONALLY dispatches scene-geometry/level-advance work, and what state gates
+it — then probe that state swap-ON vs swap-OFF. NOT another stack snapshot; observe the not-taken
+dispatch DECISION. Existing recon's surviving candidates to carry in: the `0x549b4a0` display-context
+(`[+0x40]`, CSystem::Init lineage `0x1865a88`) and G6's engine-expected-HWND (`[this+0x740]`) — both
+runtime-vtable, static-unresolvable, now lower-priority since the axis moved from window/present to
+geometry-dispatch.
+
 ## Relationship to KI-0027
 
 KI-0027 (the table-DB load failing because kcdx's fs-takeover did not serve the
