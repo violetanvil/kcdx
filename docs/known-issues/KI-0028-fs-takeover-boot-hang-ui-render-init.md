@@ -84,6 +84,26 @@ commit_at_filing: 4befc07
 > hits). OPEN; the next probe targets the perturbed state/order (CORRECTION 4's lead), with a fresh invasive
 > capture (use `qd`, not `q`). Full trail: `_research/ki0028-vanilla-init-fs-map/POST-FIX-LIVE-CAPTURE.md` +
 > `ROOT-CAUSE-bind-root-prefix.md`.
+>
+> **CORRECTION 6 (2026-07-02) — architecture decision + the root-cause measurement plan.** After an
+> architecture review (is owning the whole filesystem worth it?): the full FS takeover STAYS — it wins on
+> Performance and, once working, "just works" = UX #1, trading nothing; the problem is we have never
+> OBSERVED the mechanism, so we measure it, not scope back. The settled measurement plan is a 5-LINK
+> root-cause CHAIN whose terminal condition is the AP17 mechanism paragraph (NOT "a probe bottoms out"):
+> **(1)** self-dump main-thread stack diff → names the gate frame; **(2)** instrument that gate's read →
+> the wrong value; **(3)** order-vs-value fork → wrong, or right-but-late; **(4)** xref the value's writer
+> (code read) → who writes it; **(5)** read the original slot/step body (code read) → why the swap made it
+> inevitable. The measurements deliver links 1–3; links 4–5 are code reads. Full plan (honest about where
+> the guarantee is conditional): `_research/ki0028-fsr2-poll-loop-recon/KI-0028-ROOT-CAUSE-MEASUREMENT-PLAN.md`.
+> One grounded init-order fact (verified `seating_hook.cpp:305-352`): the seat blocks Main on
+> `WaitForSingleObject(overlayReadyGate, INFINITE)` inside `CSystem::Init` — a real init-order perturbation
+> vanilla never does; it is why the plan carries an explicit order-vs-value fork, not a dropped-value
+> assumption. **PROBE Y (Measurement 1, the decisive never-obtained observation) is NEXT** — see the probe
+> plan below (`## PROBE Y`). The existing `boot_watch` PROBE-H machinery already builds the capture
+> (`DumpAllThreads`: suspend→walk-raw→resume→log, Gate-A-blessed); Y only adds the trigger it lacks (our
+> stall keeps the heartbeat ALIVE, so PROBE H's cessation-trigger never fires on our case). The fix must
+> stay inside kcdx's full-init ownership (no thunk-back); closure needs the AP17 paragraph, never "black
+> gone."
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
@@ -92,6 +112,43 @@ input** (the user had to kill the process via Task Manager — not a crash, a ha
 crash dump produced). This is a NEW failure the KI-0027 fix unblocked the boot far
 enough to reach — the same chain pattern as KI-0026 → KI-0027 (each fix exposes the
 next latent boot blocker).
+
+## PROBE Y — Measurement 1: the self-dump main-thread stack diff (CURRENT, build pending Gate A)
+
+The decisive never-obtained observation (handoff §12.B; plan Measurement 1). Names the boot-phase
+sequencer gate by ground truth — a live main-thread stack captured DURING the stall, swap-ON vs swap-OFF,
+diffed offline. No debugger (the symptom IS the steady state — the attach race is unwinnable; every prior
+invasive attempt died or caught a post-AltF4 process; `-pv` misleads). kcdx self-captures from inside
+`HookedUpdate` via the existing `boot_watch` machinery.
+
+**Why the existing PROBE H does not already do this:** PROBE H's `WatcherMain` fires `DumpAllThreads` only
+on heartbeat CESSATION (`kStallMs` stall). Our proven case keeps the heartbeat ALIVE (Main ticks ~35/s;
+geometry just never requested), so PROBE H never arms. PROBE Y adds the trigger it lacks and reuses its
+Gate-A-blessed capture path verbatim.
+
+**One variable:** the trigger condition (present-climbing + heartbeat-floor + `draw_indexed==0`). Capture
+path unchanged. Sink: raw module-relative address chain (`DumpAllThreads` already emits `module_rva`),
+symbolized offline vs kcdx PDB + WHGame RVA table (real RVA = nearest-export RVA + offset).
+
+**Pre-committed outcome→meaning map (flat, falsifiable):**
+- swap-ON parked in a level/scene/sequencer-init frame swap-OFF already passed → **gate NAMED** → link 2.
+- swap-OFF trigger never fires (advanced) + swap-ON fires parked → the parked frame IS the gate → link 2.
+- swap-ON parked in NO level/scene-init frame → **"level never loads" FALSIFIED** → axis moves to where
+  Main actually sits.
+- capture fires on all-kcdx/all-present-loop frames → trigger MIS-ARMED (fired before the real stall) →
+  re-tune the arm condition; NOT a result.
+
+**Probe plan (persisted status list — §B.4; flip each row as it lands):**
+
+| Step | Status | Note |
+|---|---|---|
+| Y.0 Gate A — architect-review the trigger-addition design | pending | new read accessors + `WatcherMain` control-flow change, >1 src file |
+| Y.1 Surface `g_drawIndexed` + present-count as readable atomics (accessors on the two probe headers) | NOT STARTED | counters already exist as process-global atomics; add read accessors only |
+| Y.2 Add the arm-on-present + heartbeat-floor + `draw_indexed==0` trigger to `WatcherMain` → `DumpAllThreads("stall_no_geometry")` | NOT STARTED | reuses the existing capture path; one new trigger arm |
+| Y.3 Build + deploy both arms (swap-ON, `kcdx-noswap`), hash-verify, enable dev mode | NOT STARTED | agent-builds-and-deploys; user launches each arm once |
+| Y.4 User launches arm 1 (swap-ON), arm 2 (swap-OFF); agent reads `STALL_STACK` frames from each log | NOT STARTED | two launches |
+| Y.5 Symbolize offline + diff → name the gate frame (or falsify "level never loads") | NOT STARTED | first-differing frame = the gate → feeds Measurement 2 |
+| Y.6 (opportunistic on the swap-OFF launch) FS-trace read — does the WORKING menu read `.cgf`/`mmrm`? | NOT STARTED | Measurement 4; kills the backdrop-premise trap cheaply |
 
 ## Relationship to KI-0027
 
