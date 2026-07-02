@@ -1326,6 +1326,31 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 9 (2026-07-02) — the REASSESSMENT: the differentiator is a ~27s backdrop-load TRANSITION; PROBE Z2 (slot-family bisection) is the theory-independent next probe
+
+The user-directed step-back (Reframe 8: "stop probing individual functions, reassess what the swap provably perturbs before the next probe") is now answered. The reassessment rests only on confirmed ground truth.
+
+**What is CONFIRMED (this session):**
+- **The differentiator is a specific, time-located event, not a vague "never loads."** Y.6 (DRAW_PROBE on the working swap-OFF menu) measured: the working path holds `draw_indexed=0` / `ia_set_ib=0` for its first **~27s** (instanced UI draws only — the SAME signature as the swap-ON black screen), then a **transition fires at ~10:29:42** and backdrop geometry drawing begins and climbs to `draw_indexed=68024`. The swap-ON black screen never fires that transition (`draw_indexed=0` forever). The pre-transition state is IDENTICAL on both arms — the divergence is purely whether the transition fires. (`_research/ki0028-tick-geometry-dispatch-recon/Y6-workingmenu-draw-progression.md`.)
+- **The render side is fully exonerated** at three layers: shader/PSO (Reframe 7's six probes), window/present (PROBE M + window-exit recon), per-frame render-dispatch (Measurement 2, `ki0028-tick-geometry-dispatch-recon/FINDINGS.md`). The render tick is alive and un-perturbed; it draws whatever geometry exists. So the missing thing is that the backdrop geometry never gets loaded, NOT that it fails to draw.
+- **The swap's entire blast radius is file I/O.** The FS takeover overwrites the CCryPak vtable so all four kcdx slot families route through kcdx: **open** (1/35/36), **read** (38..66), **metadata** (13/45/67../93), **enum** (14/63/64/65). These four families are the COMPLETE surface of what the swap changes — nothing the swap does is outside them. So the ~27s transition that never fires swap-ON must depend on a file operation one of these four families serves differently from the engine original.
+
+**What the reassessment RULES OUT as next probes (dead leads, do not re-chase):**
+- `CResourceList::Load @ 0x4dcb60` — falsified (Reframe 8; fires 0× on BOTH arms, not on the menu/backdrop path).
+- Any single-function "find the level-load trigger" hook — the same one-deep pattern that dead-ended twice. The transition trigger is unknown and hunting it function-by-function is the pattern the step-back rejected.
+
+**The theory-independent next probe — PROBE Z2 slot-family bisection (already built, `cd1a126`):**
+Instead of guessing WHICH file op perturbs the transition, PROBE Z2 answers it BY CONSTRUCTION. `SwapVtableOnObject(liveFamilyMask)` runs the swap MECHANISM identically (object overwrite, seat timing, index build) but lets only the named slot families run kcdx logic — the rest thunk to the engine original. Marker files in `<kcdx-engine>/` select the mask (`kcdx-thunkswap` → none live; `kcdx-live-open|read|metadata|enum` → only named; no marker → `kFamAll` full swap). This is a discriminating, theory-independent probe: the mask that RENDERS (backdrop transition fires) vs the mask that goes BLACK (transition never fires) names the culprit family directly, with no theory about which file op matters.
+
+Outcome→meaning map (bisection, one variable = which families are live):
+- **`kFamNone` (kcdx-thunkswap) RENDERS** → the swap MECHANISM (object overwrite / seat timing / index build) is innocent; some kcdx slot LOGIC causes it → proceed to per-family build-up. **`kFamNone` still BLACK** → the mechanism itself is the differentiator, not the slot logic (the object-identity/timing/index axis, a separate investigation) → the confound self-check below decides which.
+- **`kFamAll` (no marker) must reproduce BLACK** — the confound self-check. If a full swap RENDERS, the premise is contaminated (something about THIS build differs from the black runs) and the bisection is invalid until reconciled.
+- **Per-family (one `kcdx-live-*` at a time) — which single family live flips to BLACK**, or (tear-down) which single family thunked flips to RENDER — names the culprit family by construction.
+
+Pak mount is init/load-time (mount-once at startup, driven by kcdx's own loader at `enabled_list_builder.cpp:57` — `_research/fs-takeover-pak-mount-recon/FINDINGS.md`), so the perturbation is plausibly in the OPEN or ENUM family that init-time pak/asset resolution walks — but the bisection OBSERVES which, it does not assume it.
+
+**Ordering (per incremental-delivery + the confound self-check):** run `kFamAll` (confirm black reproduces — the self-check) and `kFamNone` (mechanism-vs-logic split) FIRST, before any per-family run — a per-family result is meaningless if the endpoints don't bracket it correctly.
+
 ## Reframe 8 (2026-07-02) — PROBE X (CResourceList::Load) is a RED HERRING; "level never loads" is NOT established
 
 PROBE X (levelload_probe.cpp) after-hooked `CResourceList::Load @ 0x4dcb60` armed before the swap decision, A/B over 3 launches:
