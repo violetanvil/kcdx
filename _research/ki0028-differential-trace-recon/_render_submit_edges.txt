@@ -1,0 +1,131 @@
+=== KI-0028 RENDER-SUBMISSION anchors (image base 0x180000000; all addresses below are RVA = VA-base) ===
+
+ANCHOR "CryRenderD3D12"
+  PINS fn FUN_18189f628 entry=0x189f628 (xref-site=0x189f6be)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_18189f55c entry=0x189f55c callsite=0x189f591
+  CALLEES (toward the command list):
+
+ANCHOR "DStorage CRenderMesh: Failed to load %s"
+  PINS fn FUN_1824f2810 entry=0x24f2810 (xref-site=0x24f283b)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_182501544 entry=0x2501544 callsite=0x25015e3
+  CALLEES (toward the command list):
+
+ANCHOR "Warning: CRenderMesh::ShutDown: RenderMesh leak %s: %0.3fMb"
+  PINS fn FUN_18250053c entry=0x250053c (xref-site=0x2500595)
+  CALLERS (2 — upstream trace edge):
+    <- FUN_180de8be8 entry=0xde8be8 callsite=0xde8d02
+    <- FUN_18250079c entry=0x250079c callsite=0x25007b0
+  CALLEES (toward the command list):
+
+ANCHOR "CRenderView::AddPolygon without shader..."
+  PINS fn FUN_1824dac50 entry=0x24dac50 (xref-site=0x24dafb1)
+  CALLERS (0 — upstream trace edge):
+  CALLEES (toward the command list):
+
+ANCHOR "CRenderMesh::CustomData not supported anymore. Will be removed from interface"
+  PINS fn FUN_182235e82 entry=0x2235e82 (xref-site=0x2235ea5)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_180792b44 entry=0x792b44 callsite=0x792d28
+  CALLEES (toward the command list):
+
+ANCHOR "Maximum number of created Commandlists per CommandlistPool."
+  PINS fn FUN_18100c968 entry=0x100c968 (xref-site=0x101232d)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_180751070 entry=0x751070 callsite=0x751141
+  CALLEES (toward the command list):
+
+ANCHOR "CRenderMesh::SetMesh_Impl: invalid vertex format for general stream"
+  PINS fn FUN_1805e0ed0 entry=0x5e0ed0 (xref-site=0x220993c)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_180522480 entry=0x522480 callsite=0x5224ee
+  CALLEES (toward the command list):
+
+ANCHOR "[CCompiledRenderObject] Compile failed, PSO creation failed"
+  PINS fn FUN_180429794 entry=0x429794 (xref-site=0x429d3a)
+  CALLERS (3 — upstream trace edge):
+    <- FUN_180429384 entry=0x429384 callsite=0x429531
+    <- FUN_180429384 entry=0x429384 callsite=0x4295b6
+    <- FUN_180429384 entry=0x429384 callsite=0x4296f9
+  CALLEES (toward the command list):
+
+ANCHOR "DRAWINDEXEDINSTANCED"
+  PINS fn FUN_1825381d0 entry=0x25381d0 (xref-site=0x2538211)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_182538c80 entry=0x2538c80 callsite=0x2538e35
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DeviceManager\D3D12\DeviceCommandListCommon_D3D12.cpp"
+  PINS fn FUN_181dfec00 entry=0x1dfec00 (xref-site=0x1dfed27)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_181e078f0 entry=0x1e078f0 callsite=0x1e07920
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DeviceManager\D3D12\DeviceCommandListCommon_D3D12.cpp"
+  PINS fn FUN_1805039b4 entry=0x5039b4 (xref-site=0x21fa72b)
+  CALLERS (4 — upstream trace edge):
+    <- FUN_180503b8c entry=0x503b8c callsite=0x503d4a
+    <- FUN_1809bec18 entry=0x9bec18 callsite=0x9bec84
+    <- FUN_180ddc6a4 entry=0xddc6a4 callsite=0xddc723
+    <- FUN_182535d9c entry=0x2535d9c callsite=0x2535e20
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DeviceManager\D3D12\DeviceCommandListCommon_D3D12.cpp"
+  PINS fn FUN_1805025b4 entry=0x5025b4 (xref-site=0x502602)
+  CALLERS (6 — upstream trace edge):
+    <- FUN_1805029f0 entry=0x5029f0 callsite=0x502e89
+    <- FUN_180501cb0 entry=0x501cb0 callsite=0x501eb9
+    <- FUN_180c125cc entry=0xc125cc callsite=0xc12801
+    <- FUN_180c129dc entry=0xc129dc callsite=0xc12aaf
+    <- FUN_1824a50e4 entry=0x24a50e4 callsite=0x24a544e
+    <- FUN_1824a54e8 entry=0x24a54e8 callsite=0x24a58cd
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DeviceManager\D3D12\DeviceCommandListCommon_D3D12.cpp"
+  PINS fn FUN_1805026c0 entry=0x5026c0 (xref-site=0x50275b)
+  CALLERS (6 — upstream trace edge):
+    <- FUN_1805029f0 entry=0x5029f0 callsite=0x502d8a
+    <- FUN_180501cb0 entry=0x501cb0 callsite=0x501e97
+    <- FUN_180c125cc entry=0xc125cc callsite=0xc12769
+    <- FUN_180c129dc entry=0xc129dc callsite=0xc12a94
+    <- FUN_1824a50e4 entry=0x24a50e4 callsite=0x24a5432
+    <- FUN_1824a54e8 entry=0x24a54e8 callsite=0x24a583d
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DeviceManager\D3D12\DeviceCommandListCommon_D3D12.cpp"
+  PINS fn FUN_180504804 entry=0x504804 (xref-site=0x504975)
+  CALLERS (3 — upstream trace edge):
+    <- FUN_180f8a9d8 entry=0xf8a9d8 callsite=0xf8aa51
+    <- FUN_1825405c4 entry=0x25405c4 callsite=0x25405f2
+    <- FUN_1807ba428 entry=0x7ba428 callsite=0x7ba497
+  CALLEES (toward the command list):
+
+ANCHOR "CRenderMeshUtils::RayIntersectionImpl"
+  PINS fn FUN_1835040a0 entry=0x35040a0 (xref-site=0x3504a4a)
+  CALLERS (1 — upstream trace edge):
+    <- FUN_183503454 entry=0x3503454 callsite=0x35034f7
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\Common\RenderThread.cpp"
+  PINS fn FUN_180777f6c entry=0x777f6c (xref-site=0x77803c)
+  CALLERS (9 — upstream trace edge):
+    <- FUN_181dea5a0 entry=0x1dea5a0 callsite=0x1dea5c3
+    <- FUN_180b52e9c entry=0xb52e9c callsite=0xb52f9d
+    <- FUN_1824f111c entry=0x24f111c callsite=0x24f12be
+    <- FUN_1824f12f8 entry=0x24f12f8 callsite=0x24f139a
+    <- FUN_1824f12f8 entry=0x24f12f8 callsite=0x24f13ba
+    <- FUN_1824f12f8 entry=0x24f12f8 callsite=0x24f13ff
+    <- FUN_1824f12f8 entry=0x24f12f8 callsite=0x24f142f
+    <- FUN_1824f12f8 entry=0x24f12f8 callsite=0x24f145f
+    <- FUN_1824f14c0 entry=0x24f14c0 callsite=0x24f14db
+  CALLEES (toward the command list):
+
+ANCHOR "d:\buildagent\work\7ffb7f119a855ecb\code\CryEngine\RenderDLL\XRenderD3D9\DX12\GI\CCryDX12SwapChain.cpp"
+  PINS fn FUN_1804edf10 entry=0x4edf10 (xref-site=0x4edfc8)
+  CALLERS (2 — upstream trace edge):
+    <- FUN_180867e50 entry=0x867e50 callsite=0x867eae
+    <- FUN_1808697fc entry=0x8697fc callsite=0x8697ff
+  CALLEES (toward the command list):
+
+=== 17 render-submission functions pinned ===

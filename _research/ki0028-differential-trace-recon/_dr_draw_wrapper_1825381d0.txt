@@ -1,0 +1,349 @@
+
+===== DECOMP DRAWINDEXEDINSTANCED wrapper (D3D12 draw leaf) @ 0x1825381d0 =====
+  name: FUN_1825381d0  conv: unknown  params: 0  size: 628 bytes
+  signature: undefined FUN_1825381d0(void)
+
+char * FUN_1825381d0(int param_1)
+
+{
+  if (param_1 < 0x16) {
+    if (param_1 == 0x15) {
+      return "DECODEFRAME";
+    }
+    if (param_1 < 0xb) {
+      if (param_1 == 10) {
+        return "COPYTILES";
+      }
+      if (param_1 < 6) {
+        if (param_1 == 5) {
+          return "EXECUTEINDIRECT";
+        }
+        if (param_1 == 0) {
+          return "SETMARKER";
+        }
+        if (param_1 == 1) {
+          return "BEGINEVENT";
+        }
+        if (param_1 == 2) {
+          return "ENDEVENT";
+        }
+        if (param_1 == 3) {
+          return "DRAWINSTANCED";
+        }
+        if (param_1 == 4) {
+          return "DRAWINDEXEDINSTANCED";
+        }
+      }
+      else {
+        if (param_1 == 6) {
+          return "DISPATCH";
+        }
+        if (param_1 == 7) {
+          return "COPYBUFFERREGION";
+        }
+        if (param_1 == 8) {
+          return "COPYTEXTUREREGION";
+        }
+        if (param_1 == 9) {
+          return "COPYRESOURCE";
+        }
+      }
+    }
+    else if (param_1 < 0x11) {
+      if (param_1 == 0x10) {
+        return "EXECUTEBUNDLE";
+      }
+      if (param_1 == 0xb) {
+        return "RESOLVESUBRESOURCE";
+      }
+      if (param_1 == 0xc) {
+        return "CLEARRENDERTARGETVIEW";
+      }
+      if (param_1 == 0xd) {
+        return "CLEARUNORDEREDACCESSVIEW";
+      }
+      if (param_1 == 0xe) {
+        return "CLEARDEPTHSTENCILVIEW";
+      }
+      if (param_1 == 0xf) {
+        return "RESOURCEBARRIER";
+      }
+    }
+    else {
+      if (param_1 == 0x11) {
+        return "PRESENT";
+      }
+      if (param_1 == 0x12) {
+        return "RESOLVEQUERYDATA";
+      }
+      if (param_1 == 0x13) {
+        return "BEGINSUBMISSION";
+      }
+      if (param_1 == 0x14) {
+        return "ENDSUBMISSION";
+      }
+    }
+  }
+  else if (param_1 < 0x21) {
+    if (param_1 == 0x20) {
+      return "EMITRAYTRACINGACCELERATIONSTRUCTUREPOSTBUILDINFO";
+    }
+    if (param_1 < 0x1c) {
+      if (param_1 == 0x1b) {
+        return "DECODEFRAME1";
+      }
+      if (param_1 == 0x16) {
+        return "PROCESSFRAMES";
+      }
+      if (param_1 == 0x17) {
+        return "ATOMICCOPYBUFFERUINT";
+      }
+      if (param_1 == 0x18) {
+        return "ATOMICCOPYBUFFERUINT64";
+      }
+      if (param_1 == 0x19) {
+        return "RESOLVESUBRESOURCEREGION";
+      }
+      if (param_1 == 0x1a) {
+        return "WRITEBUFFERIMMEDIATE";
+      }
+    }
+    else {
+      if (param_1 == 0x1c) {
+        return "SETPROTECTEDRESOURCESESSION";
+      }
+      if (param_1 == 0x1d) {
+        return "DECODEFRAME2";
+      }
+      if (param_1 == 0x1e) {
+        return "PROCESSFRAMES1";
+      }
+      if (param_1 == 0x1f) {
+        return "BUILDRAYTRACINGACCELERATIONSTRUCTURE";
+      }
+    }
+  }
+  else if (param_1 < 0x27) {
+    if (param_1 == 0x26) {
+      return "RESOLVEMOTIONVECTORHEAP";
+    }
+    if (param_1 == 0x21) {
+      return "COPYRAYTRACINGACCELERATIONSTRUCTURE";
+    }
+    if (param_1 == 0x22) {
+      return "DISPATCHRAYS";
+    }
+    if (param_1 == 0x23) {
+      return "INITIALIZEMETACOMMAND";
+    }
+    if (param_1 == 0x24) {
+      return "EXECUTEMETACOMMAND";
+    }
+    if (param_1 == 0x25) {
+      return "ESTIMATEMOTION";
+    }
+  }
+  else {
+    if (param_1 == 0x27) {
+      return "SETPIPELINESTATE1";
+    }
+    if (param_1 == 0x28) {
+      return "INITIALIZEEXTENSIONCOMMAND";
+    }
+    if (param_1 == 0x29) {
+      return "EXECUTEEXTENSIONCOMMAND";
+    }
+    if (param_1 == 0x2a) {
+      return "DISPATCHMESH";
+    }
+  }
+  return "UNKNOWN";
+}
+
+
+
+===== DISASM DRAWINDEXEDINSTANCED wrapper @ 0x1825381d0 =====
+  0x1825381d0: CMP ECX,0x15
+  0x1825381d3: JG 0x182538315  -> 0x182538315 (FUN_1825381d0)
+  0x1825381d9: JZ 0x18253830d  -> 0x18253830d (FUN_1825381d0)
+  0x1825381df: CMP ECX,0xa
+  0x1825381e2: JG 0x182538281  -> 0x182538281 (FUN_1825381d0)
+  0x1825381e8: JZ 0x182538279  -> 0x182538279 (FUN_1825381d0)
+  0x1825381ee: CMP ECX,0x5
+  0x1825381f1: JG 0x182538241  -> 0x182538241 (FUN_1825381d0)
+  0x1825381f3: JZ 0x182538239  -> 0x182538239 (FUN_1825381d0)
+  0x1825381f5: TEST ECX,ECX
+  0x1825381f7: JZ 0x182538231  -> 0x182538231 (FUN_1825381d0)
+  0x1825381f9: SUB ECX,0x1
+  0x1825381fc: JZ 0x182538229  -> 0x182538229 (FUN_1825381d0)
+  0x1825381fe: SUB ECX,0x1
+  0x182538201: JZ 0x182538221  -> 0x182538221 (FUN_1825381d0)
+  0x182538203: SUB ECX,0x1
+  0x182538206: JZ 0x182538219  -> 0x182538219 (FUN_1825381d0)
+  0x182538208: CMP ECX,0x1
+  0x18253820b: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x182538211: LEA RAX,[0x183df65d0]
+  0x182538218: RET
+  0x182538219: LEA RAX,[0x183df6608]
+  0x182538220: RET
+  0x182538221: LEA RAX,[0x183df65f8]
+  0x182538228: RET
+  0x182538229: LEA RAX,[0x183df6520]
+  0x182538230: RET
+  0x182538231: LEA RAX,[0x183df6510]
+  0x182538238: RET
+  0x182538239: LEA RAX,[0x183df65e8]
+  0x182538240: RET
+  0x182538241: SUB ECX,0x6
+  0x182538244: JZ 0x182538271  -> 0x182538271 (FUN_1825381d0)
+  0x182538246: SUB ECX,0x1
+  0x182538249: JZ 0x182538269  -> 0x182538269 (FUN_1825381d0)
+  0x18253824b: SUB ECX,0x1
+  0x18253824e: JZ 0x182538261  -> 0x182538261 (FUN_1825381d0)
+  0x182538250: CMP ECX,0x1
+  0x182538253: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x182538259: LEA RAX,[0x183df6630]
+  0x182538260: RET
+  0x182538261: LEA RAX,[0x183df6618]
+  0x182538268: RET
+  0x182538269: LEA RAX,[0x183df6650]
+  0x182538270: RET
+  0x182538271: LEA RAX,[0x183df6640]
+  0x182538278: RET
+  0x182538279: LEA RAX,[0x183df6568]
+  0x182538280: RET
+  0x182538281: CMP ECX,0x10
+  0x182538284: JG 0x1825382d5  -> 0x1825382d5 (FUN_1825381d0)
+  0x182538286: JZ 0x1825382cd  -> 0x1825382cd (FUN_1825381d0)
+  0x182538288: SUB ECX,0xb
+  0x18253828b: JZ 0x1825382c5  -> 0x1825382c5 (FUN_1825381d0)
+  0x18253828d: SUB ECX,0x1
+  0x182538290: JZ 0x1825382bd  -> 0x1825382bd (FUN_1825381d0)
+  0x182538292: SUB ECX,0x1
+  0x182538295: JZ 0x1825382b5  -> 0x1825382b5 (FUN_1825381d0)
+  0x182538297: SUB ECX,0x1
+  0x18253829a: JZ 0x1825382ad  -> 0x1825382ad (FUN_1825381d0)
+  0x18253829c: CMP ECX,0x1
+  0x18253829f: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x1825382a5: LEA RAX,[0x183df65c0]
+  0x1825382ac: RET
+  0x1825382ad: LEA RAX,[0x183df65a8]
+  0x1825382b4: RET
+  0x1825382b5: LEA RAX,[0x183df6548]
+  0x1825382bc: RET
+  0x1825382bd: LEA RAX,[0x183df6530]
+  0x1825382c4: RET
+  0x1825382c5: LEA RAX,[0x183df6578]
+  0x1825382cc: RET
+  0x1825382cd: LEA RAX,[0x183df6590]
+  0x1825382d4: RET
+  0x1825382d5: SUB ECX,0x11
+  0x1825382d8: JZ 0x182538305  -> 0x182538305 (FUN_1825381d0)
+  0x1825382da: SUB ECX,0x1
+  0x1825382dd: JZ 0x1825382fd  -> 0x1825382fd (FUN_1825381d0)
+  0x1825382df: SUB ECX,0x1
+  0x1825382e2: JZ 0x1825382f5  -> 0x1825382f5 (FUN_1825381d0)
+  0x1825382e4: CMP ECX,0x1
+  0x1825382e7: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x1825382ed: LEA RAX,[0x183df6758]
+  0x1825382f4: RET
+  0x1825382f5: LEA RAX,[0x183df6790]
+  0x1825382fc: RET
+  0x1825382fd: LEA RAX,[0x183df6778]
+  0x182538304: RET
+  0x182538305: LEA RAX,[0x183df65a0]
+  0x18253830c: RET
+  0x18253830d: LEA RAX,[0x183df6768]
+  0x182538314: RET
+  0x182538315: CMP ECX,0x20
+  0x182538318: JG 0x1825383b8  -> 0x1825383b8 (FUN_1825381d0)
+  0x18253831e: JZ 0x1825383b0  -> 0x1825383b0 (FUN_1825381d0)
+  0x182538324: CMP ECX,0x1b
+  0x182538327: JG 0x182538378  -> 0x182538378 (FUN_1825381d0)
+  0x182538329: JZ 0x182538370  -> 0x182538370 (FUN_1825381d0)
+  0x18253832b: SUB ECX,0x16
+  0x18253832e: JZ 0x182538368  -> 0x182538368 (FUN_1825381d0)
+  0x182538330: SUB ECX,0x1
+  0x182538333: JZ 0x182538360  -> 0x182538360 (FUN_1825381d0)
+  0x182538335: SUB ECX,0x1
+  0x182538338: JZ 0x182538358  -> 0x182538358 (FUN_1825381d0)
+  0x18253833a: SUB ECX,0x1
+  0x18253833d: JZ 0x182538350  -> 0x182538350 (FUN_1825381d0)
+  0x18253833f: CMP ECX,0x1
+  0x182538342: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x182538348: LEA RAX,[0x183df6698]
+  0x18253834f: RET
+  0x182538350: LEA RAX,[0x183df67b8]
+  0x182538357: RET
+  0x182538358: LEA RAX,[0x183df67a0]
+  0x18253835f: RET
+  0x182538360: LEA RAX,[0x183df67e8]
+  0x182538367: RET
+  0x182538368: LEA RAX,[0x183df67d8]
+  0x18253836f: RET
+  0x182538370: LEA RAX,[0x183df66b0]
+  0x182538377: RET
+  0x182538378: SUB ECX,0x1c
+  0x18253837b: JZ 0x1825383a8  -> 0x1825383a8 (FUN_1825381d0)
+  0x18253837d: SUB ECX,0x1
+  0x182538380: JZ 0x1825383a0  -> 0x1825383a0 (FUN_1825381d0)
+  0x182538382: SUB ECX,0x1
+  0x182538385: JZ 0x182538398  -> 0x182538398 (FUN_1825381d0)
+  0x182538387: CMP ECX,0x1
+  0x18253838a: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x182538390: LEA RAX,[0x183df6730]
+  0x182538397: RET
+  0x182538398: LEA RAX,[0x183df6720]
+  0x18253839f: RET
+  0x1825383a0: LEA RAX,[0x183df6688]
+  0x1825383a7: RET
+  0x1825383a8: LEA RAX,[0x183df6668]
+  0x1825383af: RET
+  0x1825383b0: LEA RAX,[0x183df66c0]
+  0x1825383b7: RET
+  0x1825383b8: CMP ECX,0x26
+  0x1825383bb: JG 0x182538408  -> 0x182538408 (FUN_1825381d0)
+  0x1825383bd: JZ 0x182538400  -> 0x182538400 (FUN_1825381d0)
+  0x1825383bf: SUB ECX,0x21
+  0x1825383c2: JZ 0x1825383f8  -> 0x1825383f8 (FUN_1825381d0)
+  0x1825383c4: SUB ECX,0x1
+  0x1825383c7: JZ 0x1825383f0  -> 0x1825383f0 (FUN_1825381d0)
+  0x1825383c9: SUB ECX,0x1
+  0x1825383cc: JZ 0x1825383e8  -> 0x1825383e8 (FUN_1825381d0)
+  0x1825383ce: SUB ECX,0x1
+  0x1825383d1: JZ 0x1825383e0  -> 0x1825383e0 (FUN_1825381d0)
+  0x1825383d3: CMP ECX,0x1
+  0x1825383d6: JNZ 0x18253841c  -> 0x18253841c (FUN_1825381d0)
+  0x1825383d8: LEA RAX,[0x183df6828]
+  0x1825383df: RET
+  0x1825383e0: LEA RAX,[0x183df6810]
+  0x1825383e7: RET
+  0x1825383e8: LEA RAX,[0x183df6848]
+  0x1825383ef: RET
+  0x1825383f0: LEA RAX,[0x183df6838]
+  0x1825383f7: RET
+  0x1825383f8: LEA RAX,[0x183df66f8]
+  0x1825383ff: RET
+  0x182538400: LEA RAX,[0x183df6898]
+  0x182538407: RET
+  0x182538408: SUB ECX,0x27
+  0x18253840b: JZ 0x18253843c  -> 0x18253843c (FUN_1825381d0)
+  0x18253840d: SUB ECX,0x1
+  0x182538410: JZ 0x182538434  -> 0x182538434 (FUN_1825381d0)
+  0x182538412: SUB ECX,0x1
+  0x182538415: JZ 0x18253842c  -> 0x18253842c (FUN_1825381d0)
+  0x182538417: CMP ECX,0x1
+  0x18253841a: JZ 0x182538424  -> 0x182538424 (FUN_1825381d0)
+  0x18253841c: LEA RAX,[0x183dd3b50]
+  0x182538423: RET
+  0x182538424: LEA RAX,[0x183df6800]
+  0x18253842b: RET
+  0x18253842c: LEA RAX,[0x183df6880]
+  0x182538433: RET
+  0x182538434: LEA RAX,[0x183df6860]
+  0x18253843b: RET
+  0x18253843c: LEA RAX,[0x183df68b0]
+  0x182538443: RET
+
+===== CALLERS OF draw wrapper @ 0x1825381d0 =====
+  <- callsite 0x182538e35 in FUN_182538c80 entry=0x182538c80
