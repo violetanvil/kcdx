@@ -30,6 +30,14 @@ constexpr uint32_t kRvaCompilePass    = 0x429384;  // FUN_180429384(ctx) per-fra
 constexpr uint32_t kRvaCcroCompile    = 0x429794;  // FUN_180429794(...8 args...) -> char
 constexpr uint32_t kRvaSetIndexBuffer = 0x5025b4;  // FUN_1805025b4(cmdIf, ibDesc)  ★
 constexpr uint32_t kRvaRenderFlush    = 0x777f6c;  // FUN_180777f6c(...) render-thread flush
+// HOP 2 (HOP2-FINDINGS.md): the SetIndexBuffer CALLER — the per-item apply+submit fn.
+// Walks its render-item list; SetIndexBuffer is gated on item+0x20 (the IB field). We
+// sample that field per item, null vs non-null, to CONFIRM (not theorize) the null-IB
+// hypothesis. Item-list at [ctx+0x298]..[ctx+0x2a0]; IB field at item+0x20 (plVar6[4]).
+constexpr uint32_t kRvaApplyDraw      = 0x501cb0;  // FUN_180501cb0(ctx, cmdIf)
+constexpr uintptr_t kApplyItemListBeg = 0x298;     // [ctx+0x298] = first item ptr
+constexpr uintptr_t kApplyItemListEnd = 0x2a0;     // [ctx+0x2a0] = one-past-last item ptr
+constexpr uintptr_t kItemIbFieldOff   = 0x20;      // item+0x20 = plVar6[4] = the IB pointer
 
 // The WHGame base captured at arm — the _ReturnAddress caller-attribution subtracts it
 // so the logged caller RVA is module-relative + directly comparable across arms/runs.
@@ -46,6 +54,13 @@ std::atomic<uint64_t> g_seq{0};  // global monotonic sequence across all sites
 // Per-site fire counters (relaxed — diagnostic tallies, no happens-before needed;
 // the log line itself is the ordered record, the counter only gates the latch).
 std::atomic<uint64_t> g_fires[5] = {};  // [stage, compile, ccroCompile, setIB, flush]
+
+// HOP 2 IB-field sampler tallies (cumulative across the whole run — the null-rate IS
+// the confirm signal; relaxed, diagnostic).
+std::atomic<uint64_t> g_applyInvokes{0};   // FUN_180501cb0 invocations
+std::atomic<uint64_t> g_itemsSeen{0};      // total render items walked
+std::atomic<uint64_t> g_itemsIbNull{0};    // items with a NULL IB field (non-indexed)
+std::atomic<uint64_t> g_itemsIbSet{0};     // items with a non-null IB field (indexed)
 
 enum SiteId { kSiteStage = 0, kSiteCompile, kSiteCcroCompile, kSiteSetIB, kSiteFlush };
 constexpr const char* kSiteName[5] = {
@@ -133,6 +148,53 @@ void __fastcall HookedFlush(void* a) {
     g_origFlush(a);
 }
 
+// --- HOP 2: FUN_180501cb0(ctx, cmdIf) — the per-item apply+submit fn ---------------
+// After-hook: let it run, then read-only-walk its render-item list and tally the IB
+// field (item+0x20) null vs non-null. The null-RATE swap-ON vs swap-OFF CONFIRMS or
+// kills "the render items are built without index buffers swap-ON" (HOP2-FINDINGS map).
+// SEH-guarded reads (engine memory; a torn/freed list must not fault the game).
+uint64_t SafeReadU64(uintptr_t addr) {
+    uint64_t v = 0;
+    if (addr) __try {
+        v = *reinterpret_cast<volatile uint64_t*>(addr);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { v = 0; }
+    return v;
+}
+
+using ApplyDrawFn_t = void(__fastcall*)(void* ctx, void* cmdIf);
+ApplyDrawFn_t g_origApplyDraw = nullptr;
+void __fastcall HookedApplyDraw(void* ctx, void* cmdIf) {
+    const uint64_t inv = g_applyInvokes.fetch_add(1, std::memory_order_relaxed);
+    // Walk [ctx+0x298]..[ctx+0x2a0] — each entry is a render-item pointer; read item+0x20.
+    const uintptr_t c = reinterpret_cast<uintptr_t>(ctx);
+    uintptr_t cur = static_cast<uintptr_t>(SafeReadU64(c + kApplyItemListBeg));
+    const uintptr_t end = static_cast<uintptr_t>(SafeReadU64(c + kApplyItemListEnd));
+    uint64_t local_seen = 0, local_null = 0, local_set = 0;
+    // Bound the walk defensively (a torn list must not spin) — the real list is small.
+    for (int guard = 0; cur && cur != end && guard < 4096; ++guard, cur += sizeof(void*)) {
+        const uintptr_t item = static_cast<uintptr_t>(SafeReadU64(cur));
+        if (!item) break;
+        const uint64_t ib = SafeReadU64(item + kItemIbFieldOff);
+        ++local_seen;
+        if (ib) ++local_set; else ++local_null;
+    }
+    g_itemsSeen.fetch_add(local_seen, std::memory_order_relaxed);
+    g_itemsIbNull.fetch_add(local_null, std::memory_order_relaxed);
+    g_itemsIbSet.fetch_add(local_set, std::memory_order_relaxed);
+    // Log the first kMaxPerSite invocations' per-invocation breakdown (per-frame-safe).
+    if (inv < kMaxPerSite) {
+        LOG_WARN_KV(kCat, "apply_draw_items",
+            KV("inv",       inv),
+            KV("items",     local_seen),
+            KV("ib_null",   local_null),   // items with NO index buffer -> non-indexed draw
+            KV("ib_set",    local_set),    // items WITH an index buffer -> indexed draw
+            KV::BareStr("note",
+                "per-item IB field (item+0x20) tally for this apply+submit call. "
+                "ib_null>0 + ib_set=0 => vertex-only items (the black-arm signature)."));
+    }
+    g_origApplyDraw(ctx, cmdIf);
+}
+
 // Install one after-hook at base+rva. Logs the outcome; a failure is loud (not silent).
 bool ArmSite(uintptr_t base, uint32_t rva, void* detour, void** origOut,
              const char* label) {
@@ -188,17 +250,43 @@ void RenderTraceProbeStart() {
                      reinterpret_cast<void**>(&g_origSetIB), "set_index_buffer") ? 1 : 0;
     armed += ArmSite(base, kRvaRenderFlush, reinterpret_cast<void*>(&HookedFlush),
                      reinterpret_cast<void**>(&g_origFlush), "render_flush") ? 1 : 0;
+    // HOP 2 IB-field sampler.
+    armed += ArmSite(base, kRvaApplyDraw, reinterpret_cast<void*>(&HookedApplyDraw),
+                     reinterpret_cast<void**>(&g_origApplyDraw), "apply_draw") ? 1 : 0;
+
+    // A bounded watcher emits the cumulative IB-null tally so the confirm survives past
+    // the per-invocation cap (the whole-run null-rate IS the signal).
+    struct TallyWatcher {
+        static DWORD WINAPI Run(LPVOID) {
+            for (int i = 0; i < 40; ++i) {  // ~2 min at 3s
+                Sleep(3000);
+                LOG_INFO_KV(kCat, "ib_tally",
+                    KV("apply_invokes", g_applyInvokes.load()),
+                    KV("items_seen",    g_itemsSeen.load()),
+                    KV("ib_null",       g_itemsIbNull.load()),   // non-indexed items
+                    KV("ib_set",        g_itemsIbSet.load()),    // indexed items
+                    KV::BareStr("note",
+                        "cumulative render-item IB-field tally. ib_set=0 + ib_null>0 => "
+                        "every item is vertex-only (items built without index buffers) = "
+                        "the confirmed black-arm mechanism; ib_set>0 => indexed items exist "
+                        "(re-check the bind gate / list bound)."));
+            }
+            return 0;
+        }
+    };
+    HANDLE tw = CreateThread(nullptr, 0, &TallyWatcher::Run, nullptr, 0, nullptr);
+    if (tw) CloseHandle(tw);
 
     LOG_INFO_KV(kCat, "render_trace_armed",
         KV("sites_armed", (uint64_t)armed),
         KV("wh_base", base),
         KV::BareStr("detail",
-            "PROBE Z10: ordered render-submission trace armed at 5 sites (stage "
+            "PROBE Z10 (+HOP2): render-submission trace armed at 6 sites (stage "
             "sequencer / compile pass / CCRO::Compile / engine SetIndexBuffer / render "
-            "flush). Each emits sequenced RENDER_TRACE seq records (first 6 fires/site). "
-            "Run swap-OFF (menu) + swap-ON (black); diff the two seq sequences for the "
-            "FIRST site that fires on the menu arm but is absent/differs on the black "
-            "arm — that is the divergence (DESIGN.md step 3)."));
+            "flush / apply_draw IB-sampler). seq records = the ordered trace; apply_draw_"
+            "items + ib_tally = the HOP-2 per-item IB-field null-rate (confirms the "
+            "render items are built without index buffers swap-ON). Run swap-OFF (menu) "
+            "+ swap-ON (black); diff."));
 }
 
 }  // namespace kcdx::fs_takeover
