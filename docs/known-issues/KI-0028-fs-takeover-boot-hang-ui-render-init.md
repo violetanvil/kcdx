@@ -1326,6 +1326,22 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 13 (2026-07-02) — the current wedge is NO INDEXED GEOMETRY on a LIVE, PRESENTING game; NOT an abort, NOT a stall; the bind-root fix is live+working; 4 root causes now overturned
+
+Re-read the SAME `kcdx-dev_2026-07-02_21-05-00.log` (the black run) after the fresh-frame reframe. Every prior root-cause banner is overturned by the log's own ground truth:
+
+- **The bind-root fix (`83a9279`) is LIVE and WORKING.** `asset_index_built entries=516363 paks=77 roots=2` (vs pre-fix 46 paks/307k). Level-pak files resolve by their `levels/kutnohorsko/`-prefixed keys — `level.pak` → `IsFileExist3 result=1`. The FS serves correctly (confirms Z5 post-fix). So ROOT-CAUSE-bind-root-prefix.md (the 4th "confirmed" root cause) fixed the FS-miss but did NOT fix the black screen.
+- **The `0xD2` / `CET_PrepareLevel` / `CreateInstance` abort does NOT fire in this run.** Zero `RaiseException(0xD2)`, zero `MessageBoxA`, zero "can't be loaded". The abort in the `06-22` dumps was an EARLIER failure the bind-root fix cleared. The fresh-frame subagent's abort-gate probe (getter `0x66bbf0`, `[0x88]/[0x58]`, name-length) is aimed at a gate that no longer fires — its Outcome C ("abort is not the mechanism") is the real, already-observed outcome.
+- **The game is ALIVE and PRESENTING at ~310 fps** — `PRESENT_PROBE d_present≈311/s`, `present_count` climbing 12,415→14,908, `hr_present=0`. NOT a deadlock, NOT a stall, NOT no-present. The `BOOT_WATCH stall_no_geometry` label is a MISNOMER for this run (heartbeat + present both alive).
+- **The single differentiator is `draw_indexed=0` / `ia_set_ib=0`.** `DRAW_PROBE summary: draw_instanced=35479 draw_indexed=0 ia_set_ib=0 ia_set_vb=35479 ia_set_topo=35479 first_ib_va=0 first_ib_size=0`. The engine runs all non-geometry passes (fullscreen/post/clear/sky via DrawInstanced) but draws ZERO indexed world geometry → black/sky-only at full framerate. IASetIndexBuffer is NEVER called; no IB ever bound.
+- **Window activation is NOT the cause either.** `WINDOW_PROBE fg_is_ours=1` at 21:05:01–21:05:21 (the window DID activate); the recon's "swap prevents window activation" mechanism is falsified for this run.
+
+**VERDICT — KI-0028 is now: on a live, presenting full-swap game, indexed-geometry mesh draw is ABANDONED UPSTREAM of D3D12 command recording (no IB ever created/bound).** Two undiscriminated branches remain (the real frontier, = Z6 option (b)):
+- **(a) IB resources never CREATED** — the world's index buffers are never made (device CreateCommittedResource/CreatePlacedResource for IB never runs swap-ON), OR
+- **(b) the scene/world render PASS is never ENTERED** — a higher-level engine decision (visibility / scene-graph / render-list population) drops all real geometry before it reaches D3D12.
+
+`first_ib_va=0/first_ib_size=0` is consistent with both. The next probe must discriminate (a) vs (b). This is a genuine fresh-frame situation: 4 overturned root causes (abort, resourcelist, bind-root, window-activation); the current ground truth (draw_indexed=0 on a presenting game) differs from all of them. FS is fully exonerated (Reframe 12) and stays so.
+
 ## Reframe 12 (2026-07-02) — PROBE Z4+Z5 EXONERATE the FS: files read correctly on the full swap; the black screen is NOT a filesystem problem
 
 PROBE Z4/Z5 (run `kcdx-dev_2026-07-02_21-05-00.log`, full-swap `mask=15`, `draw_indexed=0`) overturned the entire Reframe-10 fix direction:
