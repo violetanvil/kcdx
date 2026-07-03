@@ -104,6 +104,22 @@ commit_at_filing: 4befc07
 > stall keeps the heartbeat ALIVE, so PROBE H's cessation-trigger never fires on our case). The fix must
 > stay inside kcdx's full-init ownership (no thunk-back); closure needs the AP17 paragraph, never "black
 > gone."
+>
+> **CORRECTION 7 (2026-07-03) — DIFFERENTIAL TRACE: the first divergence is the engine's own SetIndexBuffer;
+> the black arm renders VERTEX-ONLY.** METHOD RESET (stop spot-checking; `_research/ki0028-differential-trace-recon/`):
+> static Ghidra named the render-submission edges (`FUN_1805025b4` @ `0x5025b4` = engine SetIndexBuffer, the
+> leaf whose indirect `cmdlist_vtbl+0x158` call IS the D3D12 `IASetIndexBuffer` the drawcall_probe hooks),
+> then PROBE Z10 traced them on BOTH arms. **Result (decisive):** the engine SetIndexBuffer fires 6× swap-OFF
+> (caller `0x501ebe`, in `FUN_180501cb0`) and is **entirely ABSENT swap-ON** — cross-validated by the D3D12
+> confirm (`ia_set_ib=26056` swap-OFF vs `0` swap-ON). NEW ground truth: the black arm is **not idle** — it
+> renders vertex-only HARD (`draw_instanced=19447` > menu's `3606`, `ia_set_vb=19447`, `ia_set_topo=19447`,
+> `geo_buf=264`) but binds ZERO index buffers and issues ZERO indexed draws. So swap-ON the engine issues
+> non-indexed (DrawInstanced) draws en masse but NEVER submits the indexed-mesh scene → composites black.
+> This KILLS "render loop never runs" / "level never loads at all" (the loop runs hard; geometry buffers
+> exist). The frontier sharpens to: **why is the indexed-draw path (→ `FUN_180501cb0` → engine SetIndexBuffer)
+> never taken swap-ON while the non-indexed path runs 19447×?** Next probe: one hop up — trace `FUN_180501cb0`
+> (`0x501cb0`) swap-ON: reached-but-skips-the-bind vs never-reached (gated upstream). Full trace + diff:
+> `_research/ki0028-differential-trace-recon/FINDINGS.md` (RESULT section). Still OPEN; AP17 mechanism owed.
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**
