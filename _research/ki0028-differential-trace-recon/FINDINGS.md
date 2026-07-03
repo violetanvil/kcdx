@@ -1,3 +1,50 @@
+# KI-0028 differential trace — RESULT (Step 3): the FIRST divergence is the engine SetIndexBuffer
+
+**RAN 2026-07-03.** swap-OFF (menu) `kcdx-dev_2026-07-03_10-51-56.log` · swap-ON (black)
+`kcdx-dev_2026-07-03_10-56-06.log`. Both arms: PROBE Z10 `render_trace_armed sites_armed=5` (all 5
+MinHooks installed, zero hook_create/enable failures on either arm). **The trace is DECISIVE.**
+
+## The diff — the mechanical first divergence (no theory)
+
+| Site (ordered) | swap-OFF (menu, GOOD) | swap-ON (black, BAD) |
+|---|---|---|
+| `set_index_buffer` (FUN_1805025b4 = engine SetIndexBuffer / IASetIndexBuffer leaf) | **fired 6× (capped)**, caller RVA `0x501ebe` (in FUN_180501cb0) | **0× — NEVER FIRED** |
+| stage_sequencer / compile_pass / ccro_compile / render_flush | 0× | 0× |
+| drawcall confirm (D3D12 boundary) | `ia_set_ib=26056 draw_indexed=27791 draw_instanced=3606` | `ia_set_ib=0 draw_indexed=0 draw_instanced=19447` |
+
+**FIRST DIVERGENCE: the engine's own `SetIndexBuffer` (FUN_1805025b4) fires on the menu arm and is
+ENTIRELY ABSENT on the black arm.** The D3D12 confirm cross-validates perfectly: swap-OFF
+`ia_set_ib=26056` matches the engine SetIndexBuffer firing; swap-ON `ia_set_ib=0` matches it never
+firing. The engine never calls its own SetIndexBuffer swap-ON → never reaches D3D12 IASetIndexBuffer
+→ `draw_indexed=0` → black. This is the mechanical answer the METHOD RESET set out to find.
+
+## The sharpened signature (NEW ground truth — not idle)
+
+The black arm is NOT stalled/idle in the render loop — it is heavily RENDERING, just vertex-only:
+- swap-ON `draw_instanced=19447` (MORE than menu's 3606), `ia_set_vb=19447`, `ia_set_topo=19447`,
+  `geo_buf=264` (geometry buffers ARE created, matching Z8).
+- swap-ON `ia_set_ib=0`, `draw_indexed=0`: **zero index-buffer binds, zero indexed draws.**
+
+So the precise mechanism is: **swap-ON the engine binds vertex buffers + sets topology + issues
+non-indexed (DrawInstanced) draws en masse, but NEVER binds an index buffer or issues an indexed
+draw.** The world/menu geometry is indexed-mesh geometry; the swap-ON path renders only the
+non-indexed subset (particles/fullscreen/UI-quad class) → the indexed scene composites to nothing →
+black. This kills any "render loop never runs" framing (it runs hard) and localizes to: **why is the
+indexed-draw path (which calls FUN_180501cb0 → engine SetIndexBuffer) never taken swap-ON, while the
+non-indexed DrawInstanced path runs 19447×?**
+
+## The next frontier (NOT this doc's step — the follow-up probe)
+
+The 4 upstream sites firing 0× on BOTH arms means they are NOT on the live per-frame draw path in
+these runs (compile-context / different call context) — only `set_index_buffer` carried the signal.
+The next probe instruments the ONE swap-OFF caller `FUN_180501cb0` (RVA `0x501cb0`, containing the
+menu-arm callsite `0x501eb9`): does IT fire swap-ON (reached but skips the bind) or never fire (its
+own caller gates it out)? That walks one edge UP the indexed-draw path toward the branch that swap-ON
+does not take — the same differential method, one hop up. Static: read FUN_180501cb0's body + its
+callers (the render-pass that decides indexed vs non-indexed submission).
+
+---
+
 # KI-0028 differential trace — Step 1 (static): the render-submission edge list to instrument
 
 **Date:** 2026-07-03 · **Method:** static Ghidra (KCD2.rep, WHGame.dll release_1_5_1164953_841,
