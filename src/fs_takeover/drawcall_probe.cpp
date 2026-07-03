@@ -114,14 +114,8 @@ void STDMETHODCALLTYPE HookedDrawInstanced(
     void* self, UINT vtxPerInstance, UINT instanceCount, UINT startVtx,
     UINT startInstance) {
     g_drawInstanced.fetch_add(1);
-    // HOP 3: name the engine path issuing non-indexed draws (first-seen = one log).
-    const uint64_t newCaller = TallyDrawCaller(g_diCallers, _ReturnAddress());
-    if (newCaller) {
-        LOG_WARN_KV(kCat, "draw_caller_first_seen",
-            KV::BareStr("draw", "instanced"), KV("caller_rva", newCaller),
-            KV::BareStr("note", "new distinct DrawInstanced caller (module-relative "
-                                "RVA when in WHGame; raw otherwise)"));
-    }
+    // HOP 3: name the path issuing non-indexed draws (first-seen resolves module).
+    TallyDrawCaller(g_diCallers, "instanced", _ReturnAddress());
     g_origDrawInstanced(self, vtxPerInstance, instanceCount, startVtx, startInstance);
 }
 
@@ -135,12 +129,7 @@ void STDMETHODCALLTYPE HookedDrawIndexed(
     INT baseVtx, UINT startInstance) {
     g_drawIndexed.fetch_add(1);
     // HOP 3: the indexed-draw caller set (the swap-OFF comparison arm).
-    const uint64_t newCaller = TallyDrawCaller(g_dxCallers, _ReturnAddress());
-    if (newCaller) {
-        LOG_WARN_KV(kCat, "draw_caller_first_seen",
-            KV::BareStr("draw", "indexed"), KV("caller_rva", newCaller),
-            KV::BareStr("note", "new distinct DrawIndexedInstanced caller"));
-    }
+    TallyDrawCaller(g_dxCallers, "indexed", _ReturnAddress());
     g_origDrawIndexed(self, idxPerInstance, instanceCount, startIdx, baseVtx,
                       startInstance);
 }

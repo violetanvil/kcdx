@@ -65,7 +65,53 @@ Per arm, per pass caller (A and B independently):
   decompile the dominant caller next; diff vs the swap-OFF set (which should show the
   FUN_180501cb0 +0x60/+0x68 sites at ~0x501e90/0x501ed3-region RVAs if HOP 2 holds).
 
-## RESULT (to fill after both arms)
+## RESULT — swap-ON arm (RAN 2026-07-03; logs `11-40-36` + module-attributed rerun `11-48-03`)
 
-_pending — swap-ON run, then swap-OFF (kcdx-noswap marker) run; diff the pass_gate_tally +
-draw_caller sets._
+**The engine issues ZERO draws of any kind swap-ON. The "vertex-only rendering" (HOP 2's
+draw_instanced≈21k) is the STEAM OVERLAY, not the engine — REFRAMED.**
+
+| swap-ON | value | meaning |
+|---|---|---|
+| pass A (0x4ec3a0) invokes | **0** | pass A never runs |
+| pass B (0x5014a0) invokes | 3887 | runs per frame |
+| pass B list_empty | **3887/3887** | the render-item list `[ctx+0x298]` is NEVER populated |
+| pass B tech_not_ready | 3886 (tech ptr non-null after inv 0) | technique `+0x28` flag never set |
+| pass B divert_flag / gate_pass | 0 / 0 | alt route never taken; submit never allowed |
+| draw_instanced total | 22476 | ALL from ONE caller |
+| that caller | **gameoverlayrenderer64.dll + 0x757A6** (mod_off 481190) | the Steam overlay's own per-frame UI pass |
+| engine draws (any kind) | **0** | draw_indexed=0, ia_set_ib=0, no WHGame Draw* caller ever seen |
+
+So the black screen is literally an empty backbuffer presented at ~310fps with the overlay
+composited on top. The divergence is fully UPSTREAM of submission: **swap-ON, no render item
+is ever ENQUEUED into `[ctx+0x298..0x2a0]` (and the pass technique `[ctx+0x178]+0x28` is
+never marked ready).** CCRO compile-pass sites fired on both arms in Step 3 — compiled
+objects exist; they are never turned into enqueued render items for this pass.
+
+## RESULT — swap-OFF arm (RAN 2026-07-03, log `12-02-52`) + the HOP-3 DIFF
+
+| | swap-OFF (menu) | swap-ON (black) |
+|---|---|---|
+| pass A (0x4ec3a0) invokes / gate_pass | **3952 / 3952 (100%)** | **0 / 0 — NEVER CALLED** |
+| pass B (0x5014a0) invokes | 1976 — blocked (tech_not_ready 1975/1976) | 3887 — blocked (list_empty 3887/3887) |
+| engine indexed draws | 59913 — ALL from WHGame+0x5023BC | 0 |
+| engine instanced draws | 15100 — ALL from WHGame+0x502420 | 0 |
+| overlay draws (gameoverlayrenderer64.dll+0x757A6) | 6580 | 22476 (the ONLY draws) |
+
+Both WHGame draw return-sites (0x5023BC / 0x502420) are INSIDE FUN_180501cb0 — runtime
+confirmation of the HOP-2 static read: every engine draw (indexed AND non-indexed) is issued
+by the ONE apply+submit fn, driven by pass A.
+
+**HOP-3 conclusion (mechanical, both-arm):**
+1. **Pass A (FUN_1804ec3a0) is the sole real submit driver** — ~1/frame swap-OFF, gate
+   passes 100%; **swap-ON it is NEVER INVOKED.** The divergence is who-calls-pass-A.
+2. **Pass B is a red herring** — its technique is never ready even on the WORKING arm; it
+   submits nothing on either arm.
+3. **Swap-ON the engine records ZERO draws.** The HOP-2 "vertex-only rendering" framing is
+   dead: the ~21k draw_instanced were the STEAM OVERLAY's per-frame pass.
+
+## Next hop (HOP 4)
+
+Pass A has 24 static call sites (list above / `_hop3_caller_a_1804ec3a0.txt`). Which drives
+it live, and why it stops swap-ON: `_ReturnAddress` capture at pass A/B entry (reuse
+draw_caller_tally) → swap-OFF names the live caller site(s) → decompile that caller, probe
+ITS gate on both arms. (No caller inference from the static list — AP19; capture, then read.)

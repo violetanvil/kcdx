@@ -12,7 +12,8 @@
 
 #include "MinHook.h"
 #include "../log.h"
-#include "../pe_helpers.h"  // kcdx::pe::OpenModule / ModuleView
+#include "../pe_helpers.h"     // kcdx::pe::OpenModule / ModuleView
+#include "draw_caller_tally.h" // HOP-4: unique-caller RA tally (module-attributed)
 
 namespace kcdx::fs_takeover {
 
@@ -223,6 +224,12 @@ struct PassGateTally {
     std::atomic<uint64_t> gatePass{0};      // all submit conditions hold at entry
 };
 PassGateTally g_passA, g_passB;
+// HOP 4: WHO calls the passes? Pass A drives ALL engine draws swap-OFF (gate_pass
+// 100%) yet is NEVER invoked swap-ON — its 24 static call sites are in
+// _hop3_caller_a. _ReturnAddress at pass entry names the LIVE caller site(s)
+// mechanically (no static-edge inference); the swap-OFF set is the target list
+// for the next hop's decompile+gate-probe.
+DrawCallerTable g_passACallers, g_passBCallers;
 
 void SamplePassGate(const char* site, PassGateTally& t, void* ctx) {
     const uintptr_t c = reinterpret_cast<uintptr_t>(ctx);
@@ -257,6 +264,7 @@ void SamplePassGate(const char* site, PassGateTally& t, void* ctx) {
 using PassAFn_t = void(__fastcall*)(void* ctx);
 PassAFn_t g_origPassA = nullptr;
 void __fastcall HookedPassA(void* ctx) {
+    TallyDrawCaller(g_passACallers, "pass_a_entry", _ReturnAddress());  // HOP 4
     SamplePassGate("pass_caller_a", g_passA, ctx);
     g_origPassA(ctx);
 }
@@ -264,6 +272,7 @@ void __fastcall HookedPassA(void* ctx) {
 using PassBFn_t = uint64_t(__fastcall*)(void* ctx);
 PassBFn_t g_origPassB = nullptr;
 uint64_t __fastcall HookedPassB(void* ctx) {
+    TallyDrawCaller(g_passBCallers, "pass_b_entry", _ReturnAddress());  // HOP 4
     SamplePassGate("pass_caller_b", g_passB, ctx);
     return g_origPassB(ctx);
 }
@@ -311,6 +320,7 @@ void RenderTraceProbeStart() {
     }
     const uintptr_t base = reinterpret_cast<uintptr_t>(whgame.base);
     g_whBase = base;
+    DrawCallerTallySetBase(base);  // idempotent (drawcall_probe sets the same value)
 
     int armed = 0;
     armed += ArmSite(base, kRvaStageSequencer, reinterpret_cast<void*>(&HookedStage),
@@ -356,6 +366,11 @@ void RenderTraceProbeStart() {
                 Sleep(3000);
                 EmitPassGate("pass_caller_a", g_passA);
                 EmitPassGate("pass_caller_b", g_passB);
+                // HOP 4: periodic pass-caller dump (early-quit-safe attribution).
+                if (i % 10 == 9) {
+                    DumpDrawCallers("pass_a_entry", g_passACallers);
+                    DumpDrawCallers("pass_b_entry", g_passBCallers);
+                }
                 LOG_INFO_KV(kCat, "ib_tally",
                     KV("apply_invokes", g_applyInvokes.load()),
                     KV("items_seen",    g_itemsSeen.load()),
