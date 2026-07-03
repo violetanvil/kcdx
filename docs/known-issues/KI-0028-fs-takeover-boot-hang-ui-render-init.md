@@ -1326,6 +1326,23 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 11 (2026-07-02) — Gate A on fix a′ cleared; PROBE Z4 (pak-reaches-0x460b64 + ucrtbase-resolution) is the next launch, folded into one
+
+Gate A (`architect-review`, WITHHELD) on the concrete fix a′ (open loose on the engine's ucrtbase) returned **`forward-and-wait`** — a′'s LOOSE direction is sound and its routing claims are verified from existing recon (a real ucrtbase `FILE*` fails the `handle-1 < pakEntryCount` tag test → routes to the engine's OS/`FILE*` arm; `asset-fopen-handle-recon/FINDINGS.md:49-55`, gated). But it caught a coupled fork the fix-scope map glossed: **the pak arm carries the IDENTICAL raw-CRT-reader exposure a′ closes for loose.** a′ makes loose and pak DIVERGE (loose → real ucrtbase `FILE*`; pak → still the kcdx handle-int `(id<<1)|1`), and if a pak-resident asset ever reaches the engine's `0x460b64` raw-CRT reader with `[+0x110]==null`, it calls `_fileno(handle-int)` and crashes exactly as loose does today. Whether it does is the **unproven runtime link** (F2) — `Z2-3-open-crash:50-54` never traced the `[+0x110]==null` branch for a pak-resident backdrop.
+
+**User's decision (fork surfaced from architect §3): probe the pak case FIRST, then settle the pak shape on the result.** (Option A — wins on UX-via-correctness; prevents shipping a pak-shaped instance of the exact black-screen bug. Options B "build loose now / defer pak" and C "unify loose+pak on a real FILE*" both declined pending the probe.)
+
+**PROBE Z4 — two checkable unknowns, ONE launch (both read-only observers on the full-swap arm):**
+
+| Sub | Question | Observer | Outcome → meaning |
+|---|---|---|---|
+| Z4.1 (F4) | Does the engine's ucrtbase export the stdio family in-process by name? | At fs-takeover init: `GetProcAddress(GetModuleHandleW(L"ucrtbase.dll"), "_wfopen"/"fread"/"_fseeki64"/"_ftelli64"/"_fileno"/"fclose"/…)`, log each non-null. | all non-null → build the ucrtbase fn-table (fix a′ mechanism); any null → fall back to `GetModuleHandleW` on the already-loaded apiset `api-ms-win-crt-stdio-l1-1-0.dll` (NOT `LoadLibrary` — architect F4). |
+| Z4.2 (F2) | Does a PAK FOpen's handle-int ever reach the engine's `0x460b64` raw-CRT reader on the full swap? | One-shot canary at kcdx's pak-FOpen return (log the minted handle + vpath) + a one-shot at the `0x460b64` `[wrapper+0x108]` read (log the value it reads + whether `[+0x110]` was null). | pak handle SEEN at `0x460b64` → pak needs its own `FILE*`-shaped object (Fix-pak is real: option C-shape or a memstream) → surface the pak-shape fork. pak handle NEVER at `0x460b64` (only loose paths reach it) → Fix-pak is a no-op; pak stays the handle-int untouched; build loose-only (option B outcome). |
+
+Z4.1 is theory-independent (raw export enumeration). Z4.2 is the fork-decider and is theory-independent (observe which handle-KIND reaches the raw-CRT site, not "test whether pak crashes"). Both are read-only; no mutation; the full-swap arm (`kFamAll`) reproduces the black screen so the observers fire on the real repro.
+
+**Carried corrections (architect F5, in the eventual fix, not the probe):** the falsified-invariant comments to sweep now include `file_handle.h:6-9` + `file_handle.h:20-38` (the handle-representation "belt-and-suspenders" rationale that `0x460b64` disproves) on TOP of the fix-scope map's `file_handle.h:262-267` + `open_slots.cpp:22-26`.
+
 ## Reframe 10 (2026-07-02) — FIX SETTLED: keep full takeover, FOpen returns a real `FILE*` — probe-first (Gate A cleared, both decisions the user's)
 
 Root cause proven (Reframe 9). Gate A architect-review dispatched on the two coupled forks; both surfaced to the user; both settled:
