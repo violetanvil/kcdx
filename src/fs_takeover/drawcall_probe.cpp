@@ -5,12 +5,15 @@
 
 #include <windows.h>
 #include <d3d12.h>
+#include <intrin.h>  // _ReturnAddress (HOP-3 caller attribution)
 
 #include <atomic>
 #include <cstdint>
 
 #include "MinHook.h"
 #include "../log.h"
+#include "../pe_helpers.h"     // kcdx::pe::OpenModule (WHGame base for caller RVAs)
+#include "draw_caller_tally.h" // HOP-3 Draw* caller attribution
 
 namespace kcdx::fs_takeover {
 
@@ -79,6 +82,11 @@ std::atomic<uint64_t> g_geoBufCreated{0};
 std::atomic<uint64_t> g_texCreated{0};
 std::atomic<uint64_t> g_geoBufBytes{0};   // total bytes of geometry-class buffers
 
+// === HOP 3 (KI-0028) — Draw* caller-attribution tables (draw_caller_tally.h:
+// _ReturnAddress names the engine path issuing the swap-ON non-indexed draws). ===
+DrawCallerTable g_diCallers;  // DrawInstanced callers
+DrawCallerTable g_dxCallers;  // DrawIndexedInstanced callers
+
 void** VtableOf(void* obj) { return *reinterpret_cast<void***>(obj); }
 
 bool HookVtableSlot(void* comObj, int slot, void* detour, void** origOut,
@@ -106,6 +114,14 @@ void STDMETHODCALLTYPE HookedDrawInstanced(
     void* self, UINT vtxPerInstance, UINT instanceCount, UINT startVtx,
     UINT startInstance) {
     g_drawInstanced.fetch_add(1);
+    // HOP 3: name the engine path issuing non-indexed draws (first-seen = one log).
+    const uint64_t newCaller = TallyDrawCaller(g_diCallers, _ReturnAddress());
+    if (newCaller) {
+        LOG_WARN_KV(kCat, "draw_caller_first_seen",
+            KV::BareStr("draw", "instanced"), KV("caller_rva", newCaller),
+            KV::BareStr("note", "new distinct DrawInstanced caller (module-relative "
+                                "RVA when in WHGame; raw otherwise)"));
+    }
     g_origDrawInstanced(self, vtxPerInstance, instanceCount, startVtx, startInstance);
 }
 
@@ -118,6 +134,13 @@ void STDMETHODCALLTYPE HookedDrawIndexed(
     void* self, UINT idxPerInstance, UINT instanceCount, UINT startIdx,
     INT baseVtx, UINT startInstance) {
     g_drawIndexed.fetch_add(1);
+    // HOP 3: the indexed-draw caller set (the swap-OFF comparison arm).
+    const uint64_t newCaller = TallyDrawCaller(g_dxCallers, _ReturnAddress());
+    if (newCaller) {
+        LOG_WARN_KV(kCat, "draw_caller_first_seen",
+            KV::BareStr("draw", "indexed"), KV("caller_rva", newCaller),
+            KV::BareStr("note", "new distinct DrawIndexedInstanced caller"));
+    }
     g_origDrawIndexed(self, idxPerInstance, instanceCount, startIdx, baseVtx,
                       startInstance);
 }
@@ -345,7 +368,17 @@ DWORD WINAPI SummaryMain(LPVOID) {
             KV("geo_buf",         g_geoBufCreated.load()),
             KV("geo_buf_bytes",   g_geoBufBytes.load()),
             KV("tex_created",     g_texCreated.load()));
+        // HOP 3: periodic caller-table dump so an early quit still captures the
+        // per-caller draw attribution (the user never waits on the watcher clock).
+        if (reads % 10 == 9) {
+            DumpDrawCallers("instanced", g_diCallers);
+            DumpDrawCallers("indexed",   g_dxCallers);
+        }
     }
+    // HOP 3: the per-caller draw attribution — the offline arm diff compares these
+    // sets (which engine RVA issues the 21k swap-ON non-indexed draws).
+    DumpDrawCallers("instanced", g_diCallers);
+    DumpDrawCallers("indexed",   g_dxCallers);
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the draw watcher."));
     return 0;
@@ -386,6 +419,14 @@ void DrawcallProbeStart() {
         LOG_ERROR_KV(kCat, "mh_init_failed", KV("mh_status", (uint64_t)mi));
         g_armed.store(false, std::memory_order_release);
         return;
+    }
+    // HOP 3: WHGame base for caller-RVA attribution (unresolved => raw addresses).
+    kcdx::pe::ModuleView whgame{};
+    if (kcdx::pe::OpenModule(L"WHGame.dll", whgame) && whgame.base) {
+        DrawCallerTallySetBase(reinterpret_cast<uintptr_t>(whgame.base));
+    } else {
+        LOG_WARN_KV(kCat, "whgame_base_unresolved", KV::BareStr("detail",
+            "caller RVAs will log as raw addresses (WHGame.dll not resolvable yet)"));
     }
     // The device is NOT captured here — PROBE P owns the single d3d12!D3D12Create
     // Device hook and hands us the device via DrawcallProbeOnDeviceCaptured. Start

@@ -29,6 +29,9 @@
 //                fired. ia_set_ib=0 swap-ON ⇒ this site never reached, or its caller
 //                never fired.
 //   5. 0x777f6c  render-thread command FLUSH (FUN_180777f6c) — top of the submit path.
+//   6. 0x501cb0  HOP-2: the per-item apply+submit fn (IB-field sampler).
+//   7. 0x4ec3a0  HOP-3: pass caller A of the apply+submit fn — submit-gate sampler.
+//   8. 0x5014a0  HOP-3: pass caller B (same gate + a divert route to 0x25400d4).
 //
 // PER-FRAME-SAFE (the Z9 lesson — a per-frame site sampled twice reads as "stuck"):
 // each site latches its FIRST kMaxPerSite fires only, so 14k per-frame repeats do not

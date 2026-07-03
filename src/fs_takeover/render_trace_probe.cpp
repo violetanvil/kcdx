@@ -38,6 +38,20 @@ constexpr uint32_t kRvaApplyDraw      = 0x501cb0;  // FUN_180501cb0(ctx, cmdIf)
 constexpr uintptr_t kApplyItemListBeg = 0x298;     // [ctx+0x298] = first item ptr
 constexpr uintptr_t kApplyItemListEnd = 0x2a0;     // [ctx+0x2a0] = one-past-last item ptr
 constexpr uintptr_t kItemIbFieldOff   = 0x20;      // item+0x20 = plVar6[4] = the IB pointer
+// HOP 3 (_hop3_caller_{a,b} decomps): FUN_180501cb0's TWO callers — the render
+// passes that DECIDE to submit. Both gate the call identically:
+//   [ctx+0x298] != [ctx+0x2a0]                              (item list non-empty)
+//   && [ctx+0x178] != 0 && *(char*)([ctx+0x178]+0x28) != 0  (technique ready)
+// Caller B DIVERTS to FUN_1825400d4 (bypassing the apply+submit fn) when
+// [ctx+0x2b0]'s +0x1a0 char flag is set; caller A early-returns on the same flag
+// via FUN_1804ec9d4. Sampling the gate variables AT ENTRY decomposes the swap-ON
+// bypass into WHICH condition fails (or shows the callers never fire at all).
+constexpr uint32_t  kRvaPassCallerA  = 0x4ec3a0;  // FUN_1804ec3a0(ctx) -> void
+constexpr uint32_t  kRvaPassCallerB  = 0x5014a0;  // FUN_1805014a0(ctx) -> u64
+constexpr uintptr_t kCtxTechObjOff   = 0x178;     // [ctx+0x178] = technique/pass obj
+constexpr uintptr_t kTechReadyOff    = 0x28;      //   its +0x28 ready flag (char)
+constexpr uintptr_t kCtxDivertObjOff = 0x2b0;     // [ctx+0x2b0] = divert-carrier obj
+constexpr uintptr_t kDivertFlagOff   = 0x1a0;     //   its +0x1a0 divert flag (char)
 
 // The WHGame base captured at arm — the _ReturnAddress caller-attribution subtracts it
 // so the logged caller RVA is module-relative + directly comparable across arms/runs.
@@ -195,6 +209,65 @@ void __fastcall HookedApplyDraw(void* ctx, void* cmdIf) {
     g_origApplyDraw(ctx, cmdIf);
 }
 
+// --- HOP 3: the two render-pass callers of FUN_180501cb0 -----------------------------
+// Sample the submit-gate variables at entry (SEH-guarded reads); the cumulative
+// tallies decompose WHICH condition blocks the apply+submit call swap-ON. Each
+// counter is one gate condition — one run attributes the bypass (results-driven
+// obligation 3: the map decomposes per condition).
+struct PassGateTally {
+    std::atomic<uint64_t> invokes{0};
+    std::atomic<uint64_t> listEmpty{0};     // [0x298]==[0x2a0]: nothing enqueued
+    std::atomic<uint64_t> techNull{0};      // [0x178]==0: no technique obj
+    std::atomic<uint64_t> techNotReady{0};  // tech+0x28==0: technique not ready
+    std::atomic<uint64_t> divertFlag{0};    // divert obj +0x1a0 != 0: alt route
+    std::atomic<uint64_t> gatePass{0};      // all submit conditions hold at entry
+};
+PassGateTally g_passA, g_passB;
+
+void SamplePassGate(const char* site, PassGateTally& t, void* ctx) {
+    const uintptr_t c = reinterpret_cast<uintptr_t>(ctx);
+    const uint64_t inv  = t.invokes.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t beg  = SafeReadU64(c + kApplyItemListBeg);
+    const uint64_t end  = SafeReadU64(c + kApplyItemListEnd);
+    const uint64_t tech = SafeReadU64(c + kCtxTechObjOff);
+    const uint64_t rdy  = tech ? (SafeReadU64(tech + kTechReadyOff) & 0xff) : 0;
+    const uint64_t dvo  = SafeReadU64(c + kCtxDivertObjOff);
+    const uint64_t dvf  = dvo ? (SafeReadU64(dvo + kDivertFlagOff) & 0xff) : 0;
+    const bool listEmpty = (beg == end);
+    if (listEmpty)      t.listEmpty.fetch_add(1, std::memory_order_relaxed);
+    if (!tech)          t.techNull.fetch_add(1, std::memory_order_relaxed);
+    if (tech && !rdy)   t.techNotReady.fetch_add(1, std::memory_order_relaxed);
+    if (dvf)            t.divertFlag.fetch_add(1, std::memory_order_relaxed);
+    if (!listEmpty && tech && rdy) t.gatePass.fetch_add(1, std::memory_order_relaxed);
+    if (inv < kMaxPerSite) {
+        LOG_WARN_KV(kCat, "pass_gate",
+            KV::BareStr("site", site),
+            KV("inv",        inv),
+            KV("items",      (end > beg) ? (end - beg) / sizeof(void*) : 0),
+            KV("tech",       tech),
+            KV("tech_ready", rdy),
+            KV("divert",     dvf),
+            KV::BareStr("note",
+                "submit-gate state at pass entry. items=0 => nothing enqueued; "
+                "tech=0 or tech_ready=0 => technique blocks; divert!=0 => the "
+                "alt-route flag is set (caller B routes AWAY from apply+submit)."));
+    }
+}
+
+using PassAFn_t = void(__fastcall*)(void* ctx);
+PassAFn_t g_origPassA = nullptr;
+void __fastcall HookedPassA(void* ctx) {
+    SamplePassGate("pass_caller_a", g_passA, ctx);
+    g_origPassA(ctx);
+}
+
+using PassBFn_t = uint64_t(__fastcall*)(void* ctx);
+PassBFn_t g_origPassB = nullptr;
+uint64_t __fastcall HookedPassB(void* ctx) {
+    SamplePassGate("pass_caller_b", g_passB, ctx);
+    return g_origPassB(ctx);
+}
+
 // Install one after-hook at base+rva. Logs the outcome; a failure is loud (not silent).
 bool ArmSite(uintptr_t base, uint32_t rva, void* detour, void** origOut,
              const char* label) {
@@ -253,13 +326,36 @@ void RenderTraceProbeStart() {
     // HOP 2 IB-field sampler.
     armed += ArmSite(base, kRvaApplyDraw, reinterpret_cast<void*>(&HookedApplyDraw),
                      reinterpret_cast<void**>(&g_origApplyDraw), "apply_draw") ? 1 : 0;
+    // HOP 3: the two render-pass callers (submit-gate samplers).
+    armed += ArmSite(base, kRvaPassCallerA, reinterpret_cast<void*>(&HookedPassA),
+                     reinterpret_cast<void**>(&g_origPassA), "pass_caller_a") ? 1 : 0;
+    armed += ArmSite(base, kRvaPassCallerB, reinterpret_cast<void*>(&HookedPassB),
+                     reinterpret_cast<void**>(&g_origPassB), "pass_caller_b") ? 1 : 0;
 
     // A bounded watcher emits the cumulative IB-null tally so the confirm survives past
     // the per-invocation cap (the whole-run null-rate IS the signal).
     struct TallyWatcher {
+        static void EmitPassGate(const char* site, PassGateTally& t) {
+            LOG_INFO_KV(kCat, "pass_gate_tally",
+                KV::BareStr("site", site),
+                KV("invokes",        t.invokes.load()),
+                KV("list_empty",     t.listEmpty.load()),
+                KV("tech_null",      t.techNull.load()),
+                KV("tech_not_ready", t.techNotReady.load()),
+                KV("divert_flag",    t.divertFlag.load()),
+                KV("gate_pass",      t.gatePass.load()),
+                KV::BareStr("note",
+                    "HOP-3 cumulative submit-gate tally for this pass caller. "
+                    "invokes=0 => the pass itself never runs (walk one more up); "
+                    "gate_pass=0 + a dominant blocker column => THAT condition is "
+                    "the swap-ON bypass; gate_pass>0 yet apply_invokes=0 => "
+                    "re-read (divert route or a mid-body branch)."));
+        }
         static DWORD WINAPI Run(LPVOID) {
             for (int i = 0; i < 40; ++i) {  // ~2 min at 3s
                 Sleep(3000);
+                EmitPassGate("pass_caller_a", g_passA);
+                EmitPassGate("pass_caller_b", g_passB);
                 LOG_INFO_KV(kCat, "ib_tally",
                     KV("apply_invokes", g_applyInvokes.load()),
                     KV("items_seen",    g_itemsSeen.load()),
@@ -281,12 +377,12 @@ void RenderTraceProbeStart() {
         KV("sites_armed", (uint64_t)armed),
         KV("wh_base", base),
         KV::BareStr("detail",
-            "PROBE Z10 (+HOP2): render-submission trace armed at 6 sites (stage "
+            "PROBE Z10 (+HOP2+HOP3): render-submission trace armed at 8 sites (stage "
             "sequencer / compile pass / CCRO::Compile / engine SetIndexBuffer / render "
-            "flush / apply_draw IB-sampler). seq records = the ordered trace; apply_draw_"
-            "items + ib_tally = the HOP-2 per-item IB-field null-rate (confirms the "
-            "render items are built without index buffers swap-ON). Run swap-OFF (menu) "
-            "+ swap-ON (black); diff."));
+            "flush / apply_draw IB-sampler / pass_caller_a 0x4ec3a0 / pass_caller_b "
+            "0x5014a0). pass_gate + pass_gate_tally = the HOP-3 submit-gate state at "
+            "each pass entry (which condition bypasses the apply+submit fn swap-ON). "
+            "Run swap-OFF (menu) + swap-ON (black); diff."));
 }
 
 }  // namespace kcdx::fs_takeover
