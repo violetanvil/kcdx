@@ -1,0 +1,80 @@
+
+=== WAIT ROUTINE (Sleep call + predicate loop, 0x1c1e700..): fn 0x1c1e700 .. 0x1c1e828 ===
+0x01c1e700 push    rbx
+0x01c1e702 sub     rsp, 0x20
+0x01c1e706 mov     rbx, rcx
+0x01c1e709 mov     ecx, 0x10
+0x01c1e70e call    qword ptr [rip + 0x1de51b4]  ; IMPORT malloc
+0x01c1e714 mov     rdx, rax
+0x01c1e717 test    rax, rax
+0x01c1e71a je      0x181c1e737
+0x01c1e71c mov     rax, qword ptr [rip + 0x34a7875]  ; [.data] 0x50c5f98 "<"
+0x01c1e723 mov     qword ptr [rdx], rax
+0x01c1e726 mov     qword ptr [rdx + 8], rbx
+0x01c1e72a mov     qword ptr [rip + 0x34a7867], rdx  ; [.data] 0x50c5f98 "<"
+0x01c1e731 add     rsp, 0x20
+0x01c1e735 pop     rbx
+0x01c1e736 ret     
+0x01c1e737 call    0x181c1e6fa  -> fn 0x1c1e6fa
+0x01c1e73c int3    
+0x01c1e73d jmp     qword ptr [rip + 0x1de42bd]  ; IMPORT ?_Throw_Cpp_error@std@@YAXH@Z
+0x01c1e743 jmp     qword ptr [rip + 0x1de42bf]  ; IMPORT _Mtx_lock
+0x01c1e749 jmp     qword ptr [rip + 0x1de42c1]  ; IMPORT _Mtx_unlock
+0x01c1e74f jmp     qword ptr [rip + 0x1de42eb]  ; IMPORT _Xtime_get_ticks
+0x01c1e755 jmp     qword ptr [rip + 0x1de42ed]  ; IMPORT _Query_perf_counter
+0x01c1e75b jmp     qword ptr [rip + 0x1de42ef]  ; IMPORT _Query_perf_frequency
+0x01c1e761 jmp     qword ptr [rip + 0x1de42f1]  ; IMPORT _Thrd_join
+0x01c1e767 jmp     qword ptr [rip + 0x1de42f3]  ; IMPORT _Thrd_id
+0x01c1e76d jmp     qword ptr [rip + 0x1de42f5]  ; IMPORT _Cnd_do_broadcast_at_thread_exit
+0x01c1e773 jmp     qword ptr [rip + 0x1de4307]  ; IMPORT ?_Decref@facet@locale@std@@UEAAPEAV_Facet_base@3@XZ
+0x01c1e779 jmp     qword ptr [rip + 0x1de4319]  ; IMPORT ?_Incref@facet@locale@std@@UEAAXXZ
+0x01c1e77f jmp     qword ptr [rip + 0x1de43fb]  ; IMPORT _Cnd_wait
+0x01c1e785 jmp     qword ptr [rip + 0x1de43fd]  ; IMPORT _Cnd_broadcast
+0x01c1e78b int3    
+0x01c1e78c mov     qword ptr [rsp + 8], rbx
+0x01c1e791 mov     qword ptr [rsp + 0x10], rbp
+0x01c1e796 mov     qword ptr [rsp + 0x18], rsi
+0x01c1e79b push    rdi
+0x01c1e79c push    r14
+0x01c1e79e push    r15
+0x01c1e7a0 sub     rsp, 0x20
+0x01c1e7a4 xor     ebx, ebx
+0x01c1e7a6 mov     r14d, r8d
+0x01c1e7a9 mov     bpl, r9b
+0x01c1e7ac mov     rdi, rdx
+0x01c1e7af mov     r15, rcx
+0x01c1e7b2 mov     esi, ebx
+0x01c1e7b4 test    r9b, r9b
+0x01c1e7b7 je      0x181c1e7c2
+0x01c1e7b9 call    qword ptr [rip + 0x1de3bf1]  ; IMPORT GetTickCount64
+0x01c1e7bf mov     rsi, rax
+0x01c1e7c2 dec     dword ptr [rdi + 0x4c]
+0x01c1e7c5 lea     rdx, [rdi + 0x10]
+0x01c1e7c9 lea     rcx, [r15 + 8]
+0x01c1e7cd mov     dword ptr [rdi + 0x48], 0xffffffff
+0x01c1e7d4 xor     r9d, r9d
+0x01c1e7d7 mov     r8d, r14d
+0x01c1e7da call    qword ptr [rip + 0x1de3ce8]  ; IMPORT SleepConditionVariableSRW
+0x01c1e7e0 test    eax, eax  <== RETURN ADDR (Main here)
+0x01c1e7e2 jne     0x181c1e7fc
+0x01c1e7e4 test    bpl, bpl
+0x01c1e7e7 je      0x181c1e7f7
+0x01c1e7e9 call    qword ptr [rip + 0x1de3bc1]  ; IMPORT GetTickCount64
+0x01c1e7ef sub     rax, rsi
+0x01c1e7f2 cmp     rax, r14
+0x01c1e7f5 jb      0x181c1e7fc
+0x01c1e7f7 mov     ebx, 2
+0x01c1e7fc call    qword ptr [rip + 0x1de4016]  ; IMPORT GetCurrentThreadId
+0x01c1e802 inc     dword ptr [rdi + 0x4c]
+0x01c1e805 mov     rbp, qword ptr [rsp + 0x48]
+0x01c1e80a mov     rsi, qword ptr [rsp + 0x50]
+0x01c1e80f mov     dword ptr [rdi + 0x48], eax
+0x01c1e812 mov     eax, ebx
+0x01c1e814 mov     rbx, qword ptr [rsp + 0x40]
+0x01c1e819 add     rsp, 0x20
+0x01c1e81d pop     r15
+0x01c1e81f pop     r14
+0x01c1e821 pop     rdi
+0x01c1e822 ret     
+0x01c1e823 int3    
+0x01c1e824 xor     r9d, r9d

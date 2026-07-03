@@ -1,0 +1,69 @@
+
+=== OWNER routine (start 0x9ace00): fn 0x9ace00 .. 0x9acf00 ===
+0x009ace00 je      0x1809ace0d
+0x009ace02 mov     rcx, qword ptr [rsp + 0x20]
+0x009ace07 call    qword ptr [rip + 0x3055c03]  ; IMPORT _Mtx_unlock
+0x009ace0d add     rsp, 0x30
+0x009ace11 pop     rbx
+0x009ace12 ret     
+0x009ace13 int3    
+0x009ace14 mov     qword ptr [rsp + 0x18], rbx
+0x009ace19 push    rbp
+0x009ace1a push    rsi
+0x009ace1b push    rdi
+0x009ace1c mov     rbp, rsp
+0x009ace1f sub     rsp, 0x30
+0x009ace23 mov     rbx, rcx
+0x009ace26 lea     rdx, [rbp + 0x28]
+0x009ace2a mov     rcx, qword ptr [rip + 0x47b9cc7]  ; [.data] 0x5166af8
+0x009ace31 mov     rax, qword ptr [rcx]
+0x009ace34 call    qword ptr [rax + 0x30]
+0x009ace37 lea     rdx, [rbx + 0x58]
+0x009ace3b lea     rcx, [rbp - 0x10]
+0x009ace3f call    0x1809acf24  -> fn 0x9acf24
+0x009ace44 mov     qword ptr [rbp + 0x20], 0xc8
+0x009ace4c lea     rsi, [rbx + 0xa8]
+0x009ace53 jmp     0x1809acea5
+0x009ace55 cmp     byte ptr [rbp - 8], 0
+0x009ace59 je      0x1809ace65
+0x009ace5b mov     rcx, qword ptr [rbp - 0x10]
+0x009ace5f call    qword ptr [rip + 0x3055bab]  ; IMPORT _Mtx_unlock
+0x009ace65 mov     rcx, qword ptr [rip + 0x4acece4]  ; [.data] 0x547bb50
+0x009ace6c mov     rax, qword ptr [rcx]
+0x009ace6f call    qword ptr [rax + 0x108]
+0x009ace75 test    rax, rax
+0x009ace78 je      0x1809ace98
+0x009ace7a mov     rcx, qword ptr [rip + 0x3f7ea47]  ; [.data] 0x492b8c8
+0x009ace81 test    rcx, rcx
+0x009ace84 je      0x1809ace98
+0x009ace86 mov     rdx, qword ptr [rcx]
+0x009ace89 mov     r8, rax
+0x009ace8c mov     r9, qword ptr [rdx + 0x720]
+0x009ace93 mov     dl, 1
+0x009ace95 call    r9
+0x009ace98 lea     rdx, [rbx + 0x58]
+0x009ace9c lea     rcx, [rbp - 0x10]
+0x009acea0 call    0x1809acf24  -> fn 0x9acf24
+0x009acea5 mov     r9, rbx
+0x009acea8 lea     r8, [rbp + 0x20]
+0x009aceac lea     rdx, [rbp - 0x10]
+0x009aceb0 mov     rcx, rsi
+0x009aceb3 call    0x181de92a0  -> fn 0x1de92a0
+0x009aceb8 test    al, al  <== RETURN ADDR (Main here)
+0x009aceba je      0x1809ace55
+0x009acebc cmp     byte ptr [rbp - 8], 0
+0x009acec0 je      0x1809acecc
+0x009acec2 mov     rcx, qword ptr [rbp - 0x10]
+0x009acec6 call    qword ptr [rip + 0x3055b44]  ; IMPORT _Mtx_unlock
+0x009acecc lea     rcx, [rbx + 0x140]
+0x009aced3 call    0x180bb2830  -> fn 0xbb2830
+0x009aced8 test    eax, eax
+0x009aceda jne     0x1809acf15
+0x009acedc mov     rcx, qword ptr [rip + 0x47b9c15]  ; [.data] 0x5166af8
+0x009acee3 lea     rdx, [rbp + 0x20]
+0x009acee7 mov     rax, qword ptr [rcx]
+0x009aceea call    qword ptr [rax + 0x30]
+0x009aceed mov     rcx, qword ptr [rip + 0x4acec54]  ; [.data] 0x547bb48
+0x009acef4 xorps   xmm0, xmm0
+0x009acef7 mov     rax, qword ptr [rax]
+0x009acefa sub     rax, qword ptr [rbp + 0x28]
