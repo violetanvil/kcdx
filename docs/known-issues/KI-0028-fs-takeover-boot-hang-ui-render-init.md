@@ -1326,6 +1326,17 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 14 (2026-07-03) — PROBE Z7: the renderer-dispatch gate [0x492b908] is NOT the differentiator (it IS installed on the black arm); the geometry drop is DEEPER
+
+PROBE Z7 (run `kcdx-dev_2026-07-03_01-52-47.log`, full-swap black arm, `draw_indexed=0` confirmed) read the tick's per-frame render-dispatch gate `[0x492b908]` — the `0x667ed0` gate that, if null, would skip the whole scene-submission block every frame (Measurement 2's leading candidate for present-alive/draw_indexed=0).
+
+- **Result: `verdict saw_non_null=1 first_non_null=0x7ff...c0 wakes=359`.** The renderer singleton read null for the first ~19 wakes (early boot, pre-render-init), then went NON-NULL at wake 19 and stayed non-null for the entire ~90s run. So `[0x492b908]` IS installed on the full-swap black arm.
+- **This gate is NOT the draw_indexed=0 differentiator.** The tick's `0x667ed0` render-dispatch block is NOT skipped — the renderer runs. Measurement 2's §22 "non-null-both" outcome is the one that landed: the block runs swap-ON and draw_indexed=0 originates DEEPER (inside a gated slot call at `[singleton+0x240/0x250/0x248]`, or the geometry command built further down).
+
+**Probe mechanism note:** the first Z7 build hooked the hot tick dispatcher `0x667b24` and `MH_EnableHook` FAILED (patching a hot function already executing on the main thread at the seat, contending with the adjacent DISPATCH_PROBE arms). Rewritten to a watcher-thread read (PROBE K/S/Y shape) — no hook — which armed cleanly and answered the question. Lesson: read a process-lifetime gEnv-table pointer from a watcher thread, never hook the hot tick.
+
+**VERDICT — the frontier is now confirmed BELOW the render-dispatch gate.** The renderer runs (pass entered), yet no indexed geometry is drawn. This lands on the two-layer discriminator (Reframe 13's option set): branch **(a)** IB resources never CREATED, or a drop INSIDE the renderer's gated slot calls between "renderer runs" and "geometry submitted" — NOT branch (b) pass-never-entered (the pass IS entered). Next probe: instrument IB resource creation (`ID3D12Device::CreateCommittedResource`/`CreatePlacedResource`, SDK-vtable-pinned, buildable now) + the render-item append leaf, to split "IB never made" from "IB made but never bound/submitted". Z7 retired (question answered), no-residue.
+
 ## Reframe 13 (2026-07-02) — the current wedge is NO INDEXED GEOMETRY on a LIVE, PRESENTING game; NOT an abort, NOT a stall; the bind-root fix is live+working; 4 root causes now overturned
 
 Re-read the SAME `kcdx-dev_2026-07-02_21-05-00.log` (the black run) after the fresh-frame reframe. Every prior root-cause banner is overturned by the log's own ground truth:
