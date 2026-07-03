@@ -23,6 +23,18 @@ constexpr const char* kCat = "DRAW_PROBE";
 // fixed by the interface spec, cross-checked against the documented method order;
 // NOT a KCD2-specific vtable, so AP3 does not apply).
 constexpr int kDevSlot_CreateCommandList = 12;     // ID3D12Device
+// === DIAGNOSTIC (PROBE Z8 — KI-0028) — ID3D12Device resource-CREATION slots.
+// SDK d3d12.h ID3D12DeviceVtbl 0-based order (same header + counting that fixes
+// CreateCommandList=12 above — verified against the 10.0.26100.0 header's vtbl
+// struct: ...25 GetResourceAllocationInfo, 26 GetCustomHeapProperties,
+// 27 CreateCommittedResource, 28 CreateHeap, 29 CreatePlacedResource). NOT a
+// KCD2 vtable — AP3 does not apply. The Z8 question (Reframe 14): the renderer
+// runs (pass entered) but draw_indexed=0 — are world-GEOMETRY index buffers ever
+// CREATED swap-ON? A geometry buffer is a BUFFER resource (Dimension==BUFFER) on
+// the DEFAULT heap with no RT/DS/UAV flags. Counting them splits branch (a) "IB
+// never made" from "IB made but never bound" (the existing ia_set_ib==0). ===
+constexpr int kDevSlot_CreateCommittedResource = 27;
+constexpr int kDevSlot_CreatePlacedResource    = 29;
 constexpr int kCmdSlot_DrawInstanced        = 12;  // ID3D12GraphicsCommandList
 constexpr int kCmdSlot_DrawIndexedInstanced = 13;
 // SOURCE: d3d12.h ID3D12GraphicsCommandListVtbl member order, re-verified 0-based
@@ -58,6 +70,14 @@ std::atomic<bool>     g_firstIBCaptured{false};
 std::atomic<uint64_t> g_firstIB_va{0};
 std::atomic<uint64_t> g_firstIB_size{0};
 std::atomic<uint64_t> g_firstIB_fmt{0};
+// === PROBE Z8 counters — resource CREATION (does the engine ever MAKE geometry
+// buffers swap-ON?). buf_created = BUFFER-dimension resources; geo_buf = the
+// geometry-class subset (DEFAULT heap, no RT/DS/UAV flag — the shape an index/
+// vertex buffer takes); tex_created = non-buffer (textures/RTs). ===
+std::atomic<uint64_t> g_bufCreated{0};
+std::atomic<uint64_t> g_geoBufCreated{0};
+std::atomic<uint64_t> g_texCreated{0};
+std::atomic<uint64_t> g_geoBufBytes{0};   // total bytes of geometry-class buffers
 
 void** VtableOf(void* obj) { return *reinterpret_cast<void***>(obj); }
 
@@ -224,6 +244,67 @@ HRESULT STDMETHODCALLTYPE HookedCreateCmdList(
     return hr;
 }
 
+// --- PROBE Z8: classify + tally a resource-creation call. Shared by both
+// CreateCommittedResource and CreatePlacedResource (the desc + heap-props shape is
+// what we read; the heap-management difference between them does not matter here).
+// heapProps is null for CreatePlacedResource (the heap is a separate arg) — treat
+// null as "not identifiably a readback/upload heap", i.e. still geometry-eligible.
+void Z8ClassifyResource(const D3D12_HEAP_PROPERTIES* heapProps,
+                        const D3D12_RESOURCE_DESC* desc) {
+    if (!desc) return;
+    if (desc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+        g_bufCreated.fetch_add(1);
+        // Geometry-class buffer: a DEFAULT-heap buffer with NO render-target,
+        // depth-stencil, or unordered-access flag (index/vertex buffers are plain
+        // DEFAULT buffers; RT/DS/UAV flags mark compute/render scratch, not mesh
+        // geometry). heapProps null (placed) → still eligible (the flags decide).
+        const bool defaultHeap =
+            (heapProps == nullptr) ||
+            (heapProps->Type == D3D12_HEAP_TYPE_DEFAULT);
+        const bool noSpecialFlag =
+            (desc->Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
+                            D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL |
+                            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)) == 0;
+        if (defaultHeap && noSpecialFlag) {
+            g_geoBufCreated.fetch_add(1);
+            g_geoBufBytes.fetch_add(static_cast<uint64_t>(desc->Width));
+        }
+    } else {
+        g_texCreated.fetch_add(1);  // TEXTURE1D/2D/3D
+    }
+}
+
+// --- ID3D12Device::CreateCommittedResource (slot 27) ---
+using CreateCommitted_t = HRESULT(STDMETHODCALLTYPE*)(
+    void* self, const D3D12_HEAP_PROPERTIES* heapProps, D3D12_HEAP_FLAGS heapFlags,
+    const D3D12_RESOURCE_DESC* desc, D3D12_RESOURCE_STATES initState,
+    const D3D12_CLEAR_VALUE* clear, REFIID riid, void** ppResource);
+CreateCommitted_t g_origCreateCommitted = nullptr;
+HRESULT STDMETHODCALLTYPE HookedCreateCommitted(
+    void* self, const D3D12_HEAP_PROPERTIES* heapProps, D3D12_HEAP_FLAGS heapFlags,
+    const D3D12_RESOURCE_DESC* desc, D3D12_RESOURCE_STATES initState,
+    const D3D12_CLEAR_VALUE* clear, REFIID riid, void** ppResource) {
+    Z8ClassifyResource(heapProps, desc);
+    return g_origCreateCommitted(self, heapProps, heapFlags, desc, initState, clear,
+                                 riid, ppResource);
+}
+
+// --- ID3D12Device::CreatePlacedResource (slot 29) — heap is a separate arg; no
+// heap-props pointer, so classification reads the desc alone (null heapProps). ---
+using CreatePlaced_t = HRESULT(STDMETHODCALLTYPE*)(
+    void* self, void* heap, UINT64 heapOffset, const D3D12_RESOURCE_DESC* desc,
+    D3D12_RESOURCE_STATES initState, const D3D12_CLEAR_VALUE* clear, REFIID riid,
+    void** ppResource);
+CreatePlaced_t g_origCreatePlaced = nullptr;
+HRESULT STDMETHODCALLTYPE HookedCreatePlaced(
+    void* self, void* heap, UINT64 heapOffset, const D3D12_RESOURCE_DESC* desc,
+    D3D12_RESOURCE_STATES initState, const D3D12_CLEAR_VALUE* clear, REFIID riid,
+    void** ppResource) {
+    Z8ClassifyResource(nullptr, desc);
+    return g_origCreatePlaced(self, heap, heapOffset, desc, initState, clear, riid,
+                              ppResource);
+}
+
 // --- device handed over by PROBE P (MinHook allows ONE hook per target, so PROBE
 // S does NOT re-hook D3D12CreateDevice — PROBE P owns it and calls us). ---
 std::atomic<void*> g_device{nullptr};
@@ -256,7 +337,14 @@ DWORD WINAPI SummaryMain(LPVOID) {
             KV("ia_set_topo",     g_iaSetTopo.load()),
             KV("first_ib_va",     g_firstIB_va.load()),
             KV("first_ib_size",   g_firstIB_size.load()),
-            KV("first_ib_fmt",    g_firstIB_fmt.load()));
+            KV("first_ib_fmt",    g_firstIB_fmt.load()),
+            // === PROBE Z8 — resource creation. geo_buf==0 => geometry buffers
+            // NEVER created (branch a); geo_buf>0 + ia_set_ib==0 => created but
+            // never bound (drop between create and bind). ===
+            KV("buf_created",     g_bufCreated.load()),
+            KV("geo_buf",         g_geoBufCreated.load()),
+            KV("geo_buf_bytes",   g_geoBufBytes.load()),
+            KV("tex_created",     g_texCreated.load()));
     }
     LOG_INFO_KV(kCat, "watcher_done",
         KV::BareStr("detail", "40 summary reads taken; stopping the draw watcher."));
@@ -325,6 +413,26 @@ void DrawcallProbeOnDeviceCaptured(void* device) {
             "patched ID3D12Device::CreateCommandList (slot 12) on the device PROBE "
             "P handed over; the first DIRECT/BUNDLE list patches the shared "
             "command-list vtable for the Draw* + OMSetRenderTargets counters."));
+    // === PROBE Z8 — patch the two resource-CREATION slots on the same device
+    // (cold path, patched once here — NOT a hot-function hook). Answers: are
+    // world-geometry index/vertex buffers ever CREATED swap-ON? ===
+    bool okCommit = HookVtableSlot(device, kDevSlot_CreateCommittedResource,
+                                   reinterpret_cast<void*>(&HookedCreateCommitted),
+                                   reinterpret_cast<void**>(&g_origCreateCommitted),
+                                   "CreateCommittedResource");
+    bool okPlaced = HookVtableSlot(device, kDevSlot_CreatePlacedResource,
+                                   reinterpret_cast<void*>(&HookedCreatePlaced),
+                                   reinterpret_cast<void**>(&g_origCreatePlaced),
+                                   "CreatePlacedResource");
+    LOG_INFO_KV(kCat, "z8_resource_hooks_armed",
+        KV("committed_ok", okCommit ? 1 : 0), KV("placed_ok", okPlaced ? 1 : 0),
+        KV::BareStr("detail",
+            "PROBE Z8: patched ID3D12Device::CreateCommittedResource (27) + "
+            "CreatePlacedResource (29). geo_buf counts DEFAULT-heap buffers with no "
+            "RT/DS/UAV flag (the index/vertex-buffer shape). geo_buf==0 swap-ON => "
+            "world geometry buffers are NEVER CREATED (branch a); geo_buf>0 with "
+            "ia_set_ib==0 => created but never bound (drop is between create + "
+            "bind)."));
 }
 
 }  // namespace kcdx::fs_takeover

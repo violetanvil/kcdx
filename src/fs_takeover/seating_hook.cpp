@@ -16,6 +16,7 @@
 #include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
 #include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
 #include "stall_stack_probe.h"  // === DIAGNOSTIC (PROBE Y) === KI-0028 stall-no-geometry stack trigger
+#include "render_trace_probe.h"  // === DIAGNOSTIC (PROBE Z10) === KI-0028 ordered render-submission trace
 #include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
 #include "../asset_overlay.h"
 #include "../log.h"
@@ -183,6 +184,17 @@ void __fastcall HookedConstructStore(void* csystem) {
     // A/B diff that names the sequencer gate. NO-RESIDUE: remove with PROBE Y.
     kcdx::fs_takeover::StallStackProbeStart();
     // === END PROBE Y arm ===
+
+    // === DIAGNOSTIC (PROBE Z10) — KI-0028 ordered differential render-submission trace ===
+    // METHOD RESET (DESIGN.md): stop spot-checking. Instrument the render-submission
+    // path (Step-1 static: stage sequencer 0x86b574 → compile pass 0x429384 →
+    // CCRO::Compile 0x429794 → ★ engine SetIndexBuffer 0x5025b4 → render flush 0x777f6c)
+    // and emit SEQUENCED RENDER_TRACE records. Armed here, BEFORE the noswap return, so
+    // swap-ON (black) vs swap-OFF (menu) instrument the same phase — the offline diff of
+    // the two seq sequences names the FIRST divergence (the answer, no theory). Brackets
+    // the live drawcall_probe (ia_set_ib / draw_indexed). NO-RESIDUE: remove with Z10.
+    kcdx::fs_takeover::RenderTraceProbeStart();
+    // === END PROBE Z10 arm ===
 
     // === DIAGNOSTIC (PROBE W) — resolve WHGame's module bounds ONCE here, at the
     // seat (single-threaded, before any FS slot fires), into lock-free atoms used

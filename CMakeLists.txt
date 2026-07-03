@@ -324,6 +324,7 @@ add_library(kcdx SHARED
     src/fs_takeover/drawcall_probe.cpp
     src/fs_takeover/reswap_probe.cpp
     src/fs_takeover/stall_stack_probe.cpp
+    src/fs_takeover/render_trace_probe.cpp
     src/fs_takeover/pak_reader.cpp
     src/fs_takeover/asset_index.cpp
     src/fs_takeover/file_handle.cpp
