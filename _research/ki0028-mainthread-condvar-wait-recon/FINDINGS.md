@@ -90,9 +90,28 @@ reaches the shader cache-version check and stops) and the §12.B "boot-phase seq
 concrete: the sequencer is a shader-system-ready wait, and `[0x492b8c8]` never signals ready. `draw_indexed=0` /
 black are downstream of THIS stall (Main never advances past shader readiness to build scene pipelines).
 
+## The wait lives in CShaderMan code, coordinating with the renderer singleton (STATIC, verified)
+
+Exact xref work (`disasm_condvar_wait.py` opcode-scan, not a heuristic):
+- **The owner wait-loop `0x9ace14` is called from exactly ONE site: `0x9accd7`**, inside fn `0x9acc9c`.
+- `0x9acc9c` is a **CShaderMan method**: its else-arm (`0x9accbf`) does `mov rcx,[0x547bb50]` (CShaderMan) +
+  `mov [rcx+0x29c0], [0x492b9ac]`; its taken-arm (`cmp [rcx],0; jne 0x9accd7`) enters the wait. So the wait is
+  reached from CShaderMan lifecycle code — Main blocks HERE waiting for shader-system readiness.
+- **The sibling fn `0x9acc5c` (same cluster) dereferences the RENDERER singleton `[0x492b908]`** (the exact gate
+  from Reframe 14 / the tick recon): `mov rcx,[0x492b908]; mov rax,[rcx]; call [rax+0x860]`. So this
+  `0x9acbxx–0x9acexx` cluster is CShaderMan coordinating with BOTH the renderer `[0x492b908]` AND the producer
+  `[0x492b8c8]`. This ties the condvar wait directly to the renderer-gate axis.
+- `[0x492b8c8]` has **39 exact `mov r64,[rip]->0x492b8c8` reads** across .text with a large recurring vtable
+  (slots +0x108/+0x210/+0x240/+0x2a0/+0x2e8/+0x3f0/+0x428/+0x430/+0x558/+0x690/+0x720) — a major engine
+  interface, a sibling of the renderer `[0x492b908]` (both expose +0x108, the readiness-poll slot). No direct
+  .text writer (gEnv-table install, like 0x492b908).
+
 ## The frontier (next step) — why does producer 0x492b8c8 never signal ready swap-ON?
 
-The wait is identified; the open question narrows to the PRODUCER side:
+**Static has taken this as far as it productively goes** (results-driven §4): the CONSUMER side is fully read
+(CShaderMan `condition_variable::wait_for` on `[rbx+0x50]`, kicking `[0x492b8c8]+0x720`). Whether the producer's
+job runs/completes swap-ON vs swap-OFF is a RUNTIME fact — a `/debug` A/B probe, not a static read. The open
+question narrows to the PRODUCER side:
 1. Identify subsystem `[0x492b8c8]` (gEnv-table, same `0x492bxxx` family as renderer `0x492b908`) — likely the
    async shader-compile / render-job dispatcher. Read its vtable-`+0x720` callee (the kick) + who sets `[rbx+0x50]`.
 2. Determine what the FS swap perturbs such that the kick is issued but the ready-flag never flips: does the kick
