@@ -1,9 +1,18 @@
 # KI-0028 — the MAIN thread is STUCK in a condvar wait mid-tick (invasive, 2 identical samples)
 
+> **⚠ SUPERSEDED HEADLINE (PROBE Z9, 2026-07-03 run `kcdx-dev_2026-07-03_10-16-32.log`) — this doc's core
+> "Main is STUCK in the CShaderMan condvar wait" claim is FALSIFIED. Z9 hooked the wait-loop `0x9ace14` and
+> the ready-flag `[wait_obj+0x50]` FLIPPED to non-zero at wall_ms=7140 (shader system became ready), and the
+> loop ran `wait_enters=13981` times over ~2 min. So `0x9ace14` is a PER-FRAME wait that completes every frame,
+> NOT a one-shot boot gate that hangs. The two byte-identical invasive samples caught a RECURRING per-frame wait
+> mid-block — the same "per-frame trap" the FULL-HANDOFF §13 warns about (like PROBE M's `0x869c39`), NOT a
+> freeze. Reframe 15's "Main is stuck" + Reframe 16's "producer never signals ready" are BOTH overturned by Z9.
+> The terminal stall is DOWNSTREAM of / different from this wait — it was never located. See §"PROBE Z9" below.**
+
 **Date:** 2026-07-03 · **Method:** invasive cdb (`-p 42364`, `qd`-detached — game left running) on the live
 black-screen process + PROBE Z8 resource-creation counts (run `kcdx-dev_2026-07-03_02-25-43.log`).
 **Trust:** primary evidence — two `~0 k` samples byte-identical (same Child-SP), RVAs resolved against WHGame
-base `0x7ffdf45b0000`.
+base `0x7ffdf45b0000`. **See the SUPERSEDED-HEADLINE banner above — the "stuck" reading is falsified by Z9.**
 
 ## The decisive facts
 
@@ -106,26 +115,50 @@ Exact xref work (`disasm_condvar_wait.py` opcode-scan, not a heuristic):
   interface, a sibling of the renderer `[0x492b908]` (both expose +0x108, the readiness-poll slot). No direct
   .text writer (gEnv-table install, like 0x492b908).
 
-## The frontier (next step) — why does producer 0x492b8c8 never signal ready swap-ON?
+## PROBE Z9 (RUNTIME, DECISIVE) — the ready-flag FLIPS; this wait is per-frame, NOT the stall
 
-**Static has taken this as far as it productively goes** (results-driven §4): the CONSUMER side is fully read
-(CShaderMan `condition_variable::wait_for` on `[rbx+0x50]`, kicking `[0x492b8c8]+0x720`). Whether the producer's
-job runs/completes swap-ON vs swap-OFF is a RUNTIME fact — a `/debug` A/B probe, not a static read. The open
-question narrows to the PRODUCER side:
-1. Identify subsystem `[0x492b8c8]` (gEnv-table, same `0x492bxxx` family as renderer `0x492b908`) — likely the
-   async shader-compile / render-job dispatcher. Read its vtable-`+0x720` callee (the kick) + who sets `[rbx+0x50]`.
-2. Determine what the FS swap perturbs such that the kick is issued but the ready-flag never flips: does the kick
-   enqueue a job that a worker never runs, does a shader-cache read the producer needs return differently swap-ON,
-   or is `[rbx+0x50]`'s producer path gated on state the swap leaves unset?
-3. This is now closer to a runtime `/debug` probe than a static read: after-hook `[0x492b8c8]+0x720` (kick fires?)
-   + watch `[rbx+0x50]` writers, swap-ON vs swap-OFF. Static owes: name `0x492b8c8`'s type + read the `+0x720`
-   body + the `+0x50` writer.
-Candidate producers: the worker-thread pool (parked at nearest-export
-`ffxFsr2GetUpscaleRatioFromQualityMode+0x152c749` → `+0x567a86` — resolve real RVAs from
-`_invasive_allthreads_02-25.txt`), a GPU fence, or a shader-compile-completion signal.
+Run `kcdx-dev_2026-07-03_10-16-32.log`, swap-ON (black arm, no `kcdx-noswap`). `producer_ready_probe.cpp` hooked
+the wait-loop `0x9ace14`, captured the wait object, and a watcher polled `[wait_obj+0x50]` + `[0x492b8c8]`. The
+static consumer-side theory (Reframe 16: "the producer never sets the ready-flag") was the thing under test.
+
+**Result — the theory is FALSIFIED:**
+- `PRODUCER_INSTALLED producer=0x...` — `[0x492b8c8]` non-null (producer IS installed).
+- `READY_WAIT_ENTERED wait_obj=0x...` — the wait loop ran.
+- **`READY_FLAG_SET wall_ms=7140`** — the ready-flag `[wait_obj+0x50]` **FLIPPED to non-zero 7.1 s in.** The
+  shader system BECAME READY on the black arm.
+- `READY_PROBE_VERDICT wait_entered=1 flag_ever_set=1 producer_installed=1 wait_enters=13981` — the loop was
+  entered **13,981 times** over ~2 min ≈ per-frame cadence.
+
+**What it means (pre-committed map: `entered + flag_set => shader-ready DOES fire; the stall is DOWNSTREAM`):**
+- `0x9ace14` is a **PER-FRAME** shader-coordination wait that COMPLETES every frame (14k enters, flag flips) —
+  NOT a one-shot boot gate that hangs. Reframe 15's "Main is STUCK" and Reframe 16's "producer never signals
+  ready" are BOTH overturned.
+- The two byte-identical invasive `~0 k` samples caught this RECURRING per-frame wait mid-block — the exact
+  "per-frame trap" the FULL-HANDOFF §13 warns about (a fast per-frame Sleep/wait sampled twice reads as "stuck";
+  PROBE M killed the same illusion for `0x869c39`). Two identical samples are NOT proof-of-stuck for a per-frame
+  frame — they are proof the frame recurs at the sampled depth.
+- **The CShaderMan condvar wait is EXONERATED as the wedge.** The shader system reaches ready; `draw_indexed=0`/
+  black is downstream of (or unrelated to) this wait — and was never actually localized. This recon dir's whole
+  "stuck-in-condvar" thesis was a sampling-artifact misread.
+
+## The corrected frontier — the stall was NOT located; re-observe, do not theory-hop
+
+Per results-driven (on disconfirmation, RE-OBSERVE ground truth — do not hop to the next theory):
+- **What is genuinely still PROVEN** (from prior probes, unaffected by Z9): geometry buffers ARE created (Z8:
+  `geo_buf=262`) but `draw_indexed=0`/`ia_set_ib=0`; present advances at ~310fps (frames presented black);
+  the swap IS the differentiator (P-F). These stand.
+- **What is now FALSE:** "Main is stuck in a condvar wait." Main is NOT stuck there — that wait completes per-frame.
+- **The open question returns to its Reframe-13 form:** on a LIVE, PRESENTING game with geometry created, why is
+  no index buffer ever BOUND (`ia_set_ib=0`)? The `0x1c1e7e0`/`0x9ace14` condvar axis is a dead end (per-frame,
+  completes). The next observation must catch WHERE the indexed-draw recording is abandoned — NOT another wedged-
+  stack frame (they recur per-frame). Candidate: instrument the render-item/draw-submission leaf that SHOULD call
+  `IASetIndexBuffer`, swap-ON vs swap-OFF, to see whether the geometry is culled/skipped before binding vs the
+  bind call itself is never reached. The drawcall_probe (`ia_set_ib`/`draw_indexed` counters) is the confirm signal.
 
 ## Files (co-located)
-- `disasm_condvar_wait.py` → `_condvar_wait.txt` (the wait routine `0x1c1e78c`), `_condvar_callers.txt` (the L1/L2/L3
-  caller chain), `_condvar_owner.txt` (the owner pump-loop `0x9ace14`).
-- `_invasive_allthreads_02-25.txt` — full `~* k 30` all-thread capture (256 threads) + WHGame ModLoad base.
-- `_invasive_main_x2_identical.txt` — the two byte-identical `~0 k` main-thread samples (the stuck proof).
+- `producer_ready_probe.{h,cpp}` (in `src/fs_takeover/`, UNCOMMITTED per no-residue) — PROBE Z9; falsified the
+  condvar-stall thesis. Its finding is captured here; retire it (remove from source/seating/CMake) on next cleanup.
+- `disasm_condvar_wait.py` → `_condvar_wait.txt` / `_condvar_callers.txt` / `_condvar_owner.txt` — the (correct,
+  but now-exonerated) static read of the per-frame CShaderMan wait.
+- `_invasive_allthreads_02-25.txt` / `_invasive_main_x2_identical.txt` — the 2 samples that were MISREAD as
+  "stuck" (per-frame trap).
