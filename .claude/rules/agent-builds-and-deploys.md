@@ -53,6 +53,21 @@ not perform the ask.
    I build it?" is a FLOW defect (see `results-driven.md` §"Live-game
    unknowns").
 
+7. **A timed run emits an in-engine completion signal — never make the user
+   clock-watch.** When a run requires the user to WAIT a fixed duration before
+   acting (a diagnostic probe with a watcher/observation window, a timed
+   acceptance run) — i.e. the "done" moment is a clock time, not a visible
+   game state — the deployed build ITSELF signals completion so the user knows
+   when to act without watching a clock. The standard signal, on the run's
+   terminal path (after the verdict/result is written): **flash the game
+   window's taskbar button + retitle it** (`FlashWindowEx(FLASHW_ALL |
+   FLASHW_TIMERNOFG)` + `SetWindowTextW(hwnd, L"<PROBE/RUN> DONE - safe to
+   close")` on this process's main visible top-level window, found via
+   `EnumWindows` + `GetWindowThreadProcessId`). It is visible on the taskbar /
+   Alt-Tab even on a black screen. Telling the user "wait ~N minutes then quit"
+   with no in-engine signal is a FLOW defect — the agent owns the wait, the
+   engine owns the "done" cue.
+
 ## Triggers
 
 - **About to write "Run `pwsh ./build.ps1`" in user-facing output → STOP.**
@@ -64,6 +79,10 @@ not perform the ask.
   is here.
 - **About to ask the user to read a log line → STOP.** Read the log
   yourself.
+- **About to write "wait ~N minutes then quit" (or any clock-timed wait) in
+  user-facing output → STOP.** The build emits an in-engine completion signal
+  (rule 7 — flash + retitle the window on the terminal path); hand the user
+  "quit when the window flashes 'DONE'", never a stopwatch.
 
 ## What this rule does NOT change
 
