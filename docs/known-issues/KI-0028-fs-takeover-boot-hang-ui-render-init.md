@@ -1326,6 +1326,18 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 12 (2026-07-02) — PROBE Z4+Z5 EXONERATE the FS: files read correctly on the full swap; the black screen is NOT a filesystem problem
+
+PROBE Z4/Z5 (run `kcdx-dev_2026-07-02_21-05-00.log`, full-swap `mask=15`, `draw_indexed=0`) overturned the entire Reframe-10 fix direction:
+
+- **Z4 — the raw path is NEVER taken.** The engine reader at `0x460b64` takes the ABSTRACT-stream path (`[wrapper+0x110]` non-null, a stable heap object) on ALL 40 fires; zero raw-CRT-path fires the entire boot. So `fileno`/`fread` on kcdx's handle-int (the Z2.3-open CRASH mechanism) does NOT fire on the full swap — `0x460b64` is exonerated as the full-swap stall.
+- **Z5 — the abstract read SUCCEEDS for every asset.** The abstract stream's `[vtable+0x170]` read returns a plausible, CORRECT, non-zero size for every pak+loose asset (`stars.dat`=106956, `engine_core.thread_config`=20096, the cvargroups/xml/lua/ent all real sizes; zero `result_size=0`). kcdx serves every file correctly on the full swap.
+- **Z4.1 — ucrtbase resolves fully** (14/14 stdio exports by name), so fix a′'s fn-table is buildable — but a′ targets the raw path the full swap never takes.
+
+**VERDICT: the FS takeover is EXONERATED as the KI-0028 black-screen cause (the 3rd exoneration — Z2.2 mechanism-innocent, PROBE W zero-divergence, now Z5 reads-succeed).** Files load correctly; `draw_indexed` is still 0. The wedge is DOWNSTREAM of file I/O — in what the engine does with correctly-loaded data under the swap (a pointer/object identity the swap changes, a control-flow branch, or a swap side effect), NOT the file bytes. The Reframe-10 fix (FOpen returns a real FILE*, a′/b/c) fixes the SEPARATE Z2.3-open crash (open-only arm), not the full-swap black. Detail: `_research/ki0028-tick-geometry-dispatch-recon/Z5-abstract-read-succeeds-fs-exonerated.md` + `Z4-crt-reader-abstract-path-not-raw.md`.
+
+**Next: a STEP-BACK / fresh-frame reframe** — the FS-read frame is exhausted (3 exonerations); the swap-perturbs-something-non-file question is the new axis. A live invasive cdb capture of the wedged process (KI-0028 memory: `-p`+`qd`) is owed on the next black run to see the wedged main/render thread. The Z4/Z5 probe wiring (`crt_reader_probe.*`) stays armed but its question is answered — retire-and-capture pending the reframe direction.
+
 ## Reframe 11 (2026-07-02) — Gate A on fix a′ cleared; PROBE Z4 (pak-reaches-0x460b64 + ucrtbase-resolution) is the next launch, folded into one
 
 Gate A (`architect-review`, WITHHELD) on the concrete fix a′ (open loose on the engine's ucrtbase) returned **`forward-and-wait`** — a′'s LOOSE direction is sound and its routing claims are verified from existing recon (a real ucrtbase `FILE*` fails the `handle-1 < pakEntryCount` tag test → routes to the engine's OS/`FILE*` arm; `asset-fopen-handle-recon/FINDINGS.md:49-55`, gated). But it caught a coupled fork the fix-scope map glossed: **the pak arm carries the IDENTICAL raw-CRT-reader exposure a′ closes for loose.** a′ makes loose and pak DIVERGE (loose → real ucrtbase `FILE*`; pak → still the kcdx handle-int `(id<<1)|1`), and if a pak-resident asset ever reaches the engine's `0x460b64` raw-CRT reader with `[+0x110]==null`, it calls `_fileno(handle-int)` and crashes exactly as loose does today. Whether it does is the **unproven runtime link** (F2) — `Z2-3-open-crash:50-54` never traced the `[+0x110]==null` branch for a pak-resident backdrop.
