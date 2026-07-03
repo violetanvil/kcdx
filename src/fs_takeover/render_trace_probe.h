@@ -32,6 +32,7 @@
 //   6. 0x501cb0  HOP-2: the per-item apply+submit fn (IB-field sampler).
 //   7. 0x4ec3a0  HOP-3: pass caller A of the apply+submit fn — submit-gate sampler.
 //   8. 0x5014a0  HOP-3: pass caller B (same gate + a divert route to 0x25400d4).
+//   9. 0x779534  HOP-6: pass A's dispatcher — fires? render-item list empty? (both arms)
 //
 // PER-FRAME-SAFE (the Z9 lesson — a per-frame site sampled twice reads as "stuck"):
 // each site latches its FIRST kMaxPerSite fires only, so 14k per-frame repeats do not

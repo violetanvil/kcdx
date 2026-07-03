@@ -53,6 +53,15 @@ constexpr uintptr_t kCtxTechObjOff   = 0x178;     // [ctx+0x178] = technique/pas
 constexpr uintptr_t kTechReadyOff    = 0x28;      //   its +0x28 ready flag (char)
 constexpr uintptr_t kCtxDivertObjOff = 0x2b0;     // [ctx+0x2b0] = divert-carrier obj
 constexpr uintptr_t kDivertFlagOff   = 0x1a0;     //   its +0x1a0 divert flag (char)
+// HOP 6 (_hop5_live_caller_a): FUN_180779534 is pass A's sole live caller. It gates the
+// pass A call on the render-item list being non-empty: obj=[param_1+0x378], count =
+// ([obj+0x310]-[obj+0x308])>>3; if count!=0 it calls pass A (ctx=obj+0x70, whose +0x298
+// IS obj+0x308 — the same list HOP-3 sampled). Hook it: does it FIRE swap-ON, and is the
+// list empty? This decomposes "pass A never runs" into caller-absent vs list-empty.
+constexpr uint32_t  kRvaPassADispatch = 0x779534;  // FUN_180779534(param_1) -> void
+constexpr uintptr_t kDispPassObjOff   = 0x378;     // [param_1+0x378] = the render-pass obj
+constexpr uintptr_t kPassObjListBeg   = 0x308;     //   obj+0x308 = item-list begin ptr
+constexpr uintptr_t kPassObjListEnd   = 0x310;     //   obj+0x310 = item-list end ptr
 
 // The WHGame base captured at arm — the _ReturnAddress caller-attribution subtracts it
 // so the logged caller RVA is module-relative + directly comparable across arms/runs.
@@ -277,6 +286,43 @@ uint64_t __fastcall HookedPassB(void* ctx) {
     return g_origPassB(ctx);
 }
 
+// --- HOP 6: pass A's dispatcher FUN_180779534 — does it fire, and is the list empty? -----
+std::atomic<uint64_t> g_dispInvokes{0};   // FUN_180779534 invocations
+std::atomic<uint64_t> g_dispListEmpty{0}; // ... with item count == 0 (pass A skipped)
+std::atomic<uint64_t> g_dispWouldCall{0}; // ... with item count != 0 (pass A called)
+std::atomic<uint64_t> g_dispObjNull{0};   // ... with [param_1+0x378] == 0 (no pass obj)
+
+using PassADispFn_t = void(__fastcall*)(void* param1);
+PassADispFn_t g_origPassADisp = nullptr;
+void __fastcall HookedPassADispatch(void* param1) {
+    const uint64_t inv = g_dispInvokes.fetch_add(1, std::memory_order_relaxed);
+    const uintptr_t p = reinterpret_cast<uintptr_t>(param1);
+    const uint64_t obj = SafeReadU64(p + kDispPassObjOff);
+    int64_t count = -1;  // -1 == obj null (distinct from a real 0-count)
+    if (obj) {
+        const uint64_t beg = SafeReadU64(obj + kPassObjListBeg);
+        const uint64_t end = SafeReadU64(obj + kPassObjListEnd);
+        count = static_cast<int64_t>((end - beg) >> 3);
+        if (count == 0) g_dispListEmpty.fetch_add(1, std::memory_order_relaxed);
+        else            g_dispWouldCall.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        g_dispObjNull.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (inv < kMaxPerSite) {
+        LOG_WARN_KV(kCat, "passa_dispatch",
+            KV::BareStr("site", "passA_dispatch_779534"),
+            KV("inv",       inv),
+            KV("obj",       obj),
+            KV("item_count", static_cast<uint64_t>(count)),
+            KV::BareStr("note",
+                "pass A's caller at entry. item_count>0 => it CALLS pass A (list "
+                "filled); item_count=0 => list empty, pass A skipped; obj=0 "
+                "(item_count shows as huge) => no pass object. Fires swap-ON? => "
+                "the caller runs but the list is empty; absent => dispatch itself gone."));
+    }
+    g_origPassADisp(param1);
+}
+
 // Install one after-hook at base+rva. Logs the outcome; a failure is loud (not silent).
 bool ArmSite(uintptr_t base, uint32_t rva, void* detour, void** origOut,
              const char* label) {
@@ -341,6 +387,9 @@ void RenderTraceProbeStart() {
                      reinterpret_cast<void**>(&g_origPassA), "pass_caller_a") ? 1 : 0;
     armed += ArmSite(base, kRvaPassCallerB, reinterpret_cast<void*>(&HookedPassB),
                      reinterpret_cast<void**>(&g_origPassB), "pass_caller_b") ? 1 : 0;
+    // HOP 6: pass A's dispatcher (fire + item-count sampler).
+    armed += ArmSite(base, kRvaPassADispatch, reinterpret_cast<void*>(&HookedPassADispatch),
+                     reinterpret_cast<void**>(&g_origPassADisp), "passA_dispatch") ? 1 : 0;
 
     // A bounded watcher emits the cumulative IB-null tally so the confirm survives past
     // the per-invocation cap (the whole-run null-rate IS the signal).
@@ -371,6 +420,18 @@ void RenderTraceProbeStart() {
                     DumpDrawCallers("pass_a_entry", g_passACallers);
                     DumpDrawCallers("pass_b_entry", g_passBCallers);
                 }
+                // HOP 6: pass A dispatcher fire/list-empty tally (the frontier signal).
+                LOG_INFO_KV(kCat, "passa_dispatch_tally",
+                    KV("invokes",    g_dispInvokes.load()),
+                    KV("list_empty", g_dispListEmpty.load()),
+                    KV("would_call", g_dispWouldCall.load()),
+                    KV("obj_null",   g_dispObjNull.load()),
+                    KV::BareStr("note",
+                        "HOP-6: pass A's caller FUN_180779534. invokes=0 => the render-"
+                        "pass dispatch itself never runs swap-ON (walk up to FUN_1804e8d88); "
+                        "invokes>0 + list_empty=all => the caller runs but the render-item "
+                        "list is never filled (frontier = the item enqueue); would_call>0 "
+                        "=> pass A should be called (re-check vs pass_gate)."));
                 LOG_INFO_KV(kCat, "ib_tally",
                     KV("apply_invokes", g_applyInvokes.load()),
                     KV("items_seen",    g_itemsSeen.load()),
@@ -392,12 +453,11 @@ void RenderTraceProbeStart() {
         KV("sites_armed", (uint64_t)armed),
         KV("wh_base", base),
         KV::BareStr("detail",
-            "PROBE Z10 (+HOP2+HOP3): render-submission trace armed at 8 sites (stage "
-            "sequencer / compile pass / CCRO::Compile / engine SetIndexBuffer / render "
-            "flush / apply_draw IB-sampler / pass_caller_a 0x4ec3a0 / pass_caller_b "
-            "0x5014a0). pass_gate + pass_gate_tally = the HOP-3 submit-gate state at "
-            "each pass entry (which condition bypasses the apply+submit fn swap-ON). "
-            "Run swap-OFF (menu) + swap-ON (black); diff."));
+            "PROBE Z10 (+HOP2..HOP6): render-submission trace armed at 9 sites. HOP-6 "
+            "adds passA_dispatch (0x779534) — pass A's caller: passa_dispatch_tally "
+            "(invokes / list_empty / would_call) decomposes 'pass A never runs swap-ON' "
+            "into caller-absent vs render-item-list-empty. Run swap-OFF (menu) + swap-ON "
+            "(black); diff."));
 }
 
 }  // namespace kcdx::fs_takeover
