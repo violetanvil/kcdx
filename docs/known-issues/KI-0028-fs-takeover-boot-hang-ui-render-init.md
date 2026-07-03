@@ -1326,6 +1326,22 @@ So the P-G per-op A/B-trace plan stays the WRONG next probe (it hunts a differin
 but the wedge is an NGX condvar wait, and kcdx is on no NGX stack). But the prior "just slow"
 reframe is ALSO withdrawn. The pinned-down question is now narrow and falsifiable (below).
 
+## Reframe 15 (2026-07-03) — DECISIVE: geometry IS created (262 buffers) but never bound; the MAIN THREAD is STUCK in a condvar wait mid-tick (2 identical samples); render thread keeps presenting → draw_indexed=0
+
+Two converging captures on the SAME black run (`kcdx-dev_2026-07-03_02-25-43.log` + invasive cdb on live pid 42364, `qd`-detached, game left running):
+
+**1. PROBE Z8 — geometry buffers ARE created, branch (a) FALSIFIED.** `DRAW_PROBE summary: buf_created=339 geo_buf=262 geo_buf_bytes=643699136 tex_created=7230` — with `ia_set_ib=0 draw_indexed=0` still. 262 DEFAULT-heap geometry-class buffers (614 MB) are CREATED via `CreateCommittedResource`/`CreatePlacedResource`, yet NONE is ever bound (`IASetIndexBuffer` never called). So world geometry IS made on the GPU; the drop is BETWEEN creation and command-list binding — NOT "IB never created" (branch a, killed) and NOT "pass never entered" (Reframe 14 killed that — the renderer runs). (Z8 hooks confirmed armed: `z8_resource_hooks_armed committed_ok=1 placed_ok=1`.)
+
+**2. Invasive cdb — the MAIN thread is STUCK in a condvar wait mid-tick.** Two `~0 k` samples seconds apart are BYTE-IDENTICAL (same Child-SP addresses, not just same symbols) — the "Main" thread (`a57c.cf68`) is parked in `KERNELBASE!SleepConditionVariableSRW` ← `WHGame RVA 0x1c1e7e0` (the wait caller), called from the per-frame tick chain (resolved RVAs, WHGame base 0x7ffdf45b0000: `0x66a163` near the tick dispatcher `0x667b24`, then `0x869c39` = the window/display-mode fn PROBE M already found runs identically both arms, then `0x86b017`). NOT a transient per-frame wait (identical across two samples = stuck), NOT the render thread.
+
+**THE RECONCILIATION (why this fits every prior fact, incl. present-advances):** the RENDER thread is separate and keeps PRESENTING (~310fps — the compositor/present loop is its own thread, why present_count climbs). The MAIN thread stopped advancing the game/scene TICK — frozen in this condvar wait. Present-advancing ≠ main-thread-ticking. The geometry was created during the boot phase that ran; then the main-thread tick that would traverse the scene and RECORD the indexed draws froze in this wait → no `IASetIndexBuffer` ever recorded → the render thread just re-presents the last (empty/sky) frame → black. This is why draw_indexed=0 despite 262 geometry buffers.
+
+**Corroborated by the USER OBSERVATION this run:** a GREEN GLITCH effect in the video THEN blackness — i.e. a few frames rendered (geometry bound while the tick still ran), then the main thread hit this wait and froze → indexed draws stopped → black. The transition from rendering-to-frozen is exactly the green-glitch-then-black.
+
+**NOT a deadlock claim (the doc already killed "deadlock"):** the memory `ki0028_no_present_not_deadlock` established every thread runs + present advances. That still holds — the RENDER thread runs. What is NEW and decisive: the MAIN thread specifically is stuck in a condvar wait (2 identical samples prove stuck, not sampled-mid-transient). The wedge is the main-thread tick blocked on a producer that never signals it.
+
+**THE NEXT QUESTION (the frontier):** what is the main thread waiting FOR at `WHGame 0x1c1e7e0`? Which condition variable / SRW, and which producer (a worker thread, a GPU fence, a load-completion signal) is supposed to signal it but never does — and does the FS swap perturb that producer. Next probe: read `0x1c1e7e0`'s body (what condvar address it waits on, what predicate) via `/research-disassembly`, then find who signals that condvar and whether the swap derails them. The worker-thread pool in the full capture (many threads parked at `ffxFsr2GetUpscaleRatioFromQualityMode+0x152c749` → `+0x567a86`, nearest-export noise — resolve their real RVAs) is a candidate producer set.
+
 ## Reframe 14 (2026-07-03) — PROBE Z7: the renderer-dispatch gate [0x492b908] is NOT the differentiator (it IS installed on the black arm); the geometry drop is DEEPER
 
 PROBE Z7 (run `kcdx-dev_2026-07-03_01-52-47.log`, full-swap black arm, `draw_indexed=0` confirmed) read the tick's per-frame render-dispatch gate `[0x492b908]` — the `0x667ed0` gate that, if null, would skip the whole scene-submission block every frame (Measurement 2's leading candidate for present-alive/draw_indexed=0).
