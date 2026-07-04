@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <intrin.h>    // === DIAGNOSTIC (PROBE W) === _ReturnAddress (caller attribution)
 #include <string>
 #include <sys/stat.h>  // struct _stat64 / _wstat64 (the slot-45/92/93 loose-hit size)
 
@@ -119,21 +118,6 @@ void LogMissingOriginal(const char* whichSlot, const char* vpath) {
             "defect, surfaced loud."));
 }
 
-// === DIAGNOSTIC (PROBE W) — IsFileExist3 vanilla-differential helper. kcdx
-// answered EXISTS(=1) from its index for `pName`; call the captured original with
-// the SAME (pName, location) and log iff it disagrees. Read-only (the original is
-// the engine pak-dir + disk existence check the miss arm already thunks); kcdx's
-// answer is unaffected. NO-RESIDUE: remove with PROBE W. ===
-void DiffExist3(void* self, const char* pName, int location, uintptr_t caller) {
-    // PROBE W cost gate: run the doubled engine-original call ONLY the first time
-    // we see this caller (the per-caller signal is what matters; the storm fires
-    // this thousands of times/sec — gating it is what keeps the machine usable).
-    if (!BootTraceCallerFirstSeen(caller, /*kind=existence*/1)) return;
-    IsFileExist3OrigFn_t orig = g_origIsFileExist3.load(std::memory_order_acquire);
-    if (!orig) return;  // no captured original → nothing to compare (already loud elsewhere)
-    TraceVanillaDiff("IsFileExist3", pName, 1, orig(self, pName, location) ? 1 : 0,
-                     caller);
-}
 
 }  // namespace
 
@@ -207,9 +191,6 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
     // maps its internal OS-getter "no size" signal to 0 before returning; every
     // engine caller of slot 45 reads 0 as absent.
     if (!pName) return 0;
-    const uintptr_t caller =
-        BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));  // PROBE W
-
     const ByteSource* bs = ResolveVPath(GetBuiltIndex(), pName);
     if (bs) {
         if (bs->kind == ByteSource::Kind::Pak) {
@@ -221,18 +202,6 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
                 LogFirstMeta("GetFileSize", pName, "index-pak");
                 TraceMeta("GetFileSize", pName, "index-pak",
                           static_cast<long long>(bs->size));
-                // PROBE W — kcdx returns the index size; does vanilla agree? A
-                // size divergence can mis-steer a loader (alloc/read/skip). Read-
-                // only; kcdx's answer unchanged.
-                if (BootTraceCallerFirstSeen(caller, /*kind=size*/2)) {
-                    if (GetFileSizeOrigFn_t o =
-                            g_origGetFileSize.load(std::memory_order_acquire)) {
-                        TraceVanillaDiff("GetFileSize", pName,
-                                         static_cast<long long>(bs->size),
-                                         static_cast<long long>(o(self, pName, bDiskOnly)),
-                                         caller);
-                    }
-                }
                 return bs->size;
             }
         } else {  // Loose: the override IS a disk file; stat it for the true size.
@@ -275,10 +244,6 @@ uint64_t kcdx_GetFileSize(void* self, const char* pName, char bDiskOnly) {
 // lookup the index miss cannot answer). NO hardcoded location==2 false.
 bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
     if (!pName) return false;
-    // PROBE W: the engine return address (module-relative) — captured at the slot
-    // entry so it names the ENGINE subsystem that asked, not this kcdx body.
-    const uintptr_t caller =
-        BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));
 
     const ByteSource* bs = ResolveVPath(GetBuiltIndex(), pName);
     if (bs) {
@@ -287,7 +252,6 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
         if (location == 2) {
             if (isPak) { LogFirstMeta("IsFileExist3", pName, "index-pak");
                          TraceMeta("IsFileExist3", pName, "index-pak", 1);
-                         DiffExist3(self, pName, location, caller);  // PROBE W
                          return true; }
         } else if (location == 1) {
             if (!isPak) {  // a loose disk override — confirm the disk file exists.
@@ -296,14 +260,12 @@ bool kcdx_IsFileExist3(void* self, const char* pName, int location) {
                     GetFileAttributesW(wpath) != INVALID_FILE_ATTRIBUTES) {
                     LogFirstMeta("IsFileExist3", pName, "index-loose");
                     TraceMeta("IsFileExist3", pName, "index-loose", 1);
-                    DiffExist3(self, pName, location, caller);  // PROBE W
                     return true;
                 }
             }
         } else {  // either
             LogFirstMeta("IsFileExist3", pName, "index-either");
             TraceMeta("IsFileExist3", pName, "index-either", 1);
-            DiffExist3(self, pName, location, caller);  // PROBE W
             return true;
         }
         // location filtered the index source out → fall to the original.
@@ -361,26 +323,10 @@ int kcdx_GetFileStat(void* self, const char* pName, void* outStat) {
 // MISS → thunk the captured original (engine pak-dir entry check, dir-excluding).
 bool kcdx_IsFileExist2(void* self, const char* pName) {
     if (!pName) return false;
-    const uintptr_t caller =
-        BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));  // PROBE W
 
     if (ResolveVPath(GetBuiltIndex(), pName)) {
         LogFirstMeta("IsFileExist2", pName, "index");
         TraceMeta("IsFileExist2", pName, "index", 1);
-        // === DIAGNOSTIC (PROBE W) — vanilla-differential: kcdx says EXISTS from
-        // its index; what would the engine ORIGINAL say? A divergence (kcdx=1,
-        // vanilla=0) is a pak-resident vpath the engine's own pak-dir would NOT
-        // find → an existence answer that can steer a loader to load/skip
-        // differently. Read-only; kcdx's answer (true) is returned unchanged.
-        // Gated once-per-caller (the doubled original-call is the cost).
-        if (BootTraceCallerFirstSeen(caller, /*kind=existence*/1)) {
-            if (IsFileExist2OrigFn_t orig =
-                    g_origIsFileExist2.load(std::memory_order_acquire)) {
-                TraceVanillaDiff("IsFileExist2", pName, 1, orig(self, pName) ? 1 : 0,
-                                 caller);
-            }
-        }
-        // === END PROBE W ===
         return true;  // an index entry is always a file (never a dir stub).
     }
 

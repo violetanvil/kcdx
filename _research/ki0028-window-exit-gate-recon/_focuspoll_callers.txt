@@ -1,6 +1,0 @@
-
-=== DIRECT callers of focus-poll 0x865fb4: 1 ===
-  call @ 0x180667ddd (RVA 0x667ddd)  in fn 0x180667b24 (RVA 0x667b24)
-      strings: "BreakListenerThread" | "g_BreakListener"
-
-=== DIRECT callers of 0x86b017 (frame above poll): 0 ===

@@ -3,7 +3,7 @@
 #include <climits>  // SIZE_MAX (size*count overflow guard)
 #include <cstdio>   // SEEK_SET
 
-#include "boot_trace.h"  // FS_BOOT_TRACE — read-family boot-window trace (KI-0026 PROBE K)
+#include "boot_trace.h"  // FS_BOOT_TRACE — read-family boot-window trace
 #include "file_handle.h"
 #include "../log.h"
 
@@ -59,7 +59,7 @@ size_t kcdx_FReadRaw_byPakIndex(void* self, void* buf, size_t size,
     const size_t got = Read(static_cast<KcdxHandle>(taggedHandle), buf, want, ok);
     // FS-op trace AFTER the read — names the file (resolved from the handle) +
     // bytes wanted/got + result, so a wrong/short/failed read is readable in the
-    // log (was: opaque handle only). FS_BOOT_TRACE (PROBE K).
+    // log.
     TraceRead("FReadRaw_byPakIndex", taggedHandle,
               static_cast<long long>(want), static_cast<long long>(got), ok);
     // The engine's FReadRaw returns the byte count read (front-3 body — the OS

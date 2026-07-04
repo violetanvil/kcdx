@@ -5,7 +5,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <intrin.h>   // === DIAGNOSTIC (PROBE W) === _ReturnAddress (caller attribution)
 #include <string>
 #include <io.h>       // _wfindfirst64 / _wfindnext64 / _wfinddata64_t
 
@@ -123,18 +122,8 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
         return 0;
     }
 
-    // PROBE W enum-differential: capture the engine return address (module-
-    // relative) so a listing divergence is tied to the calling subsystem.
-    const uintptr_t caller =
-        BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));
-
     bool any = false;
-    long long matched = 0;  // FS_BOOT_TRACE (F.3): entries the unified walk fired
-    // PROBE W: split the unified count — countDisk = the engine/vanilla disk half
-    // (part 1); countPakAdded = the index-only pak entries kcdx ADDS (part 2, the
-    // unified-set delta over vanilla). matched == countDisk + countPakAdded.
-    long long countDisk = 0;
-    long long countPakAdded = 0;
+    long long matched = 0;  // FS_BOOT_TRACE: entries the unified walk fired
 
     // ---- (1) Engine on-disk walk (the original _findfirst64 loop, on kcdx's
     //          CRT) over the resolved disk pattern. Resolve pPathPattern via
@@ -169,7 +158,6 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
                         perFile(self, cbCtx, full, userData);
                         any = true;
                         ++matched;
-                        ++countDisk;  // PROBE W: the engine/vanilla disk half.
                     }
                 } while (_wfindnext64(h, &fd) == 0);
                 _findclose(h);
@@ -210,13 +198,7 @@ uint8_t kcdx_ForEachFile(void* self, void* cbCtx, const char* pPathPattern,
         perFile(self, cbCtx, vpath.c_str(), userData);
         any = true;
         ++matched;
-        ++countPakAdded;  // PROBE W: the index-only pak entry kcdx ADDS (delta).
     }
-
-    // PROBE W enum-differential: log iff kcdx returned MORE entries than vanilla
-    // (countPakAdded > 0) — the unified-set delta, attributed to the caller.
-    TraceVanillaEnumDiff("ForEachFile", pPathPattern, countDisk, countPakAdded,
-                         caller);
 
     if (any) {
         bool expected = false;

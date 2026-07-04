@@ -30,35 +30,6 @@ namespace kcdx::fs_takeover {
 // Returns true on a completed swap; false (logged loud) if pCryPak is null or
 // its current vtable pointer is null — in which case the object is left
 // untouched (the engine keeps its own vtable; no kcdx ownership this boot).
-//
-// === DIAGNOSTIC (PROBE Z/Z2) — liveFamilyMask: per-FAMILY bisection. A KCDX slot
-// runs kcdx logic ONLY if its family's bit is set in the mask; otherwise it
-// THUNKS to the engine original. The swap MECHANISM always happens identically
-// (same object, the [obj+0x00] overwrite, seat timing, index build) — the mask
-// chooses which kcdx slot LOGIC is live. This is the direct, by-construction
-// proof of "which family causes the black screen":
-//   mask == 0 (kFamNone)  → the PROBE Z no-op swap (all thunk; must render).
-//   mask == kFamAll       → a normal FULL swap (all live; must reproduce black —
-//                           the confound self-check: if all-live RENDERS, the
-//                           premise is contaminated and there is a confound).
-//   one family bit        → only that family live (build-up: which one flips black).
-//   kFamAll minus one     → only that family thunked (tear-down: removing which
-//                           one fixes black).
-// NO-RESIDUE: the param + the mask plumbing revert with PROBE Z2.
-//
-// Family bits (the four KCDX-owned slot families, vtable_table.cpp):
-enum FsSlotFamily : uint32_t {
-    kFamNone     = 0,
-    kFamOpen     = 1u << 0,  // 1/35/36   AdjustFileName/FOpenRaw/FOpen
-    kFamRead     = 1u << 1,  // 38..66    handle-operating reads
-    kFamMetadata = 1u << 2,  // 13/45/67/68/69/70/92/93  existence/size/stat
-    kFamEnum     = 1u << 3,  // 14/63/64/65  ForEachFile + FindFirst/Next/Close
-    kFamAll      = kFamOpen | kFamRead | kFamMetadata | kFamEnum,
-};
-bool SwapVtableOnObject(void* pCryPak, uint32_t liveFamilyMask = kFamAll);
-
-// === DIAGNOSTIC (PROBE U) — the kcdx vtable buffer address kcdx wrote into the
-// CCryPak object at the swap, for the post-seat reswap watcher. NO-RESIDUE. ===
-void* GetKcdxVtableAddr();
+bool SwapVtableOnObject(void* pCryPak);
 
 }  // namespace kcdx::fs_takeover

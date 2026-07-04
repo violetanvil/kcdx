@@ -1,4 +1,0 @@
-engine FGetModificationTime body = 0x18241a3bc (RVA 0x241a3bc)
-direct rel32 CALL sites: 0
-direct rel32 JMP (tail-call) sites: 0
-address-taken (mov/lea rip-rel) sites: 0

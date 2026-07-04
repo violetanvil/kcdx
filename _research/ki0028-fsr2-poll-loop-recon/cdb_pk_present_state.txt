@@ -1,6 +1,0 @@
-.symfix
-.reload /f
-.echo ====ALLSTACKS====
-~*k 16
-.echo ====DETACH====
-qd

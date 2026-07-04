@@ -6,7 +6,6 @@
 #include "vtable_table.h"
 #include "open_slots.h"      // kcdx_FOpen (slot-36 real impl) + SetOriginalAdjustFileName (slot-1 capture)
 #include "metadata_slots.h"  // SetMetadataOriginals (the 8 metadata-slot originals captured for the miss thunk)
-#include "boot_trace.h"      // === DIAGNOSTIC (PROBE L) === pak-handle-vector snapshot around the open
 #include "../log.h"
 #include "../test.h"
 
@@ -93,26 +92,7 @@ void* KcdxFOpenMarker(void* self, const char* pName, const char* szMode,
     return kcdx_FOpen(self, pName, szMode, nFlags);
 }
 
-// === DIAGNOSTIC (PROBE Z2) — map a KCDX slot to its family bit (vtable_table.cpp
-// family layout). A KCDX row goes live iff (liveFamilyMask & SlotFamily(slot)).
-// NO-RESIDUE: revert with PROBE Z2. ===
-static uint32_t SlotFamily(size_t slot) {
-    switch (slot) {
-        case 1: case 35: case 36:
-            return kFamOpen;
-        case 38: case 39: case 40: case 41: case 43: case 44: case 46: case 47:
-        case 53: case 54: case 55: case 56: case 57: case 58: case 59: case 66:
-            return kFamRead;
-        case 13: case 45: case 67: case 68: case 69: case 70: case 92: case 93:
-            return kFamMetadata;
-        case 14: case 63: case 64: case 65:
-            return kFamEnum;
-        default:
-            return kFamNone;  // a non-KCDX slot (never consulted — those are Thunk rows).
-    }
-}
-
-bool SwapVtableOnObject(void* pCryPak, uint32_t liveFamilyMask) {
+bool SwapVtableOnObject(void* pCryPak) {
     if (!pCryPak) {
         LOG_ERROR_KV(kCat, "swap_null_object",
             kcdx::log::KV::BareStr("detail",
@@ -150,12 +130,7 @@ bool SwapVtableOnObject(void* pCryPak, uint32_t liveFamilyMask) {
         size_t kcdxOwned = 0;
         for (size_t i = 0; i < count; ++i) {
             const SlotRow& row = table[i];
-            // === DIAGNOSTIC (PROBE Z2) — a KCDX slot goes live ONLY if its family
-            // bit is set in liveFamilyMask; otherwise it THUNKS to the original.
-            // mask==kFamNone → no-op swap (PROBE Z); kFamAll → full swap; one bit →
-            // bisect. The swap mechanism happens regardless. NO-RESIDUE: revert. ===
-            const bool familyLive = (liveFamilyMask & SlotFamily(row.slot)) != 0;
-            if (row.impl == Impl::Kcdx && familyLive) {
+            if (row.impl == Impl::Kcdx) {
                 g_kcdxVtable[i] = row.kcdx_fn;
                 ++kcdxOwned;
                 // Capture the ORIGINAL AdjustFileName body (slot 1) for the
@@ -187,10 +162,6 @@ bool SwapVtableOnObject(void* pCryPak, uint32_t liveFamilyMask) {
         LOG_INFO_KV(kCat, "kcdx_vtable_built",
             kcdx::log::KV("slots", static_cast<uint64_t>(count)),
             kcdx::log::KV("kcdx_owned", static_cast<uint64_t>(kcdxOwned)),
-            // PROBE Z2 witness: the live-family mask + the resulting kcdx_owned.
-            // mask=0 → kcdx_owned=0 (no-op swap); mask=15 (kFamAll) → full swap.
-            // The bisection reads which mask renders vs goes black.
-            kcdx::log::KV("probe_z_live_mask", static_cast<uint64_t>(liveFamilyMask)),
             kcdx::log::KV::BareStr("detail",
                 "built the kcdx CCryPak vtable from the per-slot table — every "
                 "THUNK slot points at the engine's original body (captured from "
@@ -225,13 +196,5 @@ bool SwapVtableOnObject(void* pCryPak, uint32_t liveFamilyMask) {
             "reaching the world exercises the thunked slots."));
     return true;
 }
-
-// === DIAGNOSTIC (PROBE U) — the kcdx vtable address, for the reswap watcher to
-// compare [obj+0x00] against. Returns the process-lifetime g_kcdxVtable buffer
-// address kcdx wrote into the object at the swap. NO-RESIDUE: remove with PROBE U.
-void* GetKcdxVtableAddr() {
-    return static_cast<void*>(g_kcdxVtable);
-}
-// === END PROBE U accessor ===
 
 }  // namespace kcdx::fs_takeover

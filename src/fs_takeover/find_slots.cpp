@@ -1,7 +1,6 @@
 #include "find_slots.h"
 
 #include <windows.h>  // MultiByteToWideChar / WideCharToMultiByte (path widen/narrow)
-#include <intrin.h>   // === DIAGNOSTIC (PROBE W) === _ReturnAddress (caller attribution)
 
 #include <atomic>
 #include <cstring>
@@ -114,11 +113,10 @@ bool WildcardMatch(const std::string& name, const std::string& mask) {
 // Does this filename mask match a DIRECTORY entry? Mirrors Windows _wfindfirst64:
 // a "match-all" glob (`*`, `*.*`, or an empty/no-filename mask) returns subdirs;
 // a specific-extension glob (`*.xml`, `*.ent`) returns only files of that ext —
-// a directory name has no extension, so it does not match `*.<ext>`. (KI-0028:
-// PROBE Q emitted synthetic subdir entries IGNORING the mask, so
-// `FindFirst("Prefabs/*.xml")` returned 66 bogus directory entries vanilla never
-// returns — a content-enum serve-incorrectness. This restores the engine's own
-// dir-vs-file glob semantics.) `*.*` is the Windows special case that matches
+// a directory name has no extension, so it does not match `*.<ext>`. Gating the
+// synthetic subdir entries on this predicate keeps `FindFirst("Prefabs/*.xml")`
+// from returning directory entries vanilla never returns, matching the engine's
+// own dir-vs-file glob semantics. `*.*` is the Windows special case that matches
 // everything including extensionless/dir names, so it is treated as match-all.
 bool MaskMatchesDirectories(const std::string& mask) {
     if (mask.empty()) return true;            // no filename filter → all entries
@@ -196,28 +194,16 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
     //     disk file the (1) walk saw; a pak vpath the disk walk cannot see. This
     //     is the SAME predicate enum_slots.cpp applies, plus the base-name
     //     extraction (FindData carries the base name, not the full vpath).
-    // === DIAGNOSTIC (PROBE Q) — KI-0028 synthetic directory entries ===========
-    // VERIFIED mechanism: the engine enumerates a shader dir (`Shaders/HWScripts/
-    // *.*`) expecting the immediate-child SUBDIR (`CryFX`), but the index-walk arm
-    // below historically SKIPPED any deeper-subdir vpath (line "single-level only")
-    // and emitted ONLY file entries — never a directory entry. The 180 source
-    // shaders live one level deeper (`shaders/hwscripts/cryfx/*.cfx`), so a
-    // single-level FindFirst returned 0, the engine never discovered the source
-    // tree, shader-system init stalled, only 1 PSO was built (PROBE P), every frame
-    // black. The engine's own _findfirst64 returns subdir entries (a dir walk
-    // yields files AND subdirs), which is why vanilla (swap-off) works.
-    //
-    // PROBE Q tests ONE variable: does emitting a synthetic DIRECTORY entry for
-    // each distinct immediate-child subdir cause the engine to RECURSE into it?
-    //   Outcome A: the swap-on log shows a follow-up FindFirst into the emitted
-    //     subdir (e.g. `shaders/hwscripts/cryfx/*.*`) → the engine recurses on a
-    //     dir entry → the synthetic-dir-entry fix is CORRECT (promote to the fix).
-    //   Outcome B: no deeper FindFirst follows → the engine wants a different
-    //     enumeration contract (recursive `**`, or a manifest) → a different fix.
-    // Falsifiable either way; observes ground truth (the engine's next call), not a
-    // theory. NO-RESIDUE: on retire, promote-to-fix or remove (working-artifacts).
+    // Directory entries for pak-resident subdirs — match vanilla's dir-walk
+    // contract. The engine's own _findfirst64 over a directory yields files AND
+    // immediate-child subdir entries, and it recurses into a subdir entry (e.g.
+    // enumerating `Shaders/HWScripts/*.*` yields the `CryFX` subdir, which the
+    // engine then descends). The index-walk below would otherwise emit only file
+    // entries, never a directory, so a single-level FindFirst would not surface a
+    // pak-resident subdir and the engine would never descend into it. Emit one
+    // synthetic directory entry per distinct immediate-child subdir so the unified
+    // set matches what vanilla's directory walk returns.
     std::unordered_set<std::string> emittedSubdirs;  // de-dup synthetic dir entries
-    long long synthDirs = 0;  // PROBE Q telemetry — distinct subdirs emitted
 
     for (const auto& kv : index) {
         const std::string& vpath = kv.first;
@@ -227,20 +213,19 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
         if (vpath.compare(0, normPrefix.size(), normPrefix) != 0) continue;
         const size_t sep = vpath.find('/', normPrefix.size());
         if (sep != std::string::npos) {
-            // A deeper subdir. PROBE Q: emit the IMMEDIATE child subdir name as a
-            // synthetic DIRECTORY entry (deduped), so a single-level FindFirst
-            // surfaces the subdir the engine recurses into. The subdir name = the
-            // path segment between normPrefix and the next '/'.
+            // A deeper subdir: emit the IMMEDIATE child subdir name as a synthetic
+            // directory entry (deduped), so a single-level FindFirst surfaces the
+            // subdir the engine recurses into. The subdir name = the path segment
+            // between normPrefix and the next '/'.
             //
-            // KI-0028 FIX: emit the synthetic dir ONLY when the caller's mask
-            // would match a directory — a `*.*`/`*` glob (the engine's own dir
-            // walk returns subdirs for it), NOT a specific-extension glob like
-            // `*.xml`/`*.ent` (vanilla's _wfindfirst64 returns files only there).
-            // Without this gate, `FindFirst("Prefabs/*.xml")` returned 66 bogus
-            // subdir entries (3 real .xml + 66 dirs) vanilla never returns — a
-            // content-enum serve-incorrectness on the geometry/prefab path. The
-            // shader-recursion case (`Shaders/HWScripts/*.*` → the CryFX subdir)
-            // still works: `*.*` matches directories.
+            // Emit the synthetic dir ONLY when the caller's mask would match a
+            // directory — a `*.*`/`*` glob (the engine's own dir walk returns
+            // subdirs for it), NOT a specific-extension glob like `*.xml`/`*.ent`
+            // (vanilla's _wfindfirst64 returns files only there). Without this gate,
+            // `FindFirst("Prefabs/*.xml")` returns bogus subdir entries vanilla
+            // never returns — a content-enum incorrectness on the geometry/prefab
+            // path. The shader-recursion case (`Shaders/HWScripts/*.*` → the CryFX
+            // subdir) still works: `*.*` matches directories.
             if (!MaskMatchesDirectories(nameMask)) continue;
             std::string subdir = vpath.substr(normPrefix.size(),
                                               sep - normPrefix.size());
@@ -249,7 +234,6 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
             if (seen.count(subKey)) continue;            // a disk subdir already has it
             if (!emittedSubdirs.insert(subKey).second) continue;  // already emitted
             entries.push_back(FindEntry{ std::move(subdir), /*isDir=*/true });
-            ++synthDirs;
             continue;
         }
         // The base name = the vpath past the prefix (single level → no further
@@ -265,19 +249,6 @@ std::vector<FindEntry> BuildUnifiedFindEntries(
         if (seen.count(asset_overlay::NormalizeVPath(baseName))) continue;  // de-dup.
         entries.push_back(FindEntry{ std::move(baseName), /*isDir=*/false });
     }
-
-    if (synthDirs > 0) {
-        LOG_DEBUG_KV(kCat, "probe_q_synth_dirs",
-            kcdx::log::KV("prefix", normPrefix),
-            kcdx::log::KV("mask", nameMask),
-            kcdx::log::KV("synth_dirs", synthDirs),
-            kcdx::log::KV::BareStr("detail",
-                "PROBE Q: emitted synthetic directory entries for the immediate "
-                "child subdirs under this prefix. If the engine RECURSES, a "
-                "follow-up FindFirst into one of these subdirs appears next in the "
-                "trace — the synthetic-dir-entry fix is correct."));
-    }
-    // === END PROBE Q ===
 
     return entries;
 }
@@ -339,21 +310,6 @@ intptr_t kcdx_FindFirst(void* self, const char* pattern, void* findData,
     const AssetIndex& index = GetBuiltIndex();
     std::vector<FindEntry> entries =
         BuildUnifiedFindEntries(diskNames, diskIsDir, index, normPrefix, nameMask);
-
-    // PROBE W enum-differential: kcdx's unified set vs vanilla's disk-only set.
-    // diskNames.size() == what the engine original FindFirst would return;
-    // entries.size() - diskNames.size() == the kcdx-added delta (pak vpaths +
-    // PROBE Q synthetic subdirs). Logged iff non-zero, attributed to the engine
-    // caller — does kcdx hand THIS caller a different listing than vanilla?
-    {
-        const uintptr_t caller =
-            BootTraceCallerRva(reinterpret_cast<uintptr_t>(_ReturnAddress()));
-        const long long countDisk = static_cast<long long>(diskNames.size());
-        const long long countAdded =
-            static_cast<long long>(entries.size()) - countDisk;
-        TraceVanillaEnumDiff("FindFirst", pattern, countDisk,
-                             countAdded > 0 ? countAdded : 0, caller);
-    }
 
     if (entries.empty()) {
         // No unified-set entry — the engine's no-match contract (-1). The

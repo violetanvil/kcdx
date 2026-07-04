@@ -9,15 +9,7 @@
 
 #include "asset_index.h"
 #include "vtable_swap.h"
-#include "boot_watch.h"  // === DIAGNOSTIC (PROBE H) === KI-0028 boot-progress watcher
-#include "present_probe.h"  // === DIAGNOSTIC (PROBE K) === KI-0028 present-count delta
-#include "pso_probe.h"  // === DIAGNOSTIC (PROBE P) === KI-0028 shader-blob -> PSO
-#include "dispatch_probe.h"  // === DIAGNOSTIC (PROBE R) === KI-0028 shader-cache validation gate
-#include "drawcall_probe.h"  // === DIAGNOSTIC (PROBE S) === KI-0028 command-list draw recording
-#include "reswap_probe.h"  // === DIAGNOSTIC (PROBE U) === KI-0028 post-seat CCryPak vtable-reswap watcher
-#include "stall_stack_probe.h"  // === DIAGNOSTIC (PROBE Y) === KI-0028 stall-no-geometry stack trigger
-#include "render_trace_probe.h"  // === DIAGNOSTIC (PROBE Z10) === KI-0028 ordered render-submission trace
-#include "boot_trace.h"  // === DIAGNOSTIC (PROBE W) === BootTraceResolveWhBounds (seat-time WHGame bounds)
+#include "boot_trace.h"  // FS boot-window operation logging
 #include "../asset_overlay.h"
 #include "../log.h"
 #include "../paths.h"
@@ -114,94 +106,6 @@ void __fastcall HookedConstructStore(void* csystem) {
         return;  // already swapped this session
     }
 
-    // === DIAGNOSTIC (PROBE W) — KI-0028 window-activation observer ===========
-    // Arm the watcher thread BEFORE the PROBE F noswap early-return below, so it
-    // runs IDENTICALLY on the swap-ON and swap-OFF (noswap) arms — the window-
-    // activation timeline must be captured on both to compare. The watcher hosts
-    // PROBE W's window sampler (boot_watch.cpp WinProbeSample) which logs
-    // WINDOW_PROBE / WINDOW_PROBE_CONVERGED via pure Win32 reads (no engine
-    // offset/hook). PROBE L (which had disarmed this) is concluded — the probe
-    // threads were exonerated, so re-arming the watcher is safe.
-    // NO-RESIDUE: remove this re-arm with PROBE W on retirement.
-    kcdx::fs_takeover::BootWatchStart();
-    // === END PROBE W arm ===
-
-    // === DIAGNOSTIC (PROBE K) — KI-0028 present-count delta (re-armed) ========
-    // PROBE W run 1 corrected the premise: the game TICKS (heartbeat advanced to
-    // 7710, no stall) but the screen is BLACK — a PRESENT failure, not a hang. The
-    // window-activation gate converged at second 1 (falsified). PROBE K reads the
-    // DXGI swapchain's own GetLastPresentCount + PresentRefreshCount (no present
-    // hook) to partition the wedge: present~0 → upstream; present>0/refresh~0 →
-    // present path; both advance → surface/compositor. Armed beside the watcher,
-    // before the PROBE F noswap return, so it runs swap-ON and swap-OFF identically.
-    // NO-RESIDUE: remove with PROBE K on retirement.
-    kcdx::fs_takeover::PresentProbeStart();
-    // === END PROBE K arm ===
-
-    // === DIAGNOSTIC (PROBE P) — KI-0028 shader-blob -> PSO consumption =========
-    // PROBE K re-localized the wedge to BLACK FRAMES PRESENTED (120fps, GPU
-    // scanout); the shader-alias fix served the 21 real shaders, yet the screen
-    // is STILL black, and the served shader BYTES are proven complete + correct
-    // (cap-109 DEFLATE + want==got reads). PROBE P instruments the CONSUMPTION
-    // side — ID3D12Device::CreateGraphicsPipelineState (slot 10) — which runs
-    // IDENTICALLY swap-on AND swap-off, escaping kcdx's swap-off trace blind spot.
-    // It logs per PSO-creation: HRESULT, null-PSO, and each VS/PS blob's len +
-    // DXBC magic. Armed beside K, before the PROBE F noswap return, so the O4
-    // parity check (identical blobs/hr swap-on vs swap-off) is possible.
-    // NO-RESIDUE: remove with PROBE P on retirement.
-    kcdx::fs_takeover::PsoProbeStart();
-    // === END PROBE P arm ===
-
-    // === DIAGNOSTIC (PROBE R) — KI-0028 shader-cache VALIDATION gate ===========
-    // The CShaderMan RE (_research/ki0028-cshaderman-pso-consumer-recon) reframed
-    // the gate: the engine reads the full compiled cache yet builds 1 PSO (PROBE
-    // P) because shader-cache VALIDATION rejects the cache under the swap and
-    // DISABLES the read-only cache, falling into the .ext-reprobe path. PROBE R
-    // after-hooks the two validation RVAs (lookupdata.bin loader FUN_180b04984 —
-    // its return IS the gate bool — + the validate driver FUN_180b04478). Armed
-    // beside P, BEFORE the PROBE F noswap return, so the loader's verdict is read
-    // swap-ON and swap-OFF for the A/B diff. NO-RESIDUE: remove with PROBE R.
-    kcdx::fs_takeover::DispatchProbeStart();
-    // === END PROBE R arm ===
-
-    // === DIAGNOSTIC (PROBE S) — KI-0028 command-list DRAW recording ============
-    // The premise-overturn (FINDINGS): PSO-create is IDENTICAL swap-ON/OFF (PROBE
-    // P gfx_calls=1 on the working menu), present succeeds both (PROBE K) — so the
-    // black-vs-menu divergence is in WHAT IS RECORDED INTO THE FRAME: the draws.
-    // PROBE S hooks the D3D12 command list (Draw* + OMSetRenderTargets) and counts
-    // them swap-ON vs swap-OFF. Armed beside P, before the noswap return, for the
-    // A/B. NO-RESIDUE: remove with PROBE S on retirement.
-    kcdx::fs_takeover::DrawcallProbeStart();
-    // === END PROBE S arm ===
-
-    // === DIAGNOSTIC (PROBE Y) — KI-0028 stall-no-geometry stack trigger ========
-    // Measurement 1 (handoff §12.B): the proven stall keeps the heartbeat ALIVE
-    // (Main ticks ~35/s) so boot_watch's cessation dumper never fires. PROBE Y
-    // fires the SAME capture on the real signature — present advancing but
-    // draw_indexed stuck at 0 — reading the sibling probes' LIVE accessors (not
-    // their bounded watcher caches). Armed here, BEFORE the noswap return, so the
-    // swap-ON vs swap-OFF main-thread stacks capture at the same phase for the
-    // A/B diff that names the sequencer gate. NO-RESIDUE: remove with PROBE Y.
-    kcdx::fs_takeover::StallStackProbeStart();
-    // === END PROBE Y arm ===
-
-    // === DIAGNOSTIC (PROBE Z10) — KI-0028 ordered differential render-submission trace ===
-    // METHOD RESET (DESIGN.md): stop spot-checking. Instrument the render-submission
-    // path (Step-1 static: stage sequencer 0x86b574 → compile pass 0x429384 →
-    // CCRO::Compile 0x429794 → ★ engine SetIndexBuffer 0x5025b4 → render flush 0x777f6c)
-    // and emit SEQUENCED RENDER_TRACE records. Armed here, BEFORE the noswap return, so
-    // swap-ON (black) vs swap-OFF (menu) instrument the same phase — the offline diff of
-    // the two seq sequences names the FIRST divergence (the answer, no theory). Brackets
-    // the live drawcall_probe (ia_set_ib / draw_indexed). NO-RESIDUE: remove with Z10.
-    kcdx::fs_takeover::RenderTraceProbeStart();
-    // === END PROBE Z10 arm ===
-
-    // === DIAGNOSTIC (PROBE W) — resolve WHGame's module bounds ONCE here, at the
-    // seat (single-threaded, before any FS slot fires), into lock-free atoms used
-    // by the vanilla-differential's caller attribution. NOT a function-local static
-    // on the hot path (that guard serialized worker threads + pegged the CPU). ===
-    kcdx::fs_takeover::BootTraceResolveWhBounds();
-
     void* pCryPak = ReadPublishedCCryPak();
     LOG_INFO_KV(kCat, "seating_post_publish",
         kcdx::log::KV("pCryPak", reinterpret_cast<uintptr_t>(pCryPak)),
@@ -210,80 +114,24 @@ void __fastcall HookedConstructStore(void* csystem) {
             "Performing the vtable swap now, before the engine's first file "
             "call through the object."));
 
-    // === DIAGNOSTIC (PROBE F) — KI-0028 swap-suppression bisection ============
     // A `<kcdx-engine>/kcdx-noswap` marker file suppresses ONLY the vtable swap +
-    // index build; EVERYTHING else kcdx did this boot (the ctor bracket, every
-    // worker thread, g_kcdxReadyEvent, the overlay map) ran identically. The
-    // engine keeps its own CCryPak vtable, so kcdx is OFF the file path while its
-    // threads/timing stay ON. One variable: the FS-takeover dispatch, live vs not.
-    // Outcome map (KI-0028 P-F):
-    //   boots to interactive menu → the wedge needs the FS dispatch LIVE → the
-    //     perturbation is in what the swapped object serves NGX (H3); H4 killed.
-    //   hangs identically → the FS dispatch is innocent; kcdx's OTHER init
-    //     side-effects (threads/bracket/ready-event/timing) cause it (H4); H3 killed.
-    // Routes into the existing seating_swap_skipped path (engine keeps its vtable,
-    // no index built) — no new skip logic. Scratch — removed when answered.
+    // index build; every other kcdx init side-effect (the ctor bracket, worker
+    // threads, g_kcdxReadyEvent, the overlay map) runs identically. With the marker
+    // present the engine keeps its own CCryPak vtable — kcdx is off the file path.
+    // The control arm for a swap-on vs swap-off comparison.
     {
         std::wstring noswap =
             (kcdx::paths::EngineDataDirPath() / L"kcdx-noswap").wstring();
         if (GetFileAttributesW(noswap.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            LOG_INFO_KV(kCat, "probe_f_swap_suppressed",
+            LOG_INFO_KV(kCat, "swap_suppressed_by_marker",
                 kcdx::log::KV::BareStr("detail",
-                    "PROBE F: kcdx-noswap marker present — the vtable swap + index "
-                    "build are SKIPPED; the engine keeps its own CCryPak vtable. "
-                    "All other kcdx init (ctor bracket, worker threads, ready-event, "
-                    "overlay map) ran identically. If boot now reaches an "
-                    "interactive menu, the wedge needs the FS dispatch live (H3); "
-                    "if it still hangs, the FS dispatch is innocent (H4)."));
+                    "kcdx-noswap marker present — the vtable swap + index build are "
+                    "skipped; the engine keeps its own CCryPak vtable this boot."));
             return;  // engine keeps its vtable this boot; no index built
         }
     }
-    // === END PROBE F ===
 
-    // === DIAGNOSTIC (PROBE Z2) — per-FAMILY bisection via marker files. The swap
-    // MECHANISM always happens (the [obj+0x00] overwrite, object identity, seat
-    // timing, index build); the marker files choose which kcdx slot-family LOGIC is
-    // live. Default (no markers) = kFamAll (a normal full swap) so an ordinary boot
-    // is unaffected. Markers (in <kcdx-engine>/):
-    //   kcdx-thunkswap            → kFamNone   (the PROBE Z no-op swap: all thunk)
-    //   kcdx-live-open|read|metadata|enum → set ONLY the named families live
-    //     (presence of ANY kcdx-live-* marker switches from the kFamAll default to
-    //      the explicit named set — so `kcdx-live-open` alone = open live, rest thunk)
-    // Outcome (KI-0028 P-Z2): mask that RENDERS vs mask that goes BLACK names the
-    // culprit family BY CONSTRUCTION. kFamAll must reproduce black (the confound
-    // self-check — if all-live renders, the premise is contaminated).
-    // NO-RESIDUE: removed with PROBE Z2. Scratch.
-    uint32_t liveFamilyMask = kcdx::fs_takeover::kFamAll;
-    {
-        namespace fst = kcdx::fs_takeover;
-        const auto eng = kcdx::paths::EngineDataDirPath();
-        auto present = [&](const wchar_t* name) -> bool {
-            return GetFileAttributesW((eng / name).wstring().c_str()) !=
-                   INVALID_FILE_ATTRIBUTES;
-        };
-        if (present(L"kcdx-thunkswap")) {
-            liveFamilyMask = fst::kFamNone;  // no-op swap (PROBE Z baseline).
-        } else if (present(L"kcdx-live-open") || present(L"kcdx-live-read") ||
-                   present(L"kcdx-live-metadata") || present(L"kcdx-live-enum")) {
-            liveFamilyMask = fst::kFamNone;  // explicit set: start empty, add named.
-            if (present(L"kcdx-live-open"))     liveFamilyMask |= fst::kFamOpen;
-            if (present(L"kcdx-live-read"))     liveFamilyMask |= fst::kFamRead;
-            if (present(L"kcdx-live-metadata")) liveFamilyMask |= fst::kFamMetadata;
-            if (present(L"kcdx-live-enum"))     liveFamilyMask |= fst::kFamEnum;
-        }
-        if (liveFamilyMask != fst::kFamAll) {
-            LOG_INFO_KV(kCat, "probe_z_family_mask",
-                kcdx::log::KV("live_mask", static_cast<uint64_t>(liveFamilyMask)),
-                kcdx::log::KV::BareStr("detail",
-                    "PROBE Z2: a per-family bisection mask is active (not the full "
-                    "kFamAll swap). The swap mechanism + index build happen; only "
-                    "the named slot families run kcdx logic, the rest thunk. The "
-                    "mask that renders vs goes black names the culprit family."));
-        }
-    }
-    // === END PROBE Z2 (mask computed; threaded into SwapVtableOnObject below) ===
-
-    if (!SwapVtableOnObject(pCryPak, liveFamilyMask)) {
+    if (!SwapVtableOnObject(pCryPak)) {
         // SwapVtableOnObject already logged the specific reason. Leave g_swapped
         // set: a null/failed object will not become valid on a re-fire of this
         // single-call helper, and re-attempting per call would spam. The engine
@@ -298,21 +146,6 @@ void __fastcall HookedConstructStore(void* csystem) {
         // slots stay the engine's; skip the index build entirely.
         return;
     }
-
-    // === DIAGNOSTIC (PROBE U) — KI-0028 post-seat reswap watcher ==============
-    // The swap took. Arm the watcher that samples [pCryPak+0x00] (the object's
-    // vtable ptr) + *(gEnv pCryPak slot) for the rest of boot — to catch the
-    // engine RE-POINTING the CCryPak vtable or making a SEPARATE CCryPak the live
-    // global AFTER kcdx's one-shot seat (the unprobed H4-state seam; CORRECTION 4).
-    // Read-only on engine memory; bounded sampler; no hook. NO-RESIDUE: remove
-    // with PROBE U on retirement.
-    {
-        const uintptr_t slotVa = kcdx::refdb::ResolveAddrByName(kNamePCryPakSlot);
-        kcdx::fs_takeover::ReswapProbeStartAtSeat(
-            pCryPak, kcdx::fs_takeover::GetKcdxVtableAddr(),
-            reinterpret_cast<const void*>(slotVa));
-    }
-    // === END PROBE U arm ===
 
     // The swap took. Build the asset index BEFORE returning — the engine's first
     // file call through the swapped object comes AFTER this helper returns (P1:

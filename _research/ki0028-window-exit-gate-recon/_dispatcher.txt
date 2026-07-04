@@ -1,4 +1,0 @@
-
-=== dispatcher around focus-poll call: 0x667d40..0x667e80 ===
-0x00667d40 push    rax
-0x00667d41 adc     byte ptr [rax - 0x75], cl

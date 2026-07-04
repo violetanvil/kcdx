@@ -1,3 +1,0 @@
-IAT RVA 0x3a02840  ->  KERNEL32.dll!GetFileAttributesW
-IAT RVA 0x3a03428  ->  VCRUNTIME140.dll!strchr
-IAT RVA 0x3a03430  ->  VCRUNTIME140.dll!strrchr
