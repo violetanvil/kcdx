@@ -168,7 +168,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
     //     {a.dds (disk), b.dds (index pak), sub (synthetic DIR for ui/sub/c.dds)}.
     //     The empty mask is a match-all glob (== "*.*"/"*"), so PROBE Q's synthetic
     //     directory entry for the immediate-child subdir 'sub' IS emitted (the
-    //     engine's own dir walk returns subdirs for a match-all glob — KI-0028
+    //     engine's own dir walk returns subdirs for a match-all glob —
     //     MaskMatchesDirectories). The deeper FILE 'sub/c.dds' is NOT emitted as a
     //     file (single-level); it is surfaced as the 'sub' DIRECTORY the engine
     //     recurses into. (g) below verifies the mask gate: a specific-ext mask
@@ -311,10 +311,10 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         }
     }
 
-    // (g) SYNTHETIC-DIR MASK GATE — the KI-0028 regression. PROBE Q emits a
-    //     synthetic DIRECTORY entry for an immediate-child subdir so a single-level
-    //     FindFirst surfaces the subdir the engine recurses into. But that emission
-    //     must honor the engine's _wfindfirst64 dir-vs-file glob semantics: a
+    // (g) SYNTHETIC-DIR MASK GATE. The enum emits a synthetic DIRECTORY entry for
+    //     an immediate-child subdir so a single-level FindFirst surfaces the subdir
+    //     the engine recurses into. But that emission must honor the engine's
+    //     _wfindfirst64 dir-vs-file glob semantics: a
     //     specific-extension mask ("*.xml") returns FILES ONLY (a directory has no
     //     extension, so it does not match), while a match-all mask ("*.*"/"*"/"")
     //     returns subdirs too. The bug: PROBE Q emitted the subdir IGNORING the
@@ -347,8 +347,8 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
                 "(MUST be 0 — a specific-ext glob excludes directories, like "
                 "_wfindfirst64), '*.xml' has chest.xml=%d (expected 1), '*.*' has "
                 "'animal' dir=%d (MUST be 1 — a match-all glob includes subdirs). "
-                "The bug (KI-0028): PROBE Q emitted the subdir IGNORING the mask, so "
-                "FindFirst('prefabs/*.xml') returned bogus directory entries the "
+                "The bug the gate prevents: emitting the subdir IGNORING the mask, so "
+                "FindFirst('prefabs/*.xml') returns bogus directory entries the "
                 "engine never asked for on the content-enum path",
                 (int)HasEntry(xmlSet, "animal"), (int)xmlHasFile,
                 (int)allHasDir);
@@ -372,7 +372,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         "soul_ability__x.xml / other.xml — the index arm honors the filename glob, "
         "not the directory only (the KI-0027 mask-blind over-match regression); "
         "(g) a '*.xml' specific-ext mask excludes the synthetic subdir entry while "
-        "'*.*' includes it (the KI-0028 PROBE Q mask-bypass fix — _wfindfirst64 "
+        "'*.*' includes it (the synthetic-dir mask gate — _wfindfirst64 "
         "dir-vs-file glob semantics, so a content enum never gets bogus dirs). "
         "Proves the unified-enumeration + find-data ABI "
         "the slots 63/64/65 rest on. LIVE-LAUNCH-ONLY (NOT asserted here): the "

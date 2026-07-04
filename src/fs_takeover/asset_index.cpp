@@ -28,7 +28,7 @@ constexpr const char* kCat = "FS_INDEX";
 
 // Derive a pak's BIND-ROOT — the mount point the engine binds the pak at, the
 // prefix it prepends to every request for that pak's content. This is the §5
-// keystone the bare-pe.name keying dropped (KI-0028 level-load abort).
+// keystone that bare-pe.name keying dropped.
 //
 // WHY: vanilla's OpenPack slot-7 (FUN_18193cb14) auto-derives a pak's bind-root
 // as its DIRECTORY PATH (`strrchr(path,'\\')`), and the engine then requests a
@@ -45,7 +45,7 @@ constexpr const char* kCat = "FS_INDEX";
 // the key is bare pe.name, exactly as before (engine paks under Engine/*.pak keep
 // their content-rooted `config/…`/`shaders/…` keys, so the %engine% / gameshaders
 // folds still land — verified collision-safe: bind-root keying drops cross-pak
-// collisions 448->182, KI-0028 _collision_check.txt).
+// collisions 448->182).
 std::string BindRootOf(const std::wstring& pakPath, const std::wstring& root) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -76,7 +76,7 @@ std::string BindRootOf(const std::wstring& pakPath, const std::wstring& root) {
 // by every vanilla root the index covers — `<game>/Data` AND `<game>/Engine`
 // (design §5: the index covers the FULL vanilla-pak set the engine draws from,
 // so an engine-pak-resident file like %engine%/config/engine_core.thread_config
-// is an index HIT kcdx serves, not a miss the engine fatals on — KI-0026).
+// is an index HIT kcdx serves).
 // `pakCount`/`pakEntryInserts` accumulate ACROSS roots (the caller passes the
 // same counters per root) so the build summary totals every root walked.
 void IndexPakRoot(AssetIndex& index, const std::wstring& root,
@@ -88,22 +88,21 @@ void IndexPakRoot(AssetIndex& index, const std::wstring& root,
     // enumeration — not a runtime-mechanism probe; no hardcoded pak list).
     // Same std::filesystem iteration pattern mod_absorb/enabled_list_builder.cpp
     // uses for mod paks.
-    // RECURSIVE walk (KI-0028): the level component paks live NESTED under
+    // RECURSIVE walk: the level component paks live NESTED under
     // Data/Levels/<level>/*.pak (and other vanilla pak trees nest too) — a
     // single-level directory_iterator missed them entirely. recursive_directory_
     // iterator covers the FULL nested vanilla pak set (kcdx IS the filesystem — it
     // owns every vanilla pak the engine reads, not just the top-level ones).
     //
-    // Discovery is necessary but NOT sufficient (KI-0028 root cause): a nested
-    // pak's central-directory keys are bare/content-rooted (level.pak stores
-    // `leveldata.xml`, `terrain/…`), but the engine requests them by the pak's
-    // BIND-ROOT-prefixed path (`Levels/<lvl>/leveldata.xml` — the mount point
-    // vanilla's OpenPack auto-derives from the pak's dir). Keying by bare pe.name
-    // dropped that prefix, so a discovered level pak STILL missed every request →
-    // the level-info loader read nothing → CreateInstance's empty-record gate
-    // aborted the load (black screen). The per-pak BindRootOf (below) supplies the
-    // prefix: each entry is keyed <bind-root>/<NormalizeVPath(pe.name)>, depth-
-    // and mount-aware, not just depth-discovered.
+    // Discovery is necessary but NOT sufficient: a nested pak's central-directory
+    // keys are bare/content-rooted (level.pak stores `leveldata.xml`, `terrain/…`),
+    // but the engine requests them by the pak's BIND-ROOT-prefixed path
+    // (`Levels/<lvl>/leveldata.xml` — the mount point vanilla's OpenPack
+    // auto-derives from the pak's dir). Keying by bare pe.name dropped that prefix,
+    // so a discovered level pak STILL missed every request. The per-pak BindRootOf
+    // (below) supplies the prefix: each entry is keyed
+    // <bind-root>/<NormalizeVPath(pe.name)>, depth- and mount-aware, not just
+    // depth-discovered.
     std::error_code ec;
     fs::recursive_directory_iterator it(
         root, fs::directory_options::skip_permission_denied, ec);
@@ -133,7 +132,7 @@ void IndexPakRoot(AssetIndex& index, const std::wstring& root,
         const std::wstring pakPath = entry.path().wstring();
         // The pak's bind-root (mount point) — prepended to every entry key so a
         // nested pak's files resolve under the path the engine requests them by
-        // (KI-0028: Levels/<lvl>/<file>). Empty for a top-level pak (bare keys).
+        // (Levels/<lvl>/<file>). Empty for a top-level pak (bare keys).
         const std::string bindRoot = BindRootOf(pakPath, root);
         std::vector<PakEntry> entries;
         std::string parseErr;
@@ -167,7 +166,7 @@ void IndexPakRoot(AssetIndex& index, const std::wstring& root,
             // Engine) replaces an earlier one at the same BIND-ROOT-prefixed key.
             // The bind-root keying makes most apparent collisions disappear: a
             // full-vanilla-set scan found 448 BARE-key cross-pak collisions but
-            // only 182 under bind-root keying (KI-0028 _collision_check.txt) — the
+            // only 182 under bind-root keying — the
             // prefix disambiguates by mount point (e.g. each level's
             // `terrain/svo/*.idx` no longer collides with the global svo.pak). The
             // 182 residual are genuine vanilla duplicates (ShaderCache.pak ≡
@@ -177,7 +176,7 @@ void IndexPakRoot(AssetIndex& index, const std::wstring& root,
             // nondeterministic one.
             // Key = <bind-root>/<normalized entry name>. The bind-root supplies
             // the mount-point prefix vanilla's OpenPack auto-derives from the
-            // pak's dir (KI-0028): a top-level pak's empty bind-root yields the
+            // pak's dir: a top-level pak's empty bind-root yields the
             // bare normalized name (unchanged); a nested pak (Data/Levels/<lvl>/)
             // yields `levels/<lvl>/<name>`, the form the engine requests it by.
             std::string key = asset_overlay::NormalizeVPath(pe.name);
@@ -202,12 +201,12 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
     // ShaderCacheStartup.pak, and any future engine pak, discovered by
     // enumeration — design §5, v1.8). Indexing only Data MISSED the engine's
     // own config/shader files (e.g. %engine%/config/engine_core.thread_config in
-    // Engine.pak): the miss arm _wfopen'd a non-existent loose path, the open
-    // failed, and the engine raised CSystem::FatalError(0xC8) at graphics-init
-    // (KI-0026). Covering Engine/ makes every engine-pak file an index HIT kcdx
-    // serves through its own PKZIP/DEFLATE reader. An empty engineDir means a
-    // caller that only indexes Data (the standalone tests) — Engine is skipped,
-    // the Data walk is unchanged.
+    // Engine.pak): if the miss arm _wfopen's a non-existent loose path, the open
+    // fails, and the engine raises CSystem::FatalError(0xC8) at graphics-init.
+    // Covering Engine/ makes every engine-pak file an index HIT kcdx serves
+    // through its own PKZIP/DEFLATE reader. An empty engineDir means a caller
+    // that only indexes Data (the standalone tests) — Engine is skipped, the
+    // Data walk is unchanged.
     //
     // The per-root walk (discover → CDR-parse → insert, LAST-pak-wins, one bad
     // pak logged + skipped) is IndexPakRoot; the counters accumulate across
@@ -247,7 +246,7 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
     // build is a logged lifecycle event; the test-bar dev-log observation).
     // `roots` makes clear how many vanilla roots were walked (2 = Data + Engine
     // at the seat; 1 = a Data-only standalone-test build) so a boot log shows
-    // the Engine root was indexed (KI-0026).
+    // the Engine root was indexed.
     LOG_DEBUG_KV(kCat, "asset_index_built",
                  kcdx::log::KV("entries", (uint64_t)index.size()),
                  kcdx::log::KV("roots", (uint64_t)rootsWalked),
@@ -262,35 +261,24 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
 // to the pak-root-relative key the entries are STORED under. The engine opens a
 // pak-resident file by an ALIASED path; the index keys it by the pak's own
 // (NormalizeVPath-folded) entry name. Without the fold the lookup keeps the alias,
-// misses the stored key, the miss arm thunks to a non-existent loose path, and the
-// engine fails to load the file (KI-0026 fatal at graphics-init; KI-0028 black
-// frames from un-served shaders). kcdx, as the totalizing FS owner, resolves every
-// alias the engine uses — this is the alias chokepoint.
+// misses the stored key, and the miss arm thunks to a non-existent loose path so
+// the engine fails to load the file. kcdx, as the totalizing FS owner, resolves
+// every alias the engine uses — this is the alias chokepoint.
 //
 // Two aliases are folded (each verified against the on-disk pak central directory):
 //
 //   1. %engine%/X → X            (DROP the prefix). Engine.pak entries are keyed
 //      pak-relative (e.g. `config/engine_core.thread_config`); the engine opens
-//      them as `%engine%/config/...`. (KI-0026.)
+//      them as `%engine%/config/...`.
 //
 //   2. data/gameshaders/X → shaders/X   (REPLACE the prefix). Shaders.pak entries
 //      are stored under `shaders/` (verified: 21 `shaders/*.ext` + 180
 //      `shaders/hwscripts/cryfx/*.cfx` in the pak CD), but the engine's shader
 //      subsystem opens them via the `data/gameshaders/` alias (`runtime.ext`,
 //      `scaleform4.ext`, `hwscripts/cryfx/posteffects.cfx`, …). Without this fold
-//      EVERY shader lookup in the alias form missed → loose-open errno=2 → the
-//      shader never loaded. A real alias-miss sub-case (the shader subsystem
-//      could not find its shaders) — fixed here. The single prefix swap covers
-//      BOTH the `.ext` and the `hwscripts/cryfx/*.cfx` families (both live under
-//      `shaders/` in the pak).
-//
-//      NOTE: an EARLIER investigation labeled this fold "This IS KI-0028". The
-//      end-to-end KI-0028 root cause (the level-load abort: black screen, no
-//      input) is the BIND-ROOT keying gap (a nested level pak's entries were
-//      keyed by bare pe.name, missing the `Levels/<lvl>/` prefix the engine
-//      requests them by — BindRootOf above; ROOT-CAUSE-bind-root-prefix.md). This
-//      gameshaders fold is a real but SEPARATE alias sub-case, not the abort
-//      cause; both are correct and both ship.
+//      EVERY shader lookup in the alias form misses → loose-open errno=2 → the
+//      shader does not load. The single prefix swap covers BOTH the `.ext` and the
+//      `hwscripts/cryfx/*.cfx` families (both live under `shaders/` in the pak).
 //
 // INVARIANT: applied to the already-NormalizeVPath'd key (lowercase + forward
 // slash), so the literals to match are the folded forms (`%`, `/` unchanged by the
@@ -315,7 +303,7 @@ void FoldEngineAliasToIndexKey(std::string& key) {
         key.erase(0, kEngineAliasLen);  // %engine%/X -> X (pak-root-relative)
         return;
     }
-    // data/gameshaders/X -> shaders/X (the Shaders.pak stored prefix; KI-0028).
+    // data/gameshaders/X -> shaders/X (the Shaders.pak stored prefix).
     // A prefix REPLACE (not a strip): erase `data/gameshaders/`, prepend
     // `shaders/`. The mutually-exclusive `return` above means a key reaches here
     // only if it was not the %engine% alias.
@@ -327,7 +315,7 @@ void FoldEngineAliasToIndexKey(std::string& key) {
 const ByteSource* ResolveVPath(const AssetIndex& index, const std::string& vpath) {
     // The O(1) hot-path lookup (§5 "no extra hotpath checks"): normalize once,
     // fold the engine's pak aliases to the stored pak-root key (%engine% KI-0026,
-    // data/gameshaders KI-0028), one hash lookup, return the source or nullptr (a
+    // data/gameshaders), one hash lookup, return the source or nullptr (a
     // miss = the engine resolves it via the fall-through). No search, no bisection.
     std::string key = asset_overlay::NormalizeVPath(vpath);
     FoldEngineAliasToIndexKey(key);

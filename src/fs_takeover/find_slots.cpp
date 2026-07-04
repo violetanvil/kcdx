@@ -8,7 +8,7 @@
 #include <unordered_set>
 
 #include "asset_index.h"       // GetBuiltIndex + FoldEngineAliasToIndexKey (alias fold)
-#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window slot trace (KI-0026)
+#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window slot trace
 #include "file_handle.h"       // the kcdx handle pool — find-handle mint/peek/advance/close
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
@@ -61,7 +61,7 @@ size_t DirPrefixLen(const char* pattern) {
 // aliased dir (`FindFirst "data/gameshaders/*.ext"`) matches the index keys
 // stored under the pak root (`shaders/`), exactly as opening one shader by name
 // does. Without this the enum form missed the 21 shaders the `shaders/*.ext`
-// form found (KI-0028); kcdx owns the alias on EVERY path, not just open.
+// form found; kcdx owns the alias on EVERY path, not just open.
 std::string IndexDirPrefix(const char* pattern) {
     const size_t dlen = DirPrefixLen(pattern);
     std::string prefix = asset_overlay::NormalizeVPath(std::string(pattern, dlen));

@@ -540,7 +540,7 @@ std::string NormalizeVPath(const std::string& vpath) {
         if (c == '\\' || c == '/') {
             // Fold '\\' -> '/' AND collapse consecutive separators: the engine
             // emits a '//' in some enumeration patterns
-            // (`%ENGINE%/Shaders/Cache/D3D12//*.*` — KI-0028), and a doubled
+            // (`%ENGINE%/Shaders/Cache/D3D12//*.*`), and a doubled
             // separator must normalize to the SAME key as a single one or the
             // index prefix-match misses (`shaders/cache/d3d12//` would not prefix
             // an entry keyed `shaders/cache/d3d12/X`). A separator that follows a

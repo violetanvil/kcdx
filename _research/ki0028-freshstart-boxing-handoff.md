@@ -136,6 +136,82 @@ comments, some change BEHAVIOR:
    swap-OFF behavior divergence via the neutral FS_BOOT_TRACE logging; no prior theory"). NO
    reference to any boxed work. This is what the fresh frame reads.
 
+## SCRUB VERIFICATION (2026-07-03, post-commit 7a247af) — found MORE leaks, full scrub in progress
+
+A verification sweep after the box-away commit found the scrub was INCOMPLETE. The commit boxed
+the _research dumps + probes, but KI-0028 theory survived in three more places a fresh frame reads.
+User directive: FULL scrub (product-code comments too). Complete contamination map:
+
+### (i) 17 tracked Ghidra scripts — the boxed-theory probe GENERATORS. BOX ALL to ../kcdx-ki0028-sealed/ghidra-scripts/:
+third-party-ghidra/ghidra_scripts/{FindShaderManAnchors, Ki28CacheLoadDecomp, Ki28CfxbLookupDecomp,
+Ki28CfxbLookupDecomp2, Ki28DrawRecordDecomp, Ki28Hop3CallersDecomp, Ki28Hop5CallerDecomp,
+Ki28Hop7EnqueueDecomp, Ki28Hop7bAppendScan, Ki28Hop7cFrameDriver, Ki28IndexedCallerDecomp,
+Ki28PsoCreateDecomp, Ki28PsoCreateDecomp2, Ki28PsoCreateDecomp3, Ki28PsoCreateDecomp4,
+Ki28RenderSubmitAnchors, Ki28ScenePassTrace}.java — `git rm` them (physical move out).
+NOTE: third-party-ghidra heavy binaries are gitignored but these .java SCRIPTS are TRACKED.
+
+### (ii) PRODUCT-CODE comments carrying KI-0028 theory (~52 lines, 13 files). Per comment:
+KEEP the real product decision, STRIP the theory/conclusion framing + the KI-0028 xref. E.g.
+asset_index.cpp: keep "this fold maps data/gameshaders/X -> shaders/X (the Shaders.pak stored
+prefix)"; STRIP "This IS KI-0028 root cause / the level-load abort / black screen / aborted the load".
+Files + theory-line counts:
+- src/fs_takeover/asset_index.cpp (13) — HEAVIEST: 'KI-0028 level-load abort', 'black screen',
+  'This IS KI-0028 root cause', collision-check (448->182), bind-root narrative, KI-0026/28 xrefs.
+- test-plugins/cap-112-asset-index/cap-112.cpp (8), cap-115-engine-pak-index/cap-115.cpp (6),
+  cap-118-fs-takeover-finditer/cap-118.cpp (4) — test-plugin header comments referencing KI-0028.
+- src/asset_overlay.cpp (6), src/lua_bind_assets.cpp (3), test-plugins/README.md (4),
+  docs/known-issues/README.md (2 — one is the fixed row, check the other), asset_namespace.h (1),
+  asset_index.h (1), enum_slots.cpp (1), find_slots.cpp (1).
+  Sweep term set: `ki-?0028|black.?screen|level-load abort|render-item|draw_indexed|no.?render|HOP [0-9]|render.?submission`.
+  BE SURGICAL: some 'KI-0028' xrefs are legit historical (a real fix's provenance) — reword to state
+  the fact ('the bind-root prefix keying', 'the recursive pak walk') without the black-screen/abort
+  theory or the bug-number, since that number now points at a DIFFERENT (reset) framing.
+
+### (iii) docs/outstanding-work/file-system-takeover/README.md (2) — the FS-takeover FEATURE plan (legit,
+KEEP the tree) but its ~line-30 block points at the OLD KI-0028 filename with the 'boot HANGS at
+UI/render, KI-0026->27->28 chain' theory. REPOINT to KI-0028-fs-takeover-boot-no-render.md + drop the
+hang/chain theory (restate: 'boot renders nothing with the swap active — tracked as KI-0028'). The
+'PROBE F' refs in that tree are a DIFFERENT, completed probe-removal step (historical DONE) — leave.
+
+### CLEAN sweep target (must return only the new stub + this handoff + legit feature refs):
+`git grep -niE "ki-?0028|black.?screen|level-load abort|render-item|draw_indexed|HOP [0-9]|render.?submission" -- src include docs test-plugins third-party-ghidra`
+Then rebuild green + commit the scrub as a follow-up to 7a247af.
+
+## SCRUB PROGRESS (2026-07-03 session 2) + the DECIDED approach for the remainder
+
+DONE this session (uncommitted, staged where noted):
+- 17 Ki28*.java ghidra scripts BOXED to ../kcdx-ki0028-sealed/ghidra-scripts/ + git-rm-cached (staged).
+- src fully scrubbed: asset_index.cpp (13 theory lines), asset_index.h (2), asset_overlay.cpp (1),
+  enum_slots.cpp (1), find_slots.cpp (1). Approach: KEEP the real product-decision explanation,
+  STRIP the bug-number + the black-screen/level-abort/fatal THEORY framing. (lua_bind_assets.cpp,
+  asset_namespace.h were already clean — only generic 'hop 1' feature terms, not KI-0028.)
+
+REMAINING (do these, then build + commit):
+- **Test-plugins — DECIDED APPROACH (user): RE-ANCHOR to the fix, drop the bug-number.** These are
+  SHIPPED regression tests of REAL landed fixes (NOT boxed investigation). test-suite.md/AP15 requires
+  their falsifiable claims — DO NOT strip them. For EACH: KEEP the full mechanism + what-FAIL-means
+  claim; only replace the 'KI-0028'/'KI-0026' bug-NUMBER with the FIX's neutral name:
+    - cap-115 'the KI-0028 fix' / 'KI-0028 black-frame path' -> 'the gameshaders-alias fold' /
+      'the alias-fold's failure path'. 'KI-0026' -> 'the Engine-root/%engine%-alias fix'.
+    - cap-118 'the KI-0028 regression' / 'KI-0028 PROBE Q mask-bypass' -> 'the synthetic-dir mask-gate'.
+    - cap-112 'KI-0028 regression' / 'level-load abort (black screen)' -> 'the bind-root keying' /
+      'the bind-root miss'.
+    - test-plugins/README.md rows (cap-115 §1862-1873, cap-45 §605, cap-99 §1622-1625 KI-0015,
+      cap-116/117 KI-0026): same re-anchor — keep the falsifiable claim, neutralize the bug-#.
+      NOTE cap-99/cap-45 reference KI-0015/KI-0026 (DIFFERENT closed bugs) — those are fine to keep as
+      historical provenance OR neutralize for consistency; they are NOT the boxed KI-0028 investigation.
+      The load-bearing rule: never weaken a falsifiable claim; only swap the bug-# for the fix name.
+- **docs/outstanding-work/file-system-takeover/README.md ~line 30**: repoint the KI-0028 link to
+  KI-0028-fs-takeover-boot-no-render.md + drop the 'boot HANGS at UI/render, KI-0026->27->28 chain'
+  theory (restate: 'boot renders nothing with the swap active — tracked as KI-0028'). Keep the rest of
+  the (legit FS-takeover feature-plan) tree. The 'PROBE F' refs there = a different completed step, leave.
+- **docs/known-issues/README.md**: the KI-0028 row is already the new stub (fixed earlier); check the
+  2nd hit is just the closed KI-0026/27 rows (legit, leave).
+
+FINAL: `git grep -niE "ki-?0028|black.?screen|level-load abort|render-item|draw_indexed|HOP [0-9]|render.?submission" -- src include docs test-plugins third-party-ghidra`
+must return ONLY: the new stub, this handoff, and legit re-anchored FIX descriptions (no bare bug-#
+pointing at the boxed investigation). Then build green + commit the scrub as a follow-up to 7a247af.
+
 ## What STAYS in the repo (product — the thing under investigation)
 
 `src/fs_takeover/` product code: vtable_swap, vtable_table, seating_hook, asset_index, file_handle,

@@ -25,13 +25,11 @@ Shared spec + coverage map: [`plan-spec.md`](plan-spec.md).
 > (FindFirst/FindNext/FindClose, slots 63/64/65) is live: kcdx owns the unified-set
 > iterator, the table-DB override-glob is served (the index arm honors the filename
 > mask), and the table-database load no longer errors (live-verified — zero
-> `err_id=259`, correct match counts, 320 tests pass). The boot now reaches UI/render
-> bring-up and HANGS there (sound, no video, no input) — a NEW distinct subsystem
-> tracked as **[KI-0028](../../known-issues/KI-0028-fs-takeover-boot-hang-ui-render-init.md)**
-> (the KI-0026→KI-0027→KI-0028 chain). KI-0028 picks up via `/debug` with its evidence
-> already captured; it is NOT a regression of Phase 5 (enumeration is verified
-> functioning). Phase 3 step 3.4 (pak-mgmt slots) remains the separate open Phase-3
-> blocker above.
+> `err_id=259`, correct match counts, 320 tests pass). With the filesystem takeover
+> active the boot renders nothing (black screen) — a distinct open issue tracked as
+> **[KI-0028](../../known-issues/KI-0028-fs-takeover-boot-no-render.md)**; it is NOT a
+> regression of Phase 5 (enumeration is verified functioning). Phase 3 step 3.4
+> (pak-mgmt slots) remains the separate open Phase-3 blocker above.
 
 ## Phase-grain status ledger
 

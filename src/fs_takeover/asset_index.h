@@ -77,7 +77,7 @@ using AssetIndex = std::unordered_map<std::string, ByteSource>;
 // shader files (e.g. %engine%/config/engine_core.thread_config) from the
 // `Engine/*.pak` archives; indexing only `Data/` MISSED those, so the miss arm
 // _wfopen'd a non-existent loose path, the open failed, and the engine fatalled
-// at graphics-init with CSystem::FatalError(0xC8) (KI-0026). Covering both roots
+// at graphics-init with CSystem::FatalError(0xC8). Covering both roots
 // makes every engine-pak file an index HIT kcdx serves through its own PKZIP/
 // DEFLATE reader.
 //
@@ -121,8 +121,8 @@ AssetIndex BuildAssetIndex(const std::wstring& gameDataDir,
 // the open/resolve path (ResolveVPath) AND the directory-enumeration path
 // (find/enum prefix matching) — so a shader resolves identically whether opened
 // by name or enumerated. Folds:
-//   %engine%/X            -> X            (Engine.pak pak-root; KI-0026)
-//   data/gameshaders/X    -> shaders/X    (Shaders.pak `shaders/` root; KI-0028)
+//   %engine%/X            -> X            (Engine.pak pak-root)
+//   data/gameshaders/X    -> shaders/X    (Shaders.pak `shaders/` root)
 // A key matching no alias is left unchanged. INPUT MUST already be
 // NormalizeVPath'd (lowercase + forward slash) — the literals matched are the
 // folded forms. Allocation-light: an in-place prefix rewrite.

@@ -135,13 +135,13 @@ const uint64_t kExpectSize     = 20096;  // uncompressed_size
 const uint64_t kExpectCompr    = 3950;   // compressed_size
 const uint16_t kExpectMethod   = 8;      // DEFLATE
 
-// KI-0028 — the data/gameshaders alias fold. Shaders.pak (in <game>/Engine)
+// The data/gameshaders alias fold. Shaders.pak (in <game>/Engine)
 // stores shader entries under the `shaders/` pak root (e.g. 'Shaders/RunTime.ext'
 // → normalized 'shaders/runtime.ext'), but the engine's shader subsystem opens
 // them via the `data/gameshaders/` alias ('data/gameshaders/runtime.ext'). Without
-// the fold every shader lookup in the alias form missed → loose-open errno=2 → the
-// shader never loaded → the render pipeline PRESENTED (120fps) but composited
-// every frame BLACK (KI-0028). FoldEngineAliasToIndexKey maps data/gameshaders/X
+// the fold every shader lookup in the alias form misses → loose-open errno=2 → the
+// shader does not load → the render pipeline PRESENTS (120fps) but composites
+// every frame BLACK. FoldEngineAliasToIndexKey maps data/gameshaders/X
 // → shaders/X, the same alias-ownership pattern as %engine%. Fixture: the CDR
 // identity of Shaders.pak's 'Shaders/RunTime.ext' (read statically, same recipe).
 const char*    kShaderBareVPath  = "shaders/runtime.ext";            // stored key
@@ -316,13 +316,13 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         return true;
     }
 
-    // --- (e) GAMESHADERS-ALIAS HIT: the KI-0028 fix — the engine's shader lookup
+    // --- (e) GAMESHADERS-ALIAS HIT: the gameshaders-alias fold — the engine's shader lookup
     // form resolves. The engine opens shaders via 'data/gameshaders/<X>.ext' (the
     // alias), but Shaders.pak stores them under 'shaders/<X>.ext'. kcdx owns the
     // data/gameshaders alias: FoldEngineAliasToIndexKey maps data/gameshaders/X →
     // shaders/X, so the alias-form lookup must land on the SAME Shaders.pak Pak
     // ByteSource as the bare 'shaders/<X>.ext' key. This FAILS without the fold (the
-    // KI-0028 bug: the alias-form lookup keeps 'data/gameshaders/' and misses the
+    // failing shape: the alias-form lookup keeps 'data/gameshaders/' and misses the
     // stored 'shaders/' key → loose-open errno=2 → the shader never loads → every
     // presented frame is BLACK). Both forms resolved against the DATA+ENGINE index.
     const fst::ByteSource* shBare  = fst::ResolveVPath(idxBoth, kShaderBareVPath);
@@ -356,7 +356,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         std::snprintf(reason, sizeof(reason),
             "(e) the engine's ACTUAL shader lookup form '%s' did NOT resolve, while "
             "the bare key '%s' did — the data/gameshaders alias is not folded to the "
-            "stored 'shaders/' key. This IS the KI-0028 black-frame path: the engine "
+            "stored 'shaders/' key. This IS the black-frame path: the engine "
             "opens the alias form, the index miss falls to a loose open (errno=2), "
             "the shader never loads, and the render pipeline presents (120fps) but "
             "composites every frame BLACK (no UI — the Scaleform shader missed too)",
@@ -387,7 +387,7 @@ bool kcdxPlugin_Load(const kcdxInterface* api) {
         "ByteSource {size=%llu,method=%u} from Engine.pak; (c) the engine's aliased "
         "'%s' resolves to the SAME ByteSource (kcdx owns %%engine%%); (d) the "
         "alias-EXPANDED loose form '%s' MISSES (proving 'engine/...' is not a key); "
-        "(e) KI-0028: the shader alias '%s' folds to the stored '%s' and HITS the "
+        "(e) the shader alias '%s' folds to the stored '%s' and HITS the "
         "SAME Shaders.pak source {size=%llu,method=%u} — without the fold the engine's "
         "shader opens missed, the pipeline presented but every frame was BLACK. Every "
         "engine pak-alias the render path uses is now an index HIT kcdx serves",

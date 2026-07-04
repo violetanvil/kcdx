@@ -9,7 +9,7 @@
 #include <io.h>       // _wfindfirst64 / _wfindnext64 / _wfinddata64_t
 
 #include "asset_index.h"
-#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window full slot trace (KI-0026 F.3)
+#include "boot_trace.h"        // FS_BOOT_TRACE — boot-window slot trace
 #include "open_slots.h"        // kcdx_AdjustFileName (slot-1 resolution)
 #include "../asset_overlay.h"  // NormalizeVPath (the shared index key fold)
 #include "../log.h"
@@ -92,7 +92,7 @@ size_t DirPrefixLen(const char* pattern) {
 // SAME fold ResolveVPath + find_slots IndexDirPrefix apply — so a ForEachFile
 // over an aliased dir (`data/gameshaders/`) matches the index keys stored under
 // the pak root (`shaders/`). kcdx owns the alias on every enumeration path, not
-// just open (KI-0028).
+// just open.
 std::string IndexDirPrefix(const char* pattern) {
     const size_t dlen = DirPrefixLen(pattern);
     std::string prefix = asset_overlay::NormalizeVPath(std::string(pattern, dlen));
