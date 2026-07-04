@@ -120,6 +120,24 @@ commit_at_filing: 4befc07
 > never taken swap-ON while the non-indexed path runs 19447×?** Next probe: one hop up — trace `FUN_180501cb0`
 > (`0x501cb0`) swap-ON: reached-but-skips-the-bind vs never-reached (gated upstream). Full trace + diff:
 > `_research/ki0028-differential-trace-recon/FINDINGS.md` (RESULT section). Still OPEN; AP17 mechanism owed.
+>
+> **CORRECTION 8 (2026-07-03) — DIFFERENTIAL TRACE HOP 6-8: the frontier is the render-item ENQUEUE, and
+> HOP-7's "command-stream interpreter" is a REFUTED static lead.** The trace walked up the submit chain:
+> HOP 6 found the pass-A dispatcher `FUN_180779534` fires every frame swap-ON but its render-item list
+> `[obj+0x308..0x310]` is EMPTY on every fire. HOP 7 (static) named the dispatcher's driver as a typed-opcode
+> command-stream interpreter `FUN_18251bb1c` (opcode 4 = pass-A submit). **HOP 8 (live, both arms) REFUTES that:**
+> a hook on `FUN_18251bb1c` @ RVA `0x251bb1c` fired **invokes=0 on BOTH arms** (swap-ON black AND swap-OFF menu)
+> — hook install proven (`sites_armed=10`, no arm error, the dispatcher on the SAME MinHook init fired 1592-13350×).
+> So `0x251bb1c` is **NOT the hot render-command driver**; HOP-7's static call-chain (interpreter → opcode-4 →
+> dispatcher) was an unread live edge, killed by the run — do NOT build on the "command-stream interpreter" model.
+> **What the same-run dispatcher cross-check DID prove is the whole KI-0028 divergence in one row:** the SAME
+> dispatcher `FUN_180779534`, swap-OFF fires 1592× with `list_empty=0` (render-item list FILLED, pass A called →
+> menu renders), swap-ON fires 13350× with `list_empty=all` (list EMPTY, pass A skipped → black). Renderer +
+> dispatcher intact BOTH arms; **the FS-takeover swap breaks the ENQUEUE of items into `[obj+0x308(begin)..0x310(end)]`.**
+> Frontier, unambiguous: the item-append leaf that fills that vector (the push-back writing `+0x310`), and one
+> hop up, the scene/visibility walk the swap starves. HOP 9 resumes HOP-7's stalled append-leaf hunt (targeted
+> decomp ONLY — the whole-module scan is the hang trap). Full result + the HOP-9 plan:
+> `_research/ki0028-differential-trace-recon/HOP8-FINDINGS.md`. Still OPEN; AP17 mechanism owed.
 
 With the file-system-takeover directory-enumeration triplet live (KI-0027 fixed,
 `4befc07`), the boot now passes the table-database load and proceeds — but **HANGS**

@@ -1,5 +1,18 @@
-// === DIAGNOSTIC (PROBE Z10 / KI-0028 HOP 8) — render command-stream interpreter ===
-// See cmd_stream_probe.h for WHY. NO-RESIDUE on retire (file + Z10 arm/tally calls + CMake).
+// === ARCHIVED PROBE (KI-0028 HOP 8) — render command-stream interpreter ===
+// VERDICT: DEAD LEAD. The interpreter FUN_18251bb1c @ RVA 0x251bb1c fired invokes=0 on BOTH
+//   arms (swap-ON black AND swap-OFF menu) — hook installed cleanly (sites_armed=10, no arm
+//   error, dispatcher on the shared MH_Initialize fired 1592-13350x). So this RVA is NOT the
+//   hot render-command driver; HOP-7's static "command-stream interpreter" identification is
+//   REFUTED by the run (an unread live edge — the dispatcher is NOT reached through it).
+// WHAT IT DID PROVE (via the dispatcher cross-check armed in the same Z10 pass): the KI-0028
+//   frontier is the ENQUEUE into the dispatcher's render-item list [obj+0x308..0x310] — FILLED
+//   swap-OFF (list_empty=0), EMPTY swap-ON (list_empty=all). See HOP8-FINDINGS.md.
+// BACKLINK: docs/known-issues/KI-0028-*.md ; _research/ki0028-differential-trace-recon/HOP8-FINDINGS.md
+// REVIVAL: the arm/tally pattern (CmdStreamProbeArm at whgameBase+RVA + SEH-guarded field read
+//   + bounded-watcher tally) is the reusable wiring — re-target it at a DIFFERENT RVA if a new
+//   render-command interpreter is identified. Do NOT re-arm 0x251bb1c (proven cold).
+// ORIGINAL HEADER (as it lived in src/fs_takeover/): "PROBE Z10 / KI-0028 HOP 8 — render
+//   command-stream interpreter. NO-RESIDUE on retire (file + Z10 arm/tally calls + CMake)."
 
 #include "cmd_stream_probe.h"
 

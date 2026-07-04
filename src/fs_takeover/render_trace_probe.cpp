@@ -14,7 +14,6 @@
 #include "../log.h"
 #include "../pe_helpers.h"     // kcdx::pe::OpenModule / ModuleView
 #include "draw_caller_tally.h" // HOP-4: unique-caller RA tally (module-attributed)
-#include "cmd_stream_probe.h"  // HOP-8: render command-stream interpreter
 
 namespace kcdx::fs_takeover {
 
@@ -63,9 +62,6 @@ constexpr uint32_t  kRvaPassADispatch = 0x779534;  // FUN_180779534(param_1) -> 
 constexpr uintptr_t kDispPassObjOff   = 0x378;     // [param_1+0x378] = the render-pass obj
 constexpr uintptr_t kPassObjListBeg   = 0x308;     //   obj+0x308 = item-list begin ptr
 constexpr uintptr_t kPassObjListEnd   = 0x310;     //   obj+0x310 = item-list end ptr
-// HOP 8: the render command-stream interpreter FUN_18251bb1c is instrumented in its own
-// unit (cmd_stream_probe.{h,cpp}) — a distinct concern from these pass-gate samplers, kept
-// separate to respect the one-file-one-concern ceiling.
 
 // The WHGame base captured at arm — the _ReturnAddress caller-attribution subtracts it
 // so the logged caller RVA is module-relative + directly comparable across arms/runs.
@@ -394,8 +390,6 @@ void RenderTraceProbeStart() {
     // HOP 6: pass A's dispatcher (fire + item-count sampler).
     armed += ArmSite(base, kRvaPassADispatch, reinterpret_cast<void*>(&HookedPassADispatch),
                      reinterpret_cast<void**>(&g_origPassADisp), "passA_dispatch") ? 1 : 0;
-    // HOP 8: the render command-stream interpreter (own unit).
-    armed += CmdStreamProbeArm(base);
 
     // A bounded watcher emits the cumulative IB-null tally so the confirm survives past
     // the per-invocation cap (the whole-run null-rate IS the signal).
@@ -426,7 +420,6 @@ void RenderTraceProbeStart() {
                     DumpDrawCallers("pass_a_entry", g_passACallers);
                     DumpDrawCallers("pass_b_entry", g_passBCallers);
                 }
-                CmdStreamProbeEmitTally();  // HOP 8: command-stream length tally
                 // HOP 6: pass A dispatcher fire/list-empty tally (the frontier signal).
                 LOG_INFO_KV(kCat, "passa_dispatch_tally",
                     KV("invokes",    g_dispInvokes.load()),

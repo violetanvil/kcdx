@@ -323,7 +323,6 @@ add_library(kcdx SHARED
     src/fs_takeover/dispatch_probe.cpp
     src/fs_takeover/drawcall_probe.cpp
     src/fs_takeover/draw_caller_tally.cpp
-    src/fs_takeover/cmd_stream_probe.cpp
     src/fs_takeover/reswap_probe.cpp
     src/fs_takeover/stall_stack_probe.cpp
     src/fs_takeover/render_trace_probe.cpp

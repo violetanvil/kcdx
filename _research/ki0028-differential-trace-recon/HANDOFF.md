@@ -3,7 +3,8 @@
 ## Where we are
 
 The METHOD RESET (stop spot-checking → build an ordered differential trace) is WORKING and has walked
-the divergence down TWO hops. All committed on `main` (latest `3347613`).
+the divergence down to the ENQUEUE frontier (HOP 8 done). HOP 1-7 committed on `main`; HOP 8 is the
+newest work (committing now). Resume point: **HOP 9 — the item-append leaf (see §"current frontier").**
 
 ### Proven so far (the trace's mechanical findings — do NOT re-litigate)
 
@@ -32,25 +33,44 @@ The divergence walked cleanly UP the render-submission → enqueue chain:
 - **HOP 6 (DECISIVE):** swap-ON the dispatcher FIRES 6722× (obj non-null) but the render-item list is
   EMPTY on 6722/6722 entries. The render-pass machinery is intact; **the geometry is never ENQUEUED.**
 
-### HOP 7 DONE (committed `6b65d08`; see HOP7-FINDINGS.md)
+### HOP 7 DONE (committed `6b65d08`; see HOP7-FINDINGS.md) — but its interpreter lead is REFUTED by HOP 8
 
-Pass A's driver `FUN_18251bb1c` is a **render command-stream INTERPRETER** — walks a typed-opcode
-byte buffer (cursor `[p2+0x8]`, len `[p2+0x10]`, base `[p2+0x18]`; switch on a u32 opcode, cases
-1..0x1d). **Opcode 4 = the pass-A submit.** The item-build is other opcodes earlier in the SAME
-stream; the whole stream is produced upstream (`FUN_18252a228` up) and is what the swap perturbs.
+HOP 7 (static) named pass A's driver `FUN_18251bb1c` as a render command-stream INTERPRETER (typed-opcode
+byte buffer; opcode 4 = pass-A submit). **HOP 8 (live, both arms) KILLED this:** the interpreter fired
+invokes=0 on BOTH arms — it is NOT the hot render-command driver. Do NOT build on the interpreter model.
+The static edge (interpreter → opcode-4 → dispatcher) was an unread LIVE edge; the run refuted it.
 
-### The current frontier (HOP 8 — probe BUILT + DEPLOYED, needs BOTH arms)
+### HOP 8 DONE (this session, NOT yet committed) — see HOP8-FINDINGS.md. The frontier is now CLEAN.
 
-**Is the render command stream EMPTY swap-ON, or the same stream missing the item-build opcodes?**
-HOP-8 probe (`cmd_stream_probe.{h,cpp}`, wired into PROBE Z10, deployed hash-verified, dev mode on):
-hooks the interpreter at entry, logs `cmd_stream` (len + first_op, first 6) + `cmd_stream_tally`
-(invokes / len_zero / len_max / len_last every 3s). **CURRENTLY ARMED swap-ON (marker removed).**
-Pre-committed map (in HOP7-FINDINGS §"Next probe"):
-- len=0 every frame swap-ON → stream empty → frontier = the stream PRODUCER (scene→command-buffer).
-- len>0 swap-ON → stream present → cross-check opcode-4 count (= `passa_dispatch` invokes) vs the
-  build opcodes.
+The HOP-8 probe (cmd_stream, interpreter arm) fired invokes=0 both arms → REFUTED HOP 7's interpreter.
+But the SAME-run dispatcher cross-check nailed the whole KI-0028 divergence in one row:
 
-Run order: swap-ON first (unknown), then swap-OFF baseline (set `kcdx-noswap`). Diff `cmd_stream_tally`.
+| `passa_dispatch_tally` (dispatcher `FUN_180779534`) | swap-ON | swap-OFF |
+|---|---|---|
+| invokes | 13350 | 1592 |
+| list_empty | 13350 (ALL) | 0 (list FILLED) |
+| would_call (pass A called) | 0 | 1592 |
+
+**The renderer + dispatcher are INTACT both arms; the FS-takeover swap breaks the ENQUEUE of items into
+the dispatcher's render-item list `[obj+0x308(begin)..0x310(end)]`** (obj = `[dispatcher.param_1+0x378]`).
+Filled swap-OFF → menu renders; empty swap-ON → black. The interpreter detour is CLOSED.
+
+The HOP-8 cmd_stream probe is RETIRED (dead lead): archived to
+`_research/probe-archive/ki0028-hop8-cmd_stream_probe.{cpp,h}` (with verdict header), removed from
+`src/fs_takeover/` + CMake + the 3 Z10 wiring points; build green + deployed (hash-verified). The Z10
+tracer (render_trace_probe.cpp — HOP 2-6 arms) STAYS LIVE; HOP 9 extends it.
+
+### The current frontier (HOP 9 — the item-enqueue leaf that fills [obj+0x308..0x310])
+
+**What appends items to `[obj+0x308..0x310]` swap-OFF, and why does the FS swap starve it swap-ON?**
+The dispatcher CLEARS the vector inline and READS begin/end to walk; the APPEND (push-back writing
+`+0x310` end-ptr) is a SEPARATE leaf, called earlier in the frame on `obj`. HOP 7's 7b module-wide
+append-scan HUNG (whole-module decompile trap) so it was never named. HOP 9:
+1. **Reuse-first:** re-read `_hop7b_append_scan.txt` + `_hop_caller_up_1805029f0.txt` for any partial.
+2. **Targeted decomp ONLY** (single-function; NEVER whole-module): find the fn writing `[obj+0x310]`
+   (end-ptr advance) near reads of `[obj+0x308]` = the push-back into the pass-item vector.
+3. **Live arm** on that leaf, both arms: fires+fills swap-OFF, absent/early-returns swap-ON → confirmed;
+   then walk ONE up to the swap-perturbed scene/visibility producer.
 
 ### Ghidra RUN RECIPE (two traps burned hours — do NOT repeat)
 - A whole-module `getFunctions()` + decompiler scan HANGS headless (2 java procs stuck for hours,
@@ -69,18 +89,23 @@ Run order: swap-ON first (unknown), then swap-OFF baseline (set `kcdx-noswap`). 
    Step-3 trace RESULT.
 4. `_research/ki0028-differential-trace-recon/_hop_indexed_caller_180501cb0.txt` — FUN_180501cb0's body
    + its 2 callers (the next-hop targets) + `_hop_caller_up_1805029f0.txt`.
-5. `src/fs_takeover/render_trace_probe.{h,cpp}` — PROBE Z10 (the live tracer; extend it for the next hop).
-6. `docs/known-issues/KI-0028-...md` Correction 7 — the trail entry for the Step-3 divergence.
+5. **`_research/ki0028-differential-trace-recon/HOP8-FINDINGS.md` — the newest RESULT (the enqueue-list
+   differential + the refuted interpreter + the HOP-9 plan). READ THIS FIRST on resume.**
+6. `src/fs_takeover/render_trace_probe.{h,cpp}` — PROBE Z10 (the live tracer; HOP 2-6 arms; extend for HOP 9).
+7. `_research/ki0028-differential-trace-recon/_hop7b_append_scan.txt` + `_hop_caller_up_1805029f0.txt` —
+   the STALLED append-leaf scan HOP 9 resumes (reuse-first before re-running Ghidra).
+8. `docs/known-issues/KI-0028-...md` CORRECTION 8 — the trail entry for the HOP 6-8 result.
 
 ## Live state
 
-- PROBE Z10 (render_trace_probe) is DEPLOYED (kcdx.dll hash-verified in the live install), dev mode ON.
-- Currently swap-ON arm (kcdx-noswap marker ABSENT). To run the control arm, set the marker; to run the
-  repro, remove it. Agent sets up the marker + build/deploy; user only launches (agent-builds-and-deploys).
+- PROBE Z10 (render_trace_probe, HOP 2-6 arms) is DEPLOYED (kcdx.dll hash `859F24BC…A030D314`, verified in
+  the live install), dev mode ON. The HOP-8 cmd_stream arm is RETIRED (removed from source + CMake, archived).
+- Currently **swap-ON arm (kcdx-noswap marker ABSENT — neutral/default).** To run the control arm, set the
+  marker; to run the repro, remove it. Agent sets up the marker + build/deploy; user only launches.
 - Reuse-first: the Ghidra project is at `third-party-ghidra/ghidra_project/KCD2.rep`; the decomp-script
   pattern is `third-party-ghidra/ghidra_scripts/Ki28*Decomp.java` (run headless via analyzeHeadless.bat,
   write output to a file — Ghidra's logger collapses multi-line println).
-- Z9 (producer_ready_probe) is RETIRED + archived to `_research/probe-archive/ki0028-probeZ9-*`.
+- Retired+archived probes: Z9 (`ki0028-probeZ9-*`), HOP-8 cmd_stream (`ki0028-hop8-cmd_stream_probe.{cpp,h}`).
 
 ## Method reminders (the traps this investigation already hit)
 
