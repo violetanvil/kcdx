@@ -157,11 +157,10 @@ KcdxHandle MintPak(std::vector<uint8_t>&& bytes, const std::string& vpath) {
     return Encode(id);
 }
 
-// === DIAGNOSTIC (FS-op trace contract) — resolve a handle's vpath. ==========
-// Leaf-lock lookup + string copy (SlotLocked rejects closed/find/bad). Returns
-// "" for a bad/closed/non-byte-source handle. Called ONLY from the boot-window-
-// gated read trace (never the steady-state read path), so the lock + copy never
-// touch the read hot path.
+// Resolve a handle's vpath: leaf-lock lookup + string copy (SlotLocked rejects
+// closed/find/bad). Returns "" for a bad/closed/non-byte-source handle. Called
+// ONLY from the boot-window-gated read trace (never the steady-state read path),
+// so the lock + copy never touch the read hot path.
 std::string VpathForHandle(KcdxHandle h) {
     std::lock_guard<std::mutex> lock(g_poolLock);
     const OpenFile* s = SlotLocked(h);

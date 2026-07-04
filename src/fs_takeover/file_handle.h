@@ -119,15 +119,12 @@ struct OpenFile {
     std::vector<uint8_t>     findIsDir;  // 1 = directory (attr 0x10), 0 = file.
     size_t                   findCursor = 0;
 
-    // === DIAGNOSTIC (FS-op trace contract) — the vpath this handle opened. ===
-    // Set ONCE at mint (the cold open path); read ONLY by the boot-window read
-    // trace (gated by BootWindowActive — a predicted-skip after boot, so this
-    // string is never touched on the steady-state read path; memory.md/logging.md
-    // hot-path discipline holds). Lets a read-family trace line name the FILE it
-    // operates instead of only an opaque handle id — the systemic gap that made
-    // 35k boot reads unreadable. NO-RESIDUE: the field can stay (one std::string
-    // per open file, set on a cold path) as a kept diagnostic, or be removed with
-    // the trace; it costs nothing on the read hot path.
+    // The vpath this handle opened. Set ONCE at mint (the cold open path); read
+    // by the boot-window read trace (gated by BootWindowActive — a predicted-skip
+    // after boot, so this string is never touched on the steady-state read path;
+    // memory.md/logging.md hot-path discipline holds). Lets a read-family trace
+    // line name the FILE it operates instead of only an opaque handle id. One
+    // std::string per open file, set on a cold path; zero cost on the read hot path.
     std::string vpath;
 };
 
@@ -156,7 +153,6 @@ KcdxHandle MintLoose(FILE* fp, const std::string& vpath);
 // for the read trace).
 KcdxHandle MintPak(std::vector<uint8_t>&& bytes, const std::string& vpath);
 
-// === DIAGNOSTIC (FS-op trace contract) ======================================
 // Resolve the vpath a kcdx handle opened (OpenFile::vpath), for a read-family
 // trace line. Returns the stored vpath, or "" for a bad/closed/non-kcdx handle.
 // Takes the pool lock briefly (a leaf-lock lookup + string copy). Called ONLY
