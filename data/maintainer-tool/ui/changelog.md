@@ -6,7 +6,7 @@ per-screen specs in [`screens/`](screens/)). The functional TRD changelog is
 
 ## 2026-06-14 — s04 shows PER-FIELD divergence (recorded vs actual) on a `[Fix ▸]` arrival (TRD D45)
 The screen-spec layer for the per-field divergence diff settled in the TRD (`../changelog.md` D45).
-Settled through `/design` (each fork the user's call; disassembler test PASSES — the maintainer picks
+Settled through `the design pass` (each fork the user's call; disassembler test PASSES — the maintainer picks
 the DLL, the tool does the byte work).
 - **s04 (extended):** a new §"Arriving from a failing report row — the per-field divergence diff
   (TRD D45)" — the recorded-vs-actual inline at each diverged kind-relevant field (diverged marker,
@@ -64,9 +64,8 @@ disassembler test does not bear — internal nav chrome).
 `s04`, `s05`, `s08`, `s09` (Contents, States, Links, Laws, Responsive as each applies).
 **Why:** TRD D42/D43/D44 settled the navigation redesign's BEHAVIOR (in-app back-stack with full-state
 frames, the Bin-version auto-select, the unsaved guard) but not its screen specs; this authors the
-visual + interaction layer on it (`.claude/rules/spec-conformance.md` — the screen spec is the build
-authority). Unblocks D41 Phase 3 step 3.2 (s09 resolution actions), which needed the deep-link/back
-model. No TRD gap surfaced (the functional layer was fully settled in the `/design` pass) — §E skipped.
+visual + interaction layer on it (the screen spec is the build authority). Unblocks D41 Phase 3 step 3.2 (s09 resolution actions), which needed the deep-link/back
+model. No TRD gap surfaced (the functional layer was fully settled in the `the design pass` pass) — §E skipped.
 
 ## 2026-06-12 — s09 Needs-action view authored (the standing lifecycle-completeness surface, TRD D41)
 - NEW screen `screens/s09-needs-action.md` (v1/high): a standing, tool-wide surface listing every
@@ -84,8 +83,8 @@ model. No TRD gap surfaced (the functional layer was fully settled in the `/desi
 **Integrated in:** `screens/s09-needs-action.md` (new); `screens/s01-navigator.md` (the affordance
 row); `design.md` (screen index + navigation map).
 **Why:** TRD D41 settled the standing needs-action view's BEHAVIOR but not its screen spec; this
-authors the visual + interaction layer on it (`.claude/rules/spec-conformance.md` — the screen spec
-is the build authority an executor builds to). Surfaced when `/plan` halted: a new-screen build step
+authors the visual + interaction layer on it (the screen spec
+is the build authority an executor builds to). Surfaced when `the plan pass` halted: a new-screen build step
 needs its screen spec before decomposition.
 
 ## 2026-06-12 — s08 reconciles against current DB state + the lifecycle-completeness surface (TRD D41)
@@ -108,7 +107,7 @@ report-vs-DB-reconciliation + close→needs-action + Fix-flow sections; the "Alr
 **Why:** surfaced during live acceptance of Phase 6 (6.3) — a re-imported report framed an
 already-closed interval as a fresh failing row + a no-op confirm; the lifecycle was left silently
 incomplete after a close. TRD D41 settles the reconciliation + lifecycle-completeness model; this
-screen spec builds to it (`.claude/rules/spec-conformance.md`).
+screen spec builds to it.
 
 ## 2026-06-10 — s08 names the static-evidence tier `live_test_plugin` (sync to the settled TRD D29)
 - s08's verify-all delta now names the ranks-2–5 `passed_not_verified` `evidence_kind` as
@@ -119,7 +118,7 @@ screen spec builds to it (`.claude/rules/spec-conformance.md`).
   of the existing `live_test_plugin` rows).
 **Integrated in:** `screens/s08-verification-worklist.md` (the verify-all delta).
 **Why:** the screen spec referenced the tier vaguely while the fold was pending; now the TRD settled
-it, the screen names the exact value the FE writes (`.claude/rules/spec-conformance.md` — build to
+it, the screen names the exact value the FE writes (build to
 the settled design, no vague pointer).
 
 ## 2026-06-09 — s08 reconciled to the v3/D36 active-attempt verification contract
@@ -138,7 +137,7 @@ the settled design, no vague pointer).
 - s08 verify-all `evidence_kind` now mapped by proof rank (rank-1 `verified_working` →
   `live_production`; ranks 2–5 `passed_not_verified` → the static-evidence tier — NOT
   `live_production`). A TRD-gap surfaced by this reconciliation; the user approved the rank-keyed
-  mapping; folded into the TRD (D29) via `/design` in the rectifying pass.
+  mapping; folded into the TRD (D29) via `the design pass` in the rectifying pass.
 - Two new Layer-1 silhouettes: **`live verdict badge`** (the s08 7-state badge — the s04 static
   `verdict badge` stays 4-state, unchanged; the two verdict vocabularies diverged at D36) and
   **`proof-rank chip`** (`rank N · <method>`, the proof-strength carrier composed beside it).
@@ -148,7 +147,7 @@ three-block model, the verify-all delta, States & variants incl. the partial sta
 silhouettes).
 **Why:** the producer (Phase 5, live + accepted) emits a v3 report — the 7-state verdict + proof
 ladder + the complete/rows_expected partial signal — that the pre-D36 s08 spec couldn't display;
-reconciling the screen spec to it before the FE build (`.claude/rules/spec-conformance.md` — build
+reconciling the screen spec to it before the FE build (build
 to the design, not a stale spec).
 
 ## 2026-06-08 — s04 audit-trio render: verified_by identity-prefilled; verified_date read-only + conditional
@@ -239,7 +238,7 @@ Four surfaces, settled through the `/ui-design` dialogue:
 `screens/s02-entity-detail.md`, `screens/s04-field-editor.md`, `screens/s08-verification-worklist.md`
 (new), `screens/README.md` (index).
 **Why:** the verification engine's 4 new UI surfaces had no screen specs (s02's covered only the
-version-read control); `/plan` HALTED on the gap and the user chose to author them via
+version-read control); `the plan pass` HALTED on the gap and the user chose to author them via
 `/ui-design` first. These are the build authority each UI step conforms to
 (`spec-conformance.md`). One functional gap surfaced — the batched bulk-re-verify confirm
 (law-5 save-spine designed one-at-a-time) — recorded for the §E TRD rectifying pass.

@@ -40,8 +40,9 @@ not read any of it as runnable today.
 - Game-version resolution via `whdlversions.json`
   ([import_to_sqlite.py](../refdata-extractor/python/import_to_sqlite.py)
   `read_game_version`).
-- The privacy carve-outs: `data/maintainer-tool/` and `data/refdata-extractor/`
-  are already in `publish-public.ps1`'s `$PrivateSubpaths`.
+- Publication: `data/maintainer-tool/` ships publicly (the community handover —
+  a maintainer needs the tool that edits the Address Library). The RE tooling
+  under `data/refdata-extractor/` remains unpublished.
 
 **Designed here, NOT yet built (the Phase-1 work):**
 - The incremental `apply` mode (§1, §3) — the `apply` subcommand, the
@@ -465,7 +466,7 @@ Algorithm:
 6. Matches agree → return `tag = "{M}.{N}.{BUILD}"`, `ordinal = BUILD`.
 
 Two interns verified in 1.5.1164953 at va=0x183c3edef and va=0x183dba258
-([_research/init-cycle-recon/_version_strings.txt](../../_research/init-cycle-recon/_version_strings.txt)).
+(read from the version strings in the binary).
 
 The importer's existing `whdlversions.json` path
 ([import_to_sqlite.py](../refdata-extractor/python/import_to_sqlite.py)
@@ -485,10 +486,9 @@ data/refdata-extractor/python/
     └── version_resolver.py        (.rdata scan — §7)
 ```
 
-`data/refdata-extractor/` is already private and already in
-`publish-public.ps1`'s `$PrivateSubpaths`; `data/maintainer-tool/` is likewise
-already carved out (R10 is already implemented — no publish-script change is
-owed by Phase 1).
+`data/refdata-extractor/` (the RE tooling) is not published; `data/maintainer-tool/`
+IS published as of the community handover, so a maintainer inherits the tool that
+edits the Address Library. No publish-script change is owed by Phase 1.
 
 Phase 1 has no UI and writes no CSV. It is exercised by running the script
 against the hand-edited seeds and asserting the resulting DB rows match what a

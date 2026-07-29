@@ -44,15 +44,19 @@ NOT published): `docs/outstanding-work/` + `docs/known-issues/` + `docs/tech-deb
 (TRDs that state RE provenance + governance citations); the superseded/planning files `docs/design.md`, `docs/design-gaps.md`,
 `docs/phase5c7b-plan.md`, `docs/phase5-rom-port-plan.md`, `docs/migration.md`,
 `docs/VERIFY_PHASE2.md`/`3`/`4`, `docs/archive/`; the archived v0.1 example
-plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; the
-maintainer-only reference-data CSV export `data/db-export/` (curated, git text) +
-`data/db-export-bulk/` (bulk, Git LFS); and the maintainer tool + its authoring law
-`data/maintainer-tool/` (D38 retired `data/seeds/`; `policy.md` moved here); and the
+plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; and the
 regression-suite LEDGER `test-plugins/README.md` (a 2000+ line internal development
 record — per-row build history, dev-process scheme tokens, `_research/` provenance;
 the test PLUGINS themselves ship publicly and are self-documenting). The user-facing
 reference is `docs/cpp/` + `docs/lua/` + the operational docs
 (`init.md`, `load-order.md`, `logging.md`, …).
+
+**Now PUBLIC (community handover).** `data/db-export/` (the curated Address Library
+CSVs), `data/db-export-bulk/`, and `data/maintainer-tool/` (the library-editing tool
++ its authoring policy `policy.md`) were formerly maintainer-only carve-outs. The
+address library is the project's core capability — resolve-by-name is only real if
+the names ship — so both the data and the tool that edits it are public. They are
+held to the same no-private-reference bar as any other public file.
 
 Anything else is private (`.claude/`, `CLAUDE.md`, `_research/`,
 `third-party-ghidra/`, `test-fixtures/`, `.gitignore`, `publish-public.ps1`, the

@@ -13,9 +13,8 @@ seed UPDATEs to the existing (already-approved) rows** — one update per
 new-row-approval gate does not apply.
 
 All values verified against `WHGame.dll` (KCD2 `release_1_5_1164953_841`,
-`third-party-ghidra/WHGame.dll`, image base `0x180000000`). Evidence + scripts:
-`_research/survival-seed-recon/` (`FINDINGS.md`, `verify_survival_fields.py`,
-`verify_callsites_and_imod.py`, `_survival_out.txt`, `_callsites_imod_out.txt`).
+`WHGame.dll`, image base `0x180000000`). Evidence: the field offsets, callsites, and vtable
+were verified by scripted disassembly against that binary.
 Every value is binary-verified (AP1/AP2/AP3) — no prose-recall, no header-guess.
 
 ---
@@ -89,8 +88,8 @@ byte hash (slot pointers relocate per build). `derives_from` = (none).
 reloc'd `.text` qwords before the "Platform" string boundary; the "8" was a
 runtime probe that read only the first 8 speculatively). Both the survival
 `slot_count` (= 18) and the id-140 `notes` prose now state 18.
-(`_research/init-cycle-recon/FINDINGS.md` may still carry the legacy "8" — that
-is a historical recon note, not the authoritative seed.)
+(Older recon notes may still carry the legacy "8" — the seed is the
+authoritative value.)
 
 ## vtable_index — DEFERRED (ids 19–24)
 

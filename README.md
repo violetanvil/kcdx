@@ -61,20 +61,28 @@ just *doing* something you pass positional args.
 
 | Need | Surface |
 |---|---|
-| Flip bytes in `WHGame.dll` (same-length rewrite) | `kcdx.bytes{}` |
 | Hook a function (before / after / around / replace / mid / callsite) | `kcdx.hook{}` |
+| Flip bytes in `WHGame.dll` (same-length rewrite) | `kcdx.bytes{}` |
+| Edit code statically, zero per-call cost | `kcdx.statement.*` + `kcdx.locator.*` + `kcdx.op.*` |
 | React to load / save / lifecycle events | `kcdx.on(event, fn)` |
 | Register a console command | `kcdx.command{}` |
 | Cross-plugin events | `kcdx.publish(event, payload)` + `kcdx.on("<plugin>:<event>", fn)` |
 | Read/write memory, call game functions | `kcdx.memory.*` |
 | Address Library lookup (name → pointer) | `kcdx.addr.*` |
-| Allocate code / trampolines | `kcdx.code{}` — *planned, not yet built* |
-| Persist data across saves | `kcdx.cosave.*` — *planned, not yet built* |
-| Diagnostic AOB scan (top-level verb) | `kcdx.scan{}` — *planned; use `kcdx.memory.scan_pattern` today* |
+| Allocate code / trampolines / extension points | `kcdx.code{}` |
+| Persist data across saves | `kcdx.cosave.*` |
+| AOB scan (runtime verb + `kcdx_scan` console command) | `kcdx.scan{}` |
+| Find a game function from what you know about it | `kcdx.find{}` (dev-mode) |
+| Name a code site the engine doesn't name yet | `targets.toml` |
+| Expose your own DLL's functions for other mods to hook | `kcdx.dll.declare(...)` |
+| Declare / set a named behavior | `kcdx.behavior.*` |
+| Read a game CVar | `kcdx.cvar.*` |
 
-The first seven rows are live today. The last three are on the
-roadmap and **not callable yet** — do not write code against them
-(see [`docs/lua/planned.md`](docs/lua/planned.md)).
+Every row above is **live and callable today**, each exercised by a
+plugin in the regression suite. What is *not* built is the gameplay
+convenience layer — `kcdx.player.*`, `kcdx.world.*`, `kcdx.quest.*`,
+`kcdx.inventory.*`, `kcdx.dialogue.*`, `kcdx.assets.*` — which was
+roadmap only (see [`docs/lua/planned.md`](docs/lua/planned.md)).
 
 ### The engine does the heavy lifting
 
@@ -137,11 +145,16 @@ Concrete improvements over the SKSE design:
 4. **Optional dependency graph.** Plugins declare `[[plugin.dependencies]]`
    in the manifest; the loader topologically sorts before issuing
    `kcdxPlugin_Load` calls.
-5. **In-box Address Library.** SKSE's Address Library is a separate
-   community mod; kcdx ships an address database alongside the engine
-   itself, updated per game patch — surfaced to Lua as `kcdx.addr.*`
-   and to C++ as `ResolveAddress` / `ResolveAddressByName`. Community
-   can contribute IDs via PR.
+5. **In-box Address Library, plus the tool that maintains it.** SKSE's
+   Address Library is a separate community mod; kcdx ships the address
+   database alongside the engine itself — surfaced to Lua as
+   `kcdx.addr.*` and to C++ as `ResolveAddress` / `ResolveAddressByName`.
+   The curated data lives in [`data/db-export/`](data/db-export/), and
+   [`data/maintainer-tool/`](data/maintainer-tool/) is the web app that
+   edits it: a browsing/editing UI over the entries, with a verification
+   engine that checks an authored entry against a real game DLL on your
+   own machine (the DLL never leaves it). That is how a new game build
+   gets absorbed — refresh the data, not the code.
 
 ## Status
 
@@ -150,27 +163,44 @@ inventory for anyone deciding whether to pick it up.
 
 ### What works
 
-The Lua authoring surface — the `kcdx.*` model above — is live and
-exercised by the regression suite: `kcdx.hook` (before / after /
-around / replace / mid / callsite), `kcdx.bytes`, `kcdx.on` (the
-`ready` event + the 9 game-lifecycle events), `kcdx.command` +
-`kcdx.console.execute`, `kcdx.publish` cross-plugin pub/sub,
-multi-file plugins (`require`), and the both-phase (before-game /
-after-game) execution model in both Lua and C++. The launcher,
-engine injection, plugin loading, conflict detection, Address
-Library, and crash-bundle sidecar are all built and live-verified.
+The Lua authoring surface is essentially complete — every row in the
+table above is callable, and the regression suite carries **107
+capability plugins** exercising them against a live game.
 
-The dev-mode regression suite was at **58/60 passing** at the last
-checkpoint (the remaining two rows are manual save/load gestures, not
-failures).
+That covers hooking in six modes (before / after / around / replace /
+mid-function / callsite redirect), byte patching, static code editing
+via the locator+op model, trampolines and code allocation, per-save
+persistence, AOB scanning, console commands, the full game-lifecycle
+event set, cross-plugin pub/sub messaging, multi-file plugins with
+`require` and per-file attribution, author-declared targets, named
+behaviors, and the `kcdx.find` function-discovery workbench.
+
+Around it: the launcher and engine injection, a plugin loader with a
+dependency graph, inter-plugin conflict detection (two mods touching
+the same bytes or function are detected and mediated by load order,
+reported in plain English), the in-box Address Library with per-game-
+version and per-DLL-version resolution, and a watchdog that bundles
+logs plus crash artifacts when the game dies.
 
 ### What is not built
 
-`kcdx.code` (trampolines), `kcdx.cosave` (per-save persistence), and
-`kcdx.scan` are **declared but not callable** — do not write code
-against them (see [`docs/lua/planned.md`](docs/lua/planned.md)). The
-C++ mirror of the newer `kcdx.hook`-family interfaces was the next
-parity backfill and was never done.
+The **gameplay convenience domains** — `kcdx.player.*`, `kcdx.world.*`,
+`kcdx.quest.*`, `kcdx.inventory.*`, `kcdx.dialogue.*`, `kcdx.assets.*`
+— were roadmap and never got binders. Do not write code against them
+(see [`docs/lua/planned.md`](docs/lua/planned.md)).
+
+**C++ parity was in progress, not finished.** Sixteen interfaces ship
+(`kcdxMessagingInterface`, `kcdxTaskInterface`, `kcdxTrampolineInterface`,
+`kcdxSerializationInterface`, `kcdxConsoleInterface`, `kcdxScriptingInterface`,
+`kcdxBytesInterface`, `kcdxHookInterface`, `kcdxStatementInterface`,
+`kcdxBehaviorInterface`, `kcdxMemoryInterface`, `kcdxDeclareInterface`,
+`kcdxDllInterface`, `kcdxFunctionsInterface`, `kcdxAssetInterface`, and the
+root `kcdxInterface`), and per-save co-save is built on both surfaces.
+But several Lua-first capabilities still carry a tracked C++ parity
+debt — the locator-based deferred byte-rewrite model, the
+`dynamic_call` / `dynamic_hook` peers, and the newer locator/op/find
+mirrors. Each NYI marker is recorded in the file it belongs to; start
+at [`docs/cpp/planned.md`](docs/cpp/planned.md) for the full list.
 
 ### The known blocker
 
@@ -188,10 +218,11 @@ above predates it and is unaffected.
 ### Where to look
 
 - **"What can I call today?"** →
-  [`docs/lua/index.md`](docs/lua/index.md). Its main body is the live API
-  surface — if a verb is documented there it is built and callable; the
-  [§Planned](docs/lua/planned.md) section lists what is declared but not
-  yet callable.
+  [`docs/lua/index.md`](docs/lua/index.md) (Lua) and
+  [`docs/cpp/index.md`](docs/cpp/index.md) (C++). If a verb is documented
+  there it is built and callable; the only not-built surface is the
+  gameplay convenience layer in [`planned.md`](docs/lua/planned.md), plus
+  the C++ parity debts in [`docs/cpp/planned.md`](docs/cpp/planned.md).
 - **"What does the regression suite cover?"** → the plugin folders under
   [`test-plugins/`](test-plugins/). Each is a self-contained plugin whose
   `kcdx.toml` documents the capability it exercises; they run in dev mode
@@ -260,11 +291,16 @@ the rationale behind the new layout.
 ## Compatibility
 
 kcdx was developed against KCD2 `release_1_5_1164953_841` and is not
-known to have been tested on any later build. kcdx's AOB signatures
-for the engine's own hooks will need refreshing on future game
-updates; abort messages are explicit and the game launches normally
-if a signature breaks. Refreshing them is the first maintenance task
-a fork inherits.
+known to have been tested on any later build. Addresses and AOB
+signatures will need refreshing on a newer game version; abort
+messages are explicit and the game launches normally if a signature
+breaks. Refreshing them is the first maintenance task a fork inherits
+— and the system was built for exactly that: the entries live as data
+in [`data/db-export/`](data/db-export/), and the maintainer tool
+verifies each one against the DLL you point it at, so absorbing a new
+game build is a data update rather than a code change. That design
+was never exercised against a real post-development patch, so treat
+it as untested rather than proven.
 
 ## Credits
 

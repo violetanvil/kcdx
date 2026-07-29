@@ -90,20 +90,11 @@ $PrivateSubpaths = @(
   # (the tool's output -- the SQLite DBs -- ships from data/, so the tool
   # itself lives alongside its output rather than under tools/).
   'data/refdata-extractor/',
-  # Reference-data CSV export (D38: data/seeds/ retired). The curated CSVs at
-  # data/db-export/ (git text) + the bulk corpus at data/db-export-bulk/ (Git LFS)
-  # are the maintainer-tool's git-tracked export of the reference DB. The GENERATED
-  # DBs (data/*.sqlite) + their schema docs (data/reference.md, data/reference-dev.md)
-  # are public, but the exported CSVs themselves are private. The authoring policy
-  # (data/maintainer-tool/policy.md) ships private with the maintainer tool below.
-  'data/db-export/',
-  'data/db-export-bulk/',
-  # Maintainer seed-editing tool + its authoring law (policy.md). The tool consumes
-  # the data/db-export/ CSVs + the shared validator module extracted from
-  # data/refdata-extractor/python/; nothing under it is for mod authors. Source,
-  # requirements doc, the authoring policy, packaging config, and per-machine cache
-  # all stay private. See data/maintainer-tool/requirements.md R10.
-  'data/maintainer-tool/',
+  # NOTE (community handover): data/db-export/ (the curated Address Library CSVs),
+  # data/db-export-bulk/, and data/maintainer-tool/ (the library-editing tool +
+  # its authoring policy) were previously carved out as maintainer-only. They are
+  # now PUBLIC — the address library is the project's core capability, and a
+  # maintainer inheriting kcdx needs both the data and the tool that edits it.
   # The regression-suite LEDGER (not the plugins). A 2000+ line internal
   # development record: per-row build history, dev-process scheme tokens, and
   # _research/ provenance citations throughout. The test PLUGINS under
