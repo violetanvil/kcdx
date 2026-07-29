@@ -1,115 +1,0 @@
-
-    0:  (GhidraScript)  
-    1: undefined8 * FUN_1810eea6c(undefined8 *param_1,undefined8 param_2) (GhidraScript)  
-    2:  (GhidraScript)  
-    3: { (GhidraScript)  
-    4:   undefined8 uVar1; (GhidraScript)  
-    5:    (GhidraScript)  
-    6:   param_1[2] = 0; (GhidraScript)  
-    7:   *param_1 = wh::shared:: (GhidraScript)  
-    8:              C_ModelProperty<bool,wh::shared::traits::C_StandardDefaultValueTrait<bool>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<bool>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-    9:              ::vftable; (GhidraScript)  
-   10:   param_1[3] = &DAT_185664ae8; (GhidraScript)  
-   11:   *(undefined2 *)(param_1 + 4) = 0xffff; (GhidraScript)  
-   12:   *(undefined2 *)((longlong)param_1 + 0x22) = 0xffff; (GhidraScript)  
-   13:   *(undefined1 *)(param_1 + 1) = 0; (GhidraScript)  
-   14:   param_1[6] = wh::shared:: (GhidraScript)  
-   15:                C_ModelProperty<wh::combatmodule::E_CombatActorStateId::Type,wh::shared::traits::C_StaticDefaultValueTrait<wh::combatmodule::E_CombatActorStateId::Type,1>,wh::combatmodule::traits::C_CombatSignalWithOldValueTrait<wh::combatmodule::E_CombatActorStateId::Type>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   16:                ::vftable; (GhidraScript)  
-   17:   param_1[8] = 0; (GhidraScript)  
-   18:   param_1[9] = &DAT_185664a28; (GhidraScript)  
-   19:   *(undefined2 *)(param_1 + 10) = 0xffff; (GhidraScript)  
-   20:   *(undefined2 *)((longlong)param_1 + 0x52) = 0xffff; (GhidraScript)  
-   21:   *(undefined4 *)(param_1 + 7) = 0; (GhidraScript)  
-   22:   param_1[0xe] = 0; (GhidraScript)  
-   23:   param_1[0xc] = wh::shared:: (GhidraScript)  
-   24:                  C_ModelProperty<int,wh::shared::traits::C_CustomDefaultValueTrait<int>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   25:                  ::vftable; (GhidraScript)  
-   26:   param_1[0xf] = &DAT_185664a48; (GhidraScript)  
-   27:   *(undefined2 *)(param_1 + 0x10) = 0xffff; (GhidraScript)  
-   28:   *(undefined2 *)((longlong)param_1 + 0x82) = 0xffff; (GhidraScript)  
-   29:   *(undefined4 *)((longlong)param_1 + 0x8c) = 0; (GhidraScript)  
-   30:   *(undefined4 *)(param_1 + 0xd) = 0; (GhidraScript)  
-   31:   param_1[0x14] = 0; (GhidraScript)  
-   32:   param_1[0x12] = (GhidraScript)  
-   33:        wh::shared:: (GhidraScript)  
-   34:        C_ModelProperty<int,wh::shared::traits::C_CustomDefaultValueTrait<int>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   35:        ::vftable; (GhidraScript)  
-   36:   param_1[0x15] = &DAT_185664a48; (GhidraScript)  
-   37:   *(undefined2 *)(param_1 + 0x16) = 0xffff; (GhidraScript)  
-   38:   *(undefined2 *)((longlong)param_1 + 0xb2) = 0xffff; (GhidraScript)  
-   39:   *(undefined4 *)((longlong)param_1 + 0xbc) = 0; (GhidraScript)  
-   40:   *(undefined4 *)(param_1 + 0x13) = 0; (GhidraScript)  
-   41:   param_1[0x1a] = 0; (GhidraScript)  
-   42:   param_1[0x18] = (GhidraScript)  
-   43:        wh::shared:: (GhidraScript)  
-   44:        C_ModelProperty<int,wh::shared::traits::C_CustomDefaultValueTrait<int>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   45:        ::vftable; (GhidraScript)  
-   46:   param_1[0x1b] = &DAT_185664a48; (GhidraScript)  
-   47:   *(undefined2 *)(param_1 + 0x1c) = 0xffff; (GhidraScript)  
-   48:   *(undefined2 *)((longlong)param_1 + 0xe2) = 0xffff; (GhidraScript)  
-   49:   *(undefined4 *)((longlong)param_1 + 0xec) = 0; (GhidraScript)  
-   50:   *(undefined4 *)(param_1 + 0x19) = 0; (GhidraScript)  
-   51:   param_1[0x20] = 0; (GhidraScript)  
-   52:   param_1[0x1e] = (GhidraScript)  
-   53:        wh::shared:: (GhidraScript)  
-   54:        C_ModelProperty<int,wh::shared::traits::C_CustomDefaultValueTrait<int>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   55:        ::vftable; (GhidraScript)  
-   56:   param_1[0x21] = &DAT_185664a48; (GhidraScript)  
-   57:   *(undefined2 *)(param_1 + 0x22) = 0xffff; (GhidraScript)  
-   58:   *(undefined2 *)((longlong)param_1 + 0x112) = 0xffff; (GhidraScript)  
-   59:   *(undefined4 *)((longlong)param_1 + 0x11c) = 0; (GhidraScript)  
-   60:   *(undefined4 *)(param_1 + 0x1f) = 0; (GhidraScript)  
-   61:   param_1[0x26] = 0; (GhidraScript)  
-   62:   param_1[0x24] = (GhidraScript)  
-   63:        wh::shared:: (GhidraScript)  
-   64:        C_ModelProperty<int,wh::shared::traits::C_StaticDefaultValueTrait<int,-1>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   65:        ::vftable; (GhidraScript)  
-   66:   param_1[0x27] = &DAT_185664a48; (GhidraScript)  
-   67:   *(undefined2 *)(param_1 + 0x28) = 0xffff; (GhidraScript)  
-   68:   *(undefined2 *)((longlong)param_1 + 0x142) = 0xffff; (GhidraScript)  
-   69:   *(undefined4 *)(param_1 + 0x25) = 0; (GhidraScript)  
-   70:   param_1[0x2c] = 0; (GhidraScript)  
-   71:   param_1[0x2a] = (GhidraScript)  
-   72:        wh::shared:: (GhidraScript)  
-   73:        C_ModelProperty<int,wh::shared::traits::C_CustomDefaultValueTrait<int>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   74:        ::vftable; (GhidraScript)  
-   75:   param_1[0x2d] = &DAT_185664a48; (GhidraScript)  
-   76:   *(undefined2 *)(param_1 + 0x2e) = 0xffff; (GhidraScript)  
-   77:   *(undefined2 *)((longlong)param_1 + 0x172) = 0xffff; (GhidraScript)  
-   78:   *(undefined4 *)((longlong)param_1 + 0x17c) = 0; (GhidraScript)  
-   79:   *(undefined4 *)(param_1 + 0x2b) = 0; (GhidraScript)  
-   80:   param_1[0x32] = 0; (GhidraScript)  
-   81:   param_1[0x30] = (GhidraScript)  
-   82:        wh::shared:: (GhidraScript)  
-   83:        C_ModelProperty<int,wh::shared::traits::C_StaticDefaultValueTrait<int,-1>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<int>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   84:        ::vftable; (GhidraScript)  
-   85:   param_1[0x33] = &DAT_185664a48; (GhidraScript)  
-   86:   *(undefined2 *)(param_1 + 0x34) = 0xffff; (GhidraScript)  
-   87:   *(undefined2 *)((longlong)param_1 + 0x1a2) = 0xffff; (GhidraScript)  
-   88:   *(undefined4 *)(param_1 + 0x31) = 0; (GhidraScript)  
-   89:   param_1[0x38] = 0; (GhidraScript)  
-   90:   param_1[0x36] = (GhidraScript)  
-  ...trunc (GhidraScript)  
-
-    0:  (GhidraScript)  
-    1: void FUN_1810efea0(undefined8 *param_1) (GhidraScript)  
-    2:  (GhidraScript)  
-    3: { (GhidraScript)  
-    4:   char cVar1; (GhidraScript)  
-    5:   undefined8 local_18; (GhidraScript)  
-    6:   undefined4 uStack_10; (GhidraScript)  
-    7:    (GhidraScript)  
-    8:   local_18 = 0; (GhidraScript)  
-    9:   *param_1 = wh::shared:: (GhidraScript)  
-   10:              C_ModelProperty<bool,wh::shared::traits::C_StandardDefaultValueTrait<bool>,wh::combatmodule::traits::C_CombatSignalWithNewValueTrait<bool,wh::combatmodule::I_CombatActor*___ptr64>,wh::combatmodule::traits::C_CombatModelNoTrace,wh::shared::traits::C_NoSaveLoad,wh::combatmodule::traits::C_CombatActorModelOwnership> (GhidraScript)  
-   11:              ::vftable; (GhidraScript)  
-   12:   uStack_10 = 0; (GhidraScript)  
-   13:   cVar1 = FUN_180c5e72c(param_1 + 3,&local_18,0,0); (GhidraScript)  
-   14:   if (cVar1 != '\0') { (GhidraScript)  
-   15:     FUN_180396960((undefined4)local_18,&local_18); (GhidraScript)  
-   16:   } (GhidraScript)  
-   17:   return; (GhidraScript)  
-   18: } (GhidraScript)  
-   19:  (GhidraScript)  
-

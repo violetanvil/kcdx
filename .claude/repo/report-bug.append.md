@@ -1,5 +1,0 @@
-## Repo additions — report-bug
-
-- **Known-issues tree path** — `docs/known-issues/` (open in the root, closed in `closed/`, index `docs/known-issues/README.md` — per doc-organization.md). ID prefix `KI`. KI-NNNN allocation scans the root AND `closed/` for the highest id + 1. The pre-KI human-readable `<title>.md` files carry NO id and are NOT part of the allocation sequence.
-
-- **Evidence-sourcing mechanism (§3)** — the agent reads evidence directly, never asks the user to paste it: the newest `<game-bin>/kcdx-engine/logs/kcdx-dev_<ts>.log` (structured-KV format, grepped on the category tag); a crash dump via the cdb one-liner (the debug append's triage tooling); a watchdog crash zip at `kcdx-engine/logs/crash/crash_<ts>.zip`. The KI doc captures: Symptom, Facts (empirical only — `None captured yet — symptom-only report.` if none, never fabricated), and Open questions (causal claims labeled, never in Facts); Trail + Resolution are left empty for `/debug`. Capture concrete evidence fields where available — exception code + faulting RIP, repro rate, the source-ref `src/<file>.cpp:LINE`.

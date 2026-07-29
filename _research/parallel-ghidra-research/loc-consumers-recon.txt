@@ -1,3 +1,0 @@
-FindPostUpdateHookCandidates.java:133: error: cannot find symbol
-FindPostUpdateHookCandidates.java:152: error: incompatible types: ghidra.program.model.symbol.ReferenceIterator cannot be converted to ghidra.program.model.symbol.Reference[]
-CLocalizedStringsManager::vftable symbol NOT found -- fallback: inspect the ctor's vtable store manually. (GhidraScript)  

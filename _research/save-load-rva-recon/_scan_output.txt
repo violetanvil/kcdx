@@ -1,7 +1,0 @@
-name                           count          rva             VA  in_dump dump_len
-------------------------------------------------------------------------------------
-SaveGame                       UNIQUE   0x03581B04    0x183581B04      YES      883
-LoadGame_wrapper               UNIQUE   0x025BCEEC    0x1825BCEEC      YES      167
-PostLoadGame                   UNIQUE   0x025BCF94    0x1825BCF94      YES      552
-DeleteSavegame                 UNIQUE   0x025BC510    0x1825BC510      YES      265
-SaveGameRecord_SlotResolver    UNIQUE   0x019DDE78    0x1819DDE78      YES       23

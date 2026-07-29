@@ -1,4 +1,0 @@
-{
-  "threshold": 300,
-  "pathFilter": "(?:^|[\\\\/])(?:src|include|kcdx-engine|test-plugins|examples|tools)[\\\\/].*\\.(?:cpp|h|hpp|cc|cxx|inl|lua)$"
-}
