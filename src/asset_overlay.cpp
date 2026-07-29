@@ -101,8 +101,8 @@ constexpr const char* kFOpenSig =
 
 // INVARIANT (the HIT write contract — outBuf bound): the engine's universal path
 // cap, CryEngine ICryPak::g_nMaxPath. Every AdjustFileName caller read passes a
-// 2048-byte outBuf (FOpen / FOpenRaw / GetFileSize-by-name; verified in 3 caller
-// bodies — _research/adjustfilename-outbuf-recon/FINDINGS.md, gated PROCEED). The
+// 2048-byte outBuf (FOpen / FOpenRaw / GetFileSize-by-name; verified by reading
+// all three caller bodies in the disassembled binary). The
 // HIT write bounds to THIS as the cap-as-invariant, NOT "because those 3 callers
 // allocate it" — robust to unread callers. A real disk path is always well under
 // 2048; an over-cap path is truncated LOUD, never an OOB write (the KI-0004
@@ -273,7 +273,7 @@ extern "C" void* AdjustFileNameResolver(AdjustFileName_t call_original,
 //       file ourselves (_wfopen) and RETURN that CRT FILE* WITHOUT calling the
 //       original. The engine's unmodified read family serves it via its OS arm
 //       (FRead routes any real heap FILE* there — handle−1 ≫ pak-count;
-//       gate-verified, _research/asset-fopen-handle-recon/FINDINGS.md). This
+//       verified against the disassembled read family). This
 //       serves add-new assets + the loose side of replace, for every class,
 //       without depending on the engine's loose-search (the layer the v1 path-
 //       redirect failed at). Handle lifecycle (close) follows the engine's

@@ -7,9 +7,8 @@
 # rows via test_names so they show PENDING until resolved (the engine-self-report
 # stub pattern: the engine reports directly, a manifest stub holds the names).
 #
-# This probe resolves the two RUNTIME unknowns the Phase-8.5a RE flagged before
-# the asset-overlay design (8.5b-e) rests on them
-# (_research/phase8.5-pak-resolver/FINDINGS.md §CONFIDENCE MAP):
+# This probe resolves the two RUNTIME unknowns the pak-resolver reverse-
+# engineering flagged, before the asset-overlay design rests on them:
 #
 #   cap-44-fopen-read-fires  (PROBE U.1, auto-pass) CCryPak::FOpen (id 1206) is
 #                            on the live asset-READ path — the resolver fires

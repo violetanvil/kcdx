@@ -79,7 +79,7 @@ LOG_DEBUG_KV("CATEGORY", "fingerprint.checkpoint_name",
 
 **Interpretation:** fingerprint changes → block being written by someone (diff the bytes if you can dump them). Fingerprint identical → block intact; corruption elsewhere.
 
-**Durable** — keep fingerprint methods enabled past bug close (cost nothing when not called). Record in the known-issue's "Active diagnostic instrumentation" table with Status: `durable`. Bypasses are NEVER durable — they go to Status: `archived` (compile-disabled `#if 0` per `debug/SKILL.md` §3d; revival would re-enable the bypass deliberately, which the `#if 0` makes explicit). Reverting / deleting any probe is forbidden (CLAUDE.md hard rule).
+**Durable** — keep fingerprint methods enabled past bug close (cost nothing when not called). Bypasses are NEVER durable: archive them compile-disabled behind `#if 0`, so reviving one re-enables the bypass deliberately rather than silently.
 
 ---
 

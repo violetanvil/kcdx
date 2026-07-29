@@ -14,8 +14,8 @@
 //   slot 35 FOpenRaw   — open-into-caller-buffer. Same mint, plus it copies the
 //           resolved name into the caller's outResolvedBuf (clamped ≤2048).
 //
-// Every member-call ABI is built to _research/fs-takeover-readslot-abi-recon/
-// FINDINGS.md (the BODY-VERIFIED open-slot signatures). On x64 Windows there is
+// Every member-call ABI is built to the open-slot signatures read out of the
+// decompiled slot bodies, not inferred. On x64 Windows there is
 // ONE calling convention (the x64 ABI: RCX,RDX,R8,R9,stack), so a plain function
 // `void* fn(void* self, ...)` IS the member-call shape (`self`==`this` in RCX) —
 // mirroring the existing KcdxFOpenMarker slot impl (no explicit __fastcall).

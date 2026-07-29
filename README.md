@@ -1,24 +1,25 @@
 # kcdx
 
-> **Are you a player who just wants to install a mod?** This GitHub
-> repo is the engine source. To install kcdx as a user, grab it from
-> [Nexus](https://www.nexusmods.com/kingdomcomedeliverance2/) (when
-> v0.1 ships) or the [Releases page](https://github.com/violetanvil/kcdx/releases).
-> The rest of this README is for plugin authors.
+> **⚠️ Unmaintained — offered to the community.**
+>
+> I no longer work on kcdx. The source is here, MIT-licensed, for
+> anyone who wants to pick it up, fork it, or salvage parts of it.
+> There is no maintainer, no release, and no support. **Read
+> [Status](#status) before you build on it** — it is a working engine
+> with a known unresolved boot failure in its newest subsystem.
+>
+> Forks are welcome and need no permission. If you take it somewhere,
+> the license is MIT — do what you like.
 
 ---
 
-**kcdx is the SKSE-class extender for Kingdom Come: Deliverance II.**
+**kcdx is an SKSE-class extender for Kingdom Come: Deliverance II.**
 Function hooks, trampolines, console commands, save/load
 serialization, inter-plugin messaging. Two first-class authoring
 languages — **Lua** (a `plugin.lua`, no compiler) and **C++** (a
 plugin DLL), at feature parity — and the C++ surface deliberately
 mirrors SKSE / F4SE so anyone who's shipped an SKSE plugin can pick
 this up in an hour.
-
-**Status: v0.2 restructure in progress.** The Lua authoring surface
-is live; some core verbs are still being built. See
-[Status](#status) below for what's shipping when.
 
 ## How you write a plugin
 
@@ -115,8 +116,9 @@ authors don't relearn anything.
 Lua and C++ are **two expressions of one model at feature parity** —
 same concepts, same names, each idiomatic in its language. Anything
 you can do in Lua you can do in C++ and vice-versa; neither is the
-"real" surface. (In the v0.2 line the new `kcdx.hook`-family verbs land
-in Lua first, then backfill to the C++ interface.)
+"real" surface. (Parity is not complete as shipped: the newer
+`kcdx.hook`-family verbs landed in Lua first, and the C++ backfill
+was never finished — see [Status](#status).)
 
 Concrete improvements over the SKSE design:
 
@@ -143,30 +145,59 @@ Concrete improvements over the SKSE design:
 
 ## Status
 
-**v0.2 restructure in progress.** The Lua authoring surface — the
-`kcdx.*` model above — is live and exercised by the regression suite:
-`kcdx.hook` (before / after / around / replace / mid / callsite),
-`kcdx.bytes`, `kcdx.on` (the `ready` event + the 9 game-lifecycle
-events), `kcdx.command` + `kcdx.console.execute`, `kcdx.publish`
-cross-plugin pub/sub, multi-file plugins (`require`), and the
-both-phase (before-game / after-game) execution model in both Lua and
-C++. The remaining core verbs — `kcdx.code` (trampolines), `kcdx.cosave`
-(per-save persistence), `kcdx.scan` — are **planned, not yet built**;
-the C++ mirror of the new `kcdx.hook`-family interfaces is the next
-parity backfill.
+**Development stopped mid-restructure.** This section is the honest
+inventory for anyone deciding whether to pick it up.
+
+### What works
+
+The Lua authoring surface — the `kcdx.*` model above — is live and
+exercised by the regression suite: `kcdx.hook` (before / after /
+around / replace / mid / callsite), `kcdx.bytes`, `kcdx.on` (the
+`ready` event + the 9 game-lifecycle events), `kcdx.command` +
+`kcdx.console.execute`, `kcdx.publish` cross-plugin pub/sub,
+multi-file plugins (`require`), and the both-phase (before-game /
+after-game) execution model in both Lua and C++. The launcher,
+engine injection, plugin loading, conflict detection, Address
+Library, and crash-bundle sidecar are all built and live-verified.
 
 The dev-mode regression suite was at **58/60 passing** at the last
-checkpoint (the remaining rows are `[manual]` save/load gestures, not
-failures). To answer the three questions an author actually asks:
+checkpoint (the remaining two rows are manual save/load gestures, not
+failures).
+
+### What is not built
+
+`kcdx.code` (trampolines), `kcdx.cosave` (per-save persistence), and
+`kcdx.scan` are **declared but not callable** — do not write code
+against them (see [`docs/lua/planned.md`](docs/lua/planned.md)). The
+C++ mirror of the newer `kcdx.hook`-family interfaces was the next
+parity backfill and was never done.
+
+### The known blocker
+
+The most recent work was a **filesystem takeover** — routing the
+engine's file operations through kcdx so plugins could override game
+assets. It is **incomplete and currently breaks boot**: with the
+takeover enabled the game reaches a state where audio runs but no
+frame is ever presented and input is dead — a running process that
+never renders. The cause was not identified before work stopped.
+
+If you are picking this up, the pragmatic starting point is to build
+with the filesystem takeover disabled; everything in "What works"
+above predates it and is unaffected.
+
+### Where to look
 
 - **"What can I call today?"** →
   [`docs/lua/index.md`](docs/lua/index.md). Its main body is the live API
   surface — if a verb is documented there it is built and callable; the
-  [§Planned](docs/lua/planned.md) section lists what is coming but not yet
-  callable.
-- **"What passes live right now?"** (per-row status + SHA) →
-  [`test-plugins/README.md`](test-plugins/README.md), the live test
-  matrix.
+  [§Planned](docs/lua/planned.md) section lists what is declared but not
+  yet callable.
+- **"What does the regression suite cover?"** → the plugin folders under
+  [`test-plugins/`](test-plugins/). Each is a self-contained plugin whose
+  `kcdx.toml` documents the capability it exercises; they run in dev mode
+  against a live game (see [`docs/dev-mode.md`](docs/dev-mode.md)).
+- **"How does the loader work?"** →
+  [`docs/loader-architecture.md`](docs/loader-architecture.md).
 
 ## Installation (v0.2 layout)
 
@@ -228,10 +259,12 @@ the rationale behind the new layout.
 
 ## Compatibility
 
-kcdx targets KCD2 `release_1_5_1164953_841` (April 2026) at the time
-of writing. Like mempatch, kcdx's AOB signatures for the engine's
-own hooks may need refreshing on future game updates; abort messages
-are explicit and the game launches normally if a sig breaks.
+kcdx was developed against KCD2 `release_1_5_1164953_841` and is not
+known to have been tested on any later build. kcdx's AOB signatures
+for the engine's own hooks will need refreshing on future game
+updates; abort messages are explicit and the game launches normally
+if a signature breaks. Refreshing them is the first maintenance task
+a fork inherits.
 
 ## Credits
 

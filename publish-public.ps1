@@ -103,7 +103,13 @@ $PrivateSubpaths = @(
   # data/refdata-extractor/python/; nothing under it is for mod authors. Source,
   # requirements doc, the authoring policy, packaging config, and per-machine cache
   # all stay private. See data/maintainer-tool/requirements.md R10.
-  'data/maintainer-tool/'
+  'data/maintainer-tool/',
+  # The regression-suite LEDGER (not the plugins). A 2000+ line internal
+  # development record: per-row build history, dev-process scheme tokens, and
+  # _research/ provenance citations throughout. The test PLUGINS under
+  # test-plugins/ ship publicly and are self-documenting (each folder's
+  # kcdx.toml states what it exercises); only this ledger stays private.
+  'test-plugins/README.md'
 )
 
 # ALLOWLIST — the ONLY root-level files published. Note: `.gitignore` is

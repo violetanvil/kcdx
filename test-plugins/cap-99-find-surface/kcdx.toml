@@ -7,8 +7,8 @@
 # kcdx.find and asserts on the returned table — it covers the LUA BINDER
 # surface (src/lua_bind_find.cpp), the layer the engine self-test cannot
 # observe. The console verbs (kcdx_find / kcdx_dev_inspect) are covered by
-# `console`-mode rows (the agent declares the exact command strings + the
-# falsifiable dev-log observable; the orchestrator renders the user gestures).
+# `console`-mode rows: each declares the exact command string to type plus the
+# falsifiable dev-log observable it must produce.
 #
 # Fixture (the as-built dev DB corpus, the SAME ground truth cap-98 uses,
 # verified against data/reference-dev.sqlite 2026-06-10):
@@ -59,9 +59,9 @@
 #      (the AP14 silent-failure shape). DEGRADED PASS when 0 records (dev DB
 #      absent).
 #
-# What it proves (console-path rows — `console` mode; the agent supplies the
-# exact command strings + the falsifiable dev-log observable, the orchestrator
-# renders the user's ~-console gestures):
+# What it proves (console-path rows — `console` mode; each row declares the
+# exact command string to type at the ~ console and the falsifiable dev-log
+# observable it must produce):
 #   5. cap-99-console-find-parses — `kcdx_find WHGame.dll --string "   You have
 #      to set r_TexturesStreaming = 1 to see texture information!"` parses the
 #      module + the criterion and prints the matched function row (the same

@@ -1,8 +1,8 @@
 -- CAP-78 overlay .lua — the SERVE-AND-EXECUTE marker.
 --
 -- This file is served by HOOK 2 (kcdx's own CRT FILE*) wherever the engine opens
--- the mod-init vpath scripts/mods/ki6_loose_modinit.lua. The fixture mod
--- (test-fixtures/pak-mods/cap-ki6-loose-modinit/) ships the SAME vpath LOOSE; the
+-- the mod-init vpath scripts/mods/ki6_loose_modinit.lua. The paired fixture mod
+-- ships the SAME vpath LOOSE; the
 -- engine runs scripts/mods/<modid>.lua for that mod right after scripts/main.lua.
 -- The CHECKABLE UNKNOWN: does the engine's mod-init open of that loose file route
 -- through HOOK 2's FOpen seam (so kcdx serves THIS overlay instead), AND do the

@@ -6,9 +6,9 @@
 // prefix (the totalizing invariant — kcdx owns the whole filesystem, design §1).
 // file-system-takeover design §4.5 "Directory enumeration".
 //
-// Every member-call ABI is built to the BODY-VERIFIED decompiles in
-// _research/phase8.5-pak-resolver/_front1_roles_raw.txt + front1-full-vtable-
-// surface.md. On x64 Windows there is ONE calling convention (RCX,RDX,R8,R9,
+// Every member-call ABI is built to the decompiled slot bodies read out of the
+// game binary, not inferred from a header. On x64 Windows there is ONE calling
+// convention (RCX,RDX,R8,R9,
 // stack), so a plain `T fn(void* self, ...)` IS the member-call shape
 // (`self`==`this` in RCX) — mirroring open_slots.cpp / read_slots.cpp.
 //

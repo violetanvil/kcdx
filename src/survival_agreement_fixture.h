@@ -131,7 +131,7 @@ inline constexpr const char* kFixtureJson = R"FIXJSON(
           "verdict": "Changed"
         }
       ],
-      "source": "Real seed row id 9 (survival_aob '48 8B 0D ?? ?? ?? ??') + probe 0.2 finding (_research/maintainer-tool-verification-engine/probe-0.2-x86-decoder-finding.md): anchor RVA 0x0086AD99, raw 7 bytes '48 8b 0d 08 0b 0c 04', decoded disp32 0x040C0B08, derived target RVA 0x0492B8A8 == id 10 ground truth (EXACT match)."
+      "source": "Real reference row id 9 (survival_aob '48 8B 0D ?? ?? ?? ??') + x86-decoder verification: anchor RVA 0x0086AD99, raw 7 bytes '48 8b 0d 08 0b 0c 04', decoded disp32 0x040C0B08, derived target RVA 0x0492B8A8 == id 10 ground truth (EXACT match)."
     },
     {
       "datum": {

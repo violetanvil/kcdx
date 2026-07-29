@@ -4,7 +4,7 @@
 // KI-0026's first fix (cap-115) made the engine config file RESOLVE + SERVE
 // correctly from the pak (the index/alias layer). But the 0xC8 moved to
 // "served-but-rejected": the engine read the right bytes, then sized its read
-// wrong. Root cause (BODY-VERIFIED, _research/ki0026-fs-takeover-slot46-recon/):
+// wrong. Root cause (verified by reading the slot body in the disassembly):
 // WHGame CCryPak slot 46 (+0x170, FUN_180460c08, RVA 0x460C08) is FGetSize — it
 // returns the file's byte SIZE. The engine's FRead OS arm (slot 40, +0x140) calls
 // slot 46, STORES the return as the size, and reads that many bytes. kcdx had

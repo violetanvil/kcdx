@@ -47,7 +47,10 @@ NOT published): `docs/outstanding-work/` + `docs/known-issues/` + `docs/tech-deb
 plugins `examples/archive/`; the RE tooling `data/refdata-extractor/`; the
 maintainer-only reference-data CSV export `data/db-export/` (curated, git text) +
 `data/db-export-bulk/` (bulk, Git LFS); and the maintainer tool + its authoring law
-`data/maintainer-tool/` (D38 retired `data/seeds/`; `policy.md` moved here). The user-facing
+`data/maintainer-tool/` (D38 retired `data/seeds/`; `policy.md` moved here); and the
+regression-suite LEDGER `test-plugins/README.md` (a 2000+ line internal development
+record — per-row build history, dev-process scheme tokens, `_research/` provenance;
+the test PLUGINS themselves ship publicly and are self-documenting). The user-facing
 reference is `docs/cpp/` + `docs/lua/` + the operational docs
 (`init.md`, `load-order.md`, `logging.md`, …).
 

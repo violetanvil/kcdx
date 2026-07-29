@@ -121,8 +121,9 @@ const OverlayMap& GetOverlayMap();
 // reuse: the seat gates on EXACTLY its dependency (the overlay map), so it
 // unblocks as early as correctness allows rather than coupling to the later
 // enabled-list build. Same mechanism — a manual-reset Win32 event, an
-// atomic<HANDLE> with release/acquire ordering — never a timing margin
-// (.claude/rules/concurrency.md; "threads must be CLEARLY GATED, never timed").
+// atomic<HANDLE> with release/acquire ordering — never a timing margin. A
+// cross-thread dependency is an explicit gate (signal + wait), never a
+// wall-clock assumption about who finishes first.
 //
 // The event is OWNED by the asset_overlay unit (the producer that signals it),
 // end-to-end: created here, signaled here right after BuildOverlayMap, and read

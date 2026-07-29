@@ -7,8 +7,8 @@
 # Library. A raw RVA in production plugin code is AP1; here it is the deliberate
 # labeled expert form for a one-off verification.
 #
-# THE ANCHOR UNDER VERIFICATION (pure-static walk, _research/phase10-event-catalog-
-# recon/pilot-perk-static.md): the perk-collection add-if-absent + on-changed notify.
+# THE ANCHOR UNDER VERIFICATION (walked statically from the disassembly): the
+# perk-collection add-if-absent + on-changed notify.
 #   target  FUN_18046b704  (perk-collection insert; the real C++ grant)
 #   RVA     0x46b704
 #   ABI     bool __fastcall(ptr perkCollection /*rcx*/, ptr perkId /*rdx*/, ptr ctx /*r8*/)

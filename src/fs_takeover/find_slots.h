@@ -31,9 +31,8 @@
 // (the cross-runtime sharing the takeover eliminates) and is a coexistence
 // retreat from the §1 total invariant.
 //
-// THE FIND-DATA BUFFER ABI (design §8 P5, RESOLVED — outcome A, read from the
-// binary's TWO independent consumers, _research/ki0027-find-data-abi-recon/
-// FINDINGS.md):
+// THE FIND-DATA BUFFER ABI (read from the binary's TWO independent consumers,
+// which agree):
 //   - byte @ offset 0x00 = attribute/flags word; bit 0x10 = DIRECTORY (the
 //     consumer SKIPS an entry when (buf[0] & 0x10) != 0). kcdx CLEARS 0x10 for a
 //     served file (pak or loose vpath); the table glob wants files.

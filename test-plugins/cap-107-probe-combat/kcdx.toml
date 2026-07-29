@@ -7,8 +7,8 @@
 # Library. A raw RVA in production plugin code is AP1; here it is the deliberate
 # labeled expert form for a one-off verification.
 #
-# THE ANCHOR UNDER VERIFICATION (pure-static pin, _research/phase10-event-catalog-
-# recon/pilot-combat-pin.md): the combat-state property GETTER.
+# THE ANCHOR UNDER VERIFICATION (pinned statically from the disassembly): the
+# combat-state property GETTER.
 #   target  FUN_181a7dac0  (C_ModelProperty getter, vtable slot 1)
 #   RVA     0x1a7dac0
 #   ABI     u8 __fastcall(ptr prop /*rcx*/)  -- returns the state byte in al

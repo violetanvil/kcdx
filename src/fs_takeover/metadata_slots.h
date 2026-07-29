@@ -12,9 +12,8 @@
 // model. NO handle is minted by any slot here (these are pure
 // existence/size/attribute reads — open is open_slots.cpp).
 //
-// Every member-call ABI is built to the BODY-VERIFIED decompiles in
-// _research/phase8.5-pak-resolver/_front1_roles_raw.txt (the per-slot
-// decompiled bodies) + front1-full-vtable-surface.md (the role table). On x64
+// Every member-call ABI is built to the per-slot decompiled bodies read out of
+// the game binary, cross-checked against the vtable role table. On x64
 // Windows there is ONE calling convention (RCX,RDX,R8,R9,stack), so a plain
 // `T fn(void* self, ...)` IS the member-call shape (`self`==`this` in RCX) —
 // mirroring open_slots.cpp / read_slots.cpp (no explicit __fastcall).

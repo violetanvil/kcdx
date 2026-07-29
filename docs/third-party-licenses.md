@@ -1,8 +1,8 @@
 # Third-party licenses
 
-The license manifest for kcdx's vendored / third-party dependencies
-(`.claude/rules/dependencies.md` — every dependency is recorded with its name,
-version, license, and one-line purpose, in the same change that adds it). Each
+The license manifest for kcdx's vendored / third-party dependencies. Every
+dependency is recorded with its name, version, license, and one-line purpose,
+in the same change that adds it. Each
 license is verified against the vendored source in `vendor/<name>/`, not recalled.
 
 | Name | Version | License | Purpose |

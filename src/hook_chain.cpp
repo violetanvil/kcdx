@@ -1159,10 +1159,10 @@ bool DispatchPre(const kcdx::rom::runtime_func_t::parameters_t* params,
         // trigger path IS an engine C-Before callback (the lua_pcall
         // L-capture, src/hooks.cpp:HookedLuaPcall_Engine): gating that
         // callback on the classifier creates a self-perpetuating dead-
-        // classifier deadlock. See .claude/rules/lua-callback-threading.md
-        // §Engine bootstrap carve-out for the three-hop loop the bypass
-        // breaks; see PROBE α in docs/known-issues/cap-59-fires...md for
-        // the observed evidence.
+        // classifier deadlock: the classifier needs the callback to run to
+        // become live, and the callback would need the classifier to be live
+        // to run — a three-hop loop this bypass breaks. Confirmed by live
+        // instrumentation, not reasoning.
         const bool isEngineCBypass =
             e.isEngine && e.kind == ChainEntry::Kind::C;
         if (!onMainThread && !isEngineCBypass) {

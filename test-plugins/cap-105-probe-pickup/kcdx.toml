@@ -9,9 +9,9 @@
 # ABI); a raw RVA in production plugin code is AP1. Here it is the deliberate,
 # labeled expert form for a one-off verification.
 #
-# THE ANCHOR UNDER VERIFICATION (pure-static pin, _research/phase10-event-catalog-
-# recon/pilot-pickup-pin.md): CScriptTable::CallFunction, the single global
-# entity-script dispatch chokepoint.
+# THE ANCHOR UNDER VERIFICATION (pinned statically from the disassembly):
+# CScriptTable::CallFunction, the single global entity-script dispatch
+# chokepoint.
 #   target  FUN_180b9ceb4  (CScriptTable::CallFunction, vtable slot 22 / +0xb0)
 #   RVA     0xb9ceb4
 #   ABI     u64 __fastcall(ptr scriptTable /*rcx*/, ptr callDesc /*rdx*/)
